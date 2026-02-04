@@ -1,0 +1,209 @@
+syntax = "proto3";
+
+package watchfire;
+
+option go_package = "github.com/watchfire-io/watchfire/proto";
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/empty.proto";
+
+// ============================================================================
+// Common Messages
+// ============================================================================
+
+// RequestMeta is included in every request for tracking and analytics
+message RequestMeta {
+  string origin = 1;     // "cli" | "tui" | "gui" | "api"
+  string client_id = 2;  // Unique client instance ID
+  string version = 3;    // Client version
+}
+
+// ============================================================================
+// Project Messages
+// ============================================================================
+
+message Project {
+  string project_id = 1;
+  string name = 2;
+  string path = 3;
+  string status = 4;                            // "active" | "archived"
+  string color = 5;                             // Hex color for GUI
+  string default_branch = 6;
+  string default_agent = 7;
+  string sandbox = 8;
+  bool auto_merge = 9;
+  bool auto_delete_branch = 10;
+  bool auto_start_tasks = 11;
+  string definition = 12;
+  google.protobuf.Timestamp created_at = 13;
+  google.protobuf.Timestamp updated_at = 14;
+  int32 next_task_number = 15;
+}
+
+message ProjectId {
+  RequestMeta meta = 1;
+  string project_id = 2;
+}
+
+message ProjectList {
+  repeated Project projects = 1;
+}
+
+message CreateProjectRequest {
+  RequestMeta meta = 1;
+  string path = 2;                              // Directory path
+  string name = 3;                              // Project name (defaults to folder name)
+  string definition = 4;                        // Optional project definition
+  string default_branch = 5;                    // Default: "main"
+  bool auto_merge = 6;
+  bool auto_delete_branch = 7;
+  bool auto_start_tasks = 8;
+}
+
+message UpdateProjectRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+  optional string name = 3;
+  optional string color = 4;
+  optional string default_branch = 5;
+  optional string default_agent = 6;
+  optional bool auto_merge = 7;
+  optional bool auto_delete_branch = 8;
+  optional bool auto_start_tasks = 9;
+  optional string definition = 10;
+}
+
+// ============================================================================
+// Task Messages
+// ============================================================================
+
+message Task {
+  string task_id = 1;                           // 8-char alphanumeric
+  int32 task_number = 2;                        // Sequential, user-facing
+  string project_id = 3;
+  string title = 4;
+  string prompt = 5;
+  string acceptance_criteria = 6;
+  string status = 7;                            // "draft" | "ready" | "done"
+  optional bool success = 8;                    // Only when status=done
+  optional string failure_reason = 9;           // Only when success=false
+  int32 position = 10;                          // Display/work ordering
+  int32 agent_sessions = 11;
+  google.protobuf.Timestamp created_at = 12;
+  optional google.protobuf.Timestamp started_at = 13;
+  optional google.protobuf.Timestamp completed_at = 14;
+  google.protobuf.Timestamp updated_at = 15;
+  optional google.protobuf.Timestamp deleted_at = 16;  // Soft delete
+}
+
+message TaskId {
+  RequestMeta meta = 1;
+  string project_id = 2;
+  int32 task_number = 3;
+}
+
+message TaskList {
+  repeated Task tasks = 1;
+}
+
+message ListTasksRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+  optional string status = 3;                   // Filter by status
+  bool include_deleted = 4;                     // Include soft-deleted tasks
+}
+
+message CreateTaskRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+  string title = 3;
+  string prompt = 4;
+  optional string acceptance_criteria = 5;
+  string status = 6;                            // "draft" | "ready"
+  optional int32 position = 7;                  // Position in list
+}
+
+message UpdateTaskRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+  int32 task_number = 3;
+  optional string title = 4;
+  optional string prompt = 5;
+  optional string acceptance_criteria = 6;
+  optional string status = 7;
+  optional bool success = 8;
+  optional string failure_reason = 9;
+  optional int32 position = 10;
+}
+
+message BulkUpdateStatusRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+  repeated int32 task_numbers = 3;
+  string new_status = 4;                        // "draft" | "ready" | "done"
+}
+
+message BulkDeleteRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+  repeated int32 task_numbers = 3;
+}
+
+message BulkRestoreRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+  repeated int32 task_numbers = 3;
+}
+
+message ReorderTasksRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+  repeated int32 task_numbers = 3;              // Task numbers in new order
+}
+
+// ============================================================================
+// Daemon Messages
+// ============================================================================
+
+message DaemonStatus {
+  string host = 1;
+  int32 port = 2;
+  int32 pid = 3;
+  google.protobuf.Timestamp started_at = 4;
+  int32 active_agents = 5;
+  repeated string active_projects = 6;          // Project IDs with running agents
+}
+
+// ============================================================================
+// Services
+// ============================================================================
+
+// ProjectService handles project CRUD operations
+service ProjectService {
+  rpc ListProjects(google.protobuf.Empty) returns (ProjectList);
+  rpc GetProject(ProjectId) returns (Project);
+  rpc CreateProject(CreateProjectRequest) returns (Project);
+  rpc UpdateProject(UpdateProjectRequest) returns (Project);
+  rpc DeleteProject(ProjectId) returns (google.protobuf.Empty);
+}
+
+// TaskService handles task CRUD and bulk operations
+service TaskService {
+  rpc ListTasks(ListTasksRequest) returns (TaskList);
+  rpc GetTask(TaskId) returns (Task);
+  rpc CreateTask(CreateTaskRequest) returns (Task);
+  rpc UpdateTask(UpdateTaskRequest) returns (Task);
+  rpc DeleteTask(TaskId) returns (Task);
+  rpc RestoreTask(TaskId) returns (Task);
+  rpc EmptyTrash(ProjectId) returns (google.protobuf.Empty);
+  rpc BulkUpdateStatus(BulkUpdateStatusRequest) returns (TaskList);
+  rpc BulkDelete(BulkDeleteRequest) returns (TaskList);
+  rpc BulkRestore(BulkRestoreRequest) returns (TaskList);
+  rpc ReorderTasks(ReorderTasksRequest) returns (TaskList);
+}
+
+// DaemonService handles daemon status and lifecycle
+service DaemonService {
+  rpc GetStatus(google.protobuf.Empty) returns (DaemonStatus);
+  rpc Shutdown(google.protobuf.Empty) returns (google.protobuf.Empty);
+}

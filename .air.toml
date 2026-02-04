@@ -1,0 +1,55 @@
+# Air configuration for hot reload
+# Documentation: https://github.com/air-verse/air
+
+root = "."
+tmp_dir = "tmp"
+
+[build]
+# Build command
+cmd = "go build -o ./tmp/watchfired ./cmd/watchfired"
+# Binary file to run
+bin = "./tmp/watchfired"
+# Arguments to pass to the binary
+args_bin = ["-foreground"]
+# Watch these file extensions
+include_ext = ["go", "proto", "yaml"]
+# Exclude these directories
+exclude_dir = ["assets", "tmp", "vendor", "gui", "node_modules", "build"]
+# Exclude these files
+exclude_file = []
+# Exclude files with these patterns
+exclude_regex = ["_test\\.go"]
+# Exclude unchanged files
+exclude_unchanged = true
+# Follow symlinks
+follow_symlink = false
+# Log directory
+log = "tmp/air.log"
+# Poll interval (ms) for file changes
+poll = false
+poll_interval = 500
+# Delay after a change is detected (ms)
+delay = 1000
+# Stop running old binary when building
+stop_on_error = true
+# Send SIGINT to stop the process, then SIGKILL after grace period
+send_interrupt = true
+# Grace period for the process to exit (s)
+kill_delay = 500
+
+[log]
+# Show log time
+time = true
+# Only show main log (no build details)
+main_only = false
+
+[color]
+# Customize colors
+main = "magenta"
+watcher = "cyan"
+build = "yellow"
+runner = "green"
+
+[misc]
+# Delete tmp directory on exit
+clean_on_exit = true
