@@ -1,0 +1,14 @@
+<svg viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <!-- Background -->
+    <rect width="512" height="512" rx="96" fill="url(#appIconGradient)"/>
+    <!-- Flame -->
+    <path d="M256 80 C256 80 128 200 128 296 C128 392 184 456 256 456 C328 456 384 392 384 296 C384 200 256 80 256 80Z" fill="#ffffff"/>
+    <path d="M256 140 C256 140 168 240 168 312 C168 376 208 420 256 420 C304 420 344 376 344 312 C344 240 256 140 256 140Z" fill="rgba(255,255,255,0.7)"/>
+    <path d="M256 200 C256 200 200 280 200 336 C200 384 224 412 256 412 C288 412 312 384 312 336 C312 280 256 200 256 200Z" fill="rgba(255,255,255,0.4)"/>
+    <defs>
+        <linearGradient id="appIconGradient" x1="0" y1="0" x2="512" y2="512">
+            <stop offset="0%" stop-color="#ff6b35"/>
+            <stop offset="100%" stop-color="#ff8f5a"/>
+        </linearGradient>
+    </defs>
+</svg>

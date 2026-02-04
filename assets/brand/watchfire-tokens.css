@@ -1,0 +1,236 @@
+/* Watchfire Design Tokens */
+/* Import this file or copy these variables to your CSS */
+
+/* ========== DARK THEME (Default) ========== */
+:root {
+  /* ========== COLORS ========== */
+
+  /* Brand Colors */
+  --wf-fire: #e07040;
+  --wf-ember: #e29020;
+  --wf-flame: #fff5e6;
+
+  /* Background Colors */
+  --wf-bg-primary: #16181d;
+  --wf-bg-secondary: #1a1d24;
+  --wf-bg-elevated: #22262f;
+  --wf-bg-light: #ffffff;
+
+  /* Border Colors */
+  --wf-border: #2d3140;
+  --wf-border-light: #3a4050;
+  --wf-border-hover: #e07040;
+
+  /* Text Colors */
+  --wf-text-primary: #ffffff;
+  --wf-text-secondary: #888888;
+  --wf-text-muted: #888888;
+  --wf-text-dark: #16181d;
+
+  /* Status Colors */
+  --wf-success: #28c940;
+  --wf-warning: #ffbd2e;
+  --wf-error: #ff5f57;
+  --wf-info: #007aff;
+
+  /* ========== TYPOGRAPHY ========== */
+
+  --wf-font-heading: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  --wf-font-body: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+  --wf-font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  /* Font Sizes */
+  --wf-text-xs: 0.75rem;    /* 12px */
+  --wf-text-sm: 0.875rem;   /* 14px */
+  --wf-text-base: 1rem;     /* 16px */
+  --wf-text-lg: 1.125rem;   /* 18px */
+  --wf-text-xl: 1.25rem;    /* 20px */
+  --wf-text-2xl: 1.5rem;    /* 24px */
+  --wf-text-3xl: 2.25rem;   /* 36px */
+  --wf-text-4xl: 3rem;      /* 48px */
+
+  /* Font Weights */
+  --wf-font-normal: 400;
+  --wf-font-medium: 500;
+  --wf-font-semibold: 600;
+  --wf-font-bold: 700;
+  --wf-font-extrabold: 800;
+
+  /* Line Heights */
+  --wf-leading-tight: 1.1;
+  --wf-leading-snug: 1.3;
+  --wf-leading-normal: 1.5;
+  --wf-leading-relaxed: 1.6;
+
+  /* ========== SPACING ========== */
+
+  --wf-space-1: 0.25rem;    /* 4px */
+  --wf-space-2: 0.5rem;     /* 8px */
+  --wf-space-3: 0.75rem;    /* 12px */
+  --wf-space-4: 1rem;       /* 16px */
+  --wf-space-5: 1.5rem;     /* 24px */
+  --wf-space-6: 2rem;       /* 32px */
+  --wf-space-7: 3rem;       /* 48px */
+  --wf-space-8: 4rem;       /* 64px */
+  --wf-space-9: 6rem;       /* 96px */
+
+  /* ========== BORDERS ========== */
+
+  --wf-radius-sm: 4px;
+  --wf-radius-md: 8px;
+  --wf-radius-lg: 12px;
+  --wf-radius-xl: 16px;
+  --wf-radius-2xl: 24px;
+  --wf-radius-full: 9999px;
+
+  /* ========== SHADOWS ========== */
+
+  --wf-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --wf-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --wf-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --wf-shadow-glow: 0 0 20px rgba(224, 112, 64, 0.3);
+
+  /* ========== TRANSITIONS ========== */
+
+  --wf-transition-fast: 0.1s ease;
+  --wf-transition-base: 0.2s ease;
+  --wf-transition-slow: 0.3s ease;
+
+  /* ========== Z-INDEX ========== */
+
+  --wf-z-dropdown: 100;
+  --wf-z-modal: 200;
+  --wf-z-toast: 300;
+  --wf-z-tooltip: 400;
+}
+
+/* ========== LIGHT THEME ========== */
+[data-theme="light"],
+.light {
+  /* Brand Colors (darker for contrast on light backgrounds) */
+  --wf-fire: #b85a30;
+  --wf-ember: #c07818;
+  --wf-flame: #fff5e6;
+
+  /* Background Colors */
+  --wf-bg-primary: #fdfcfa;
+  --wf-bg-secondary: #f7f5f2;
+  --wf-bg-elevated: #ffffff;
+  --wf-bg-light: #ffffff;
+
+  /* Border Colors */
+  --wf-border: #e5e2dc;
+  --wf-border-light: #d8d4cc;
+  --wf-border-hover: #b85a30;
+
+  /* Text Colors */
+  --wf-text-primary: #1a1d24;
+  --wf-text-secondary: #555555;
+  --wf-text-muted: #777777;
+  --wf-text-dark: #1a1d24;
+
+  /* Shadows (lighter for light mode) */
+  --wf-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.08);
+  --wf-shadow-md: 0 4px 12px rgba(0, 0, 0, 0.1);
+  --wf-shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+  --wf-shadow-glow: 0 0 20px rgba(184, 90, 48, 0.2);
+}
+
+/* ========== BASE STYLES ========== */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--wf-font-body);
+  font-size: var(--wf-text-base);
+  line-height: var(--wf-leading-normal);
+  color: var(--wf-text-primary);
+  background-color: var(--wf-bg-primary);
+}
+
+h1, h2, h3 {
+  font-family: var(--wf-font-heading);
+  line-height: var(--wf-leading-tight);
+}
+
+h1 {
+  font-size: var(--wf-text-4xl);
+  font-weight: var(--wf-font-bold);
+}
+
+h2 {
+  font-size: var(--wf-text-3xl);
+  font-weight: var(--wf-font-semibold);
+}
+
+h3 {
+  font-size: var(--wf-text-2xl);
+  font-weight: var(--wf-font-semibold);
+}
+
+code, pre {
+  font-family: var(--wf-font-mono);
+  font-size: var(--wf-text-sm);
+}
+
+a {
+  color: var(--wf-fire);
+  text-decoration: none;
+  transition: color var(--wf-transition-fast);
+}
+
+a:hover {
+  color: var(--wf-ember);
+}
+
+/* ========== COMPONENT CLASSES ========== */
+
+.wf-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--wf-space-3) var(--wf-space-5);
+  font-family: var(--wf-font-body);
+  font-size: var(--wf-text-base);
+  font-weight: var(--wf-font-semibold);
+  border-radius: var(--wf-radius-md);
+  border: none;
+  cursor: pointer;
+  transition: all var(--wf-transition-base);
+}
+
+.wf-btn-primary {
+  background: var(--wf-fire);
+  color: var(--wf-text-primary);
+}
+
+.wf-btn-primary:hover {
+  background: #e88050;
+  transform: translateY(-1px);
+}
+
+.wf-btn-secondary {
+  background: transparent;
+  color: var(--wf-text-primary);
+  border: 1px solid var(--wf-border);
+}
+
+.wf-btn-secondary:hover {
+  border-color: var(--wf-fire);
+  color: var(--wf-fire);
+}
+
+.wf-card {
+  background: var(--wf-bg-secondary);
+  border: 1px solid var(--wf-border);
+  border-radius: var(--wf-radius-lg);
+  padding: var(--wf-space-5);
+  transition: all var(--wf-transition-base);
+}
+
+.wf-card:hover {
+  border-color: var(--wf-fire);
+  transform: translateY(-2px);
+}

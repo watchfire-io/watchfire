@@ -1,0 +1,36 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+watchfire-daemon
+watchfire-tui
+
+# Build output
+/bin/
+/dist/
+
+# Go
+*.test
+*.out
+go.work
+go.work.sum
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated
+*.pb.go
+
+# Local config
+.env
+.env.local
