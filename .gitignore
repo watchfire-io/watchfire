@@ -4,12 +4,16 @@
 *.dll
 *.so
 *.dylib
-watchfire-daemon
-watchfire-tui
+watchfire
+watchfired
 
 # Build output
+/build/
 /bin/
 /dist/
+
+# Hot reload (air)
+/tmp/
 
 # Go
 *.test
