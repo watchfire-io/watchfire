@@ -2,6 +2,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 )
@@ -26,6 +27,7 @@ const (
 // File names
 const (
 	DaemonFileName   = "daemon.yaml"
+	AgentsFileName   = "agents.yaml"
 	ProjectsFileName = "projects.yaml"
 	SettingsFileName = "settings.yaml"
 	ProjectFileName  = "project.yaml"
@@ -47,6 +49,15 @@ func GlobalDaemonFile() (string, error) {
 		return "", err
 	}
 	return filepath.Join(dir, DaemonFileName), nil
+}
+
+// GlobalAgentsFile returns the path to the agents.yaml file.
+func GlobalAgentsFile() (string, error) {
+	dir, err := GlobalDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, AgentsFileName), nil
 }
 
 // GlobalProjectsFile returns the path to the projects.yaml file.
@@ -108,17 +119,7 @@ func TaskFileName(taskNumber int) string {
 
 // formatTaskNumber formats a task number as a 4-digit string.
 func formatTaskNumber(n int) string {
-	return filepath.Join("", pad(n, 4))
-}
-
-// pad pads a number with leading zeros to the specified width.
-func pad(n, width int) string {
-	s := ""
-	for i := 0; i < width; i++ {
-		s = string('0'+(n%10)) + s
-		n /= 10
-	}
-	return s
+	return fmt.Sprintf("%04d", n)
 }
 
 // EnsureGlobalDir creates the global Watchfire directory if it doesn't exist.
@@ -127,7 +128,7 @@ func EnsureGlobalDir() error {
 	if err != nil {
 		return err
 	}
-	return os.MkdirAll(dir, 0755)
+	return os.MkdirAll(dir, 0o755)
 }
 
 // EnsureGlobalLogsDir creates the global logs directory if it doesn't exist.
@@ -136,21 +137,21 @@ func EnsureGlobalLogsDir() error {
 	if err != nil {
 		return err
 	}
-	return os.MkdirAll(dir, 0755)
+	return os.MkdirAll(dir, 0o755)
 }
 
 // EnsureProjectDir creates the project's .watchfire/ directory structure.
 func EnsureProjectDir(projectPath string) error {
 	// Create main .watchfire directory
-	if err := os.MkdirAll(ProjectDir(projectPath), 0755); err != nil {
+	if err := os.MkdirAll(ProjectDir(projectPath), 0o755); err != nil {
 		return err
 	}
 	// Create tasks directory
-	if err := os.MkdirAll(ProjectTasksDir(projectPath), 0755); err != nil {
+	if err := os.MkdirAll(ProjectTasksDir(projectPath), 0o755); err != nil {
 		return err
 	}
 	// Create worktrees directory
-	return os.MkdirAll(ProjectWorktreesDir(projectPath), 0755)
+	return os.MkdirAll(ProjectWorktreesDir(projectPath), 0o755)
 }
 
 // ProjectExists checks if a project's .watchfire/ directory exists.

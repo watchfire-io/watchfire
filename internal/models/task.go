@@ -5,6 +5,7 @@ import "time"
 // TaskStatus represents the status of a task.
 type TaskStatus string
 
+// Task statuses.
 const (
 	TaskStatusDraft TaskStatus = "draft"
 	TaskStatusReady TaskStatus = "ready"
@@ -15,21 +16,21 @@ const (
 // This corresponds to task YAML files in .watchfire/tasks/ directory.
 type Task struct {
 	Version            int        `yaml:"version"`
-	TaskID             string     `yaml:"task_id"`      // 8-char alphanumeric, internal only
-	TaskNumber         int        `yaml:"task_number"`  // Sequential within project, user-facing
+	TaskID             string     `yaml:"task_id"`     // 8-char alphanumeric, internal only
+	TaskNumber         int        `yaml:"task_number"` // Sequential within project, user-facing
 	Title              string     `yaml:"title"`
 	Prompt             string     `yaml:"prompt"`
 	AcceptanceCriteria string     `yaml:"acceptance_criteria,omitempty"`
-	Status             TaskStatus `yaml:"status"` // draft | ready | done
-	Success            *bool      `yaml:"success,omitempty"` // Only when status=done
+	Status             TaskStatus `yaml:"status"`                   // draft | ready | done
+	Success            *bool      `yaml:"success,omitempty"`        // Only when status=done
 	FailureReason      string     `yaml:"failure_reason,omitempty"` // Only when success=false
-	Position           int        `yaml:"position"` // Display/work ordering
+	Position           int        `yaml:"position"`                 // Display/work ordering
 	AgentSessions      int        `yaml:"agent_sessions"`
 	CreatedAt          time.Time  `yaml:"created_at"`
 	StartedAt          *time.Time `yaml:"started_at,omitempty"`   // When agent first started
 	CompletedAt        *time.Time `yaml:"completed_at,omitempty"` // When status changed to done
 	UpdatedAt          time.Time  `yaml:"updated_at"`
-	DeletedAt          *time.Time `yaml:"deleted_at,omitempty"`   // Soft delete timestamp
+	DeletedAt          *time.Time `yaml:"deleted_at,omitempty"` // Soft delete timestamp
 }
 
 // NewTask creates a new task with default values.

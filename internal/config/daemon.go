@@ -52,6 +52,51 @@ func RemoveDaemonInfo() error {
 	return os.Remove(path)
 }
 
+// LoadAgentState loads the running agents state from ~/.watchfire/agents.yaml.
+// Returns an empty state if the file doesn't exist.
+func LoadAgentState() (*models.AgentState, error) {
+	path, err := GlobalAgentsFile()
+	if err != nil {
+		return nil, err
+	}
+
+	if !FileExists(path) {
+		return models.NewAgentState(), nil
+	}
+
+	var state models.AgentState
+	if err := LoadYAML(path, &state); err != nil {
+		return models.NewAgentState(), nil
+	}
+	return &state, nil
+}
+
+// SaveAgentState saves the running agents state to ~/.watchfire/agents.yaml.
+func SaveAgentState(state *models.AgentState) error {
+	if err := EnsureGlobalDir(); err != nil {
+		return err
+	}
+
+	path, err := GlobalAgentsFile()
+	if err != nil {
+		return err
+	}
+	return SaveYAML(path, state)
+}
+
+// RemoveAgentState removes the agents.yaml file.
+func RemoveAgentState() error {
+	path, err := GlobalAgentsFile()
+	if err != nil {
+		return err
+	}
+
+	if !FileExists(path) {
+		return nil
+	}
+	return os.Remove(path)
+}
+
 // IsDaemonRunning checks if the daemon process is still running.
 // Returns true if daemon.yaml exists and the PID is alive.
 func IsDaemonRunning() (bool, *models.DaemonInfo, error) {

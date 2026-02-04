@@ -1,6 +1,9 @@
 package config
 
 import (
+	"fmt"
+	"time"
+
 	"github.com/watchfire-io/watchfire/internal/models"
 )
 
@@ -74,6 +77,32 @@ func RegisterProject(projectID, name, path string) error {
 	})
 
 	return SaveProjectsIndex(index)
+}
+
+// EnsureProjectRegistered loads the local project.yaml and ensures the project
+// is registered in the global index. If the project was archived, it reactivates it.
+// This enables self-healing: if the global index is deleted or the project is moved,
+// running any project-scoped CLI command will re-register it automatically.
+func EnsureProjectRegistered(projectPath string) error {
+	project, err := LoadProject(projectPath)
+	if err != nil {
+		return fmt.Errorf("failed to load project: %w", err)
+	}
+	if project == nil {
+		return fmt.Errorf("corrupt project: no project.yaml found in %s", projectPath)
+	}
+
+	// Reactivate archived projects on contact
+	if project.Status == "archived" {
+		project.Status = "active"
+		project.UpdatedAt = time.Now().UTC()
+		if err := SaveProject(projectPath, project); err != nil {
+			return fmt.Errorf("failed to reactivate project: %w", err)
+		}
+	}
+
+	// Register (or update) in global index
+	return RegisterProject(project.ProjectID, project.Name, projectPath)
 }
 
 // UnregisterProject removes a project from the global index.

@@ -64,11 +64,11 @@ var taskRestoreCmd = &cobra.Command{
 }
 
 func init() {
+	taskCmd.AddCommand(taskAddCmd)
+	taskCmd.AddCommand(taskDeleteCmd)
+	taskCmd.AddCommand(taskEditCmd)
 	taskCmd.AddCommand(taskListCmd)
 	taskCmd.AddCommand(taskListDeletedCmd)
-	taskCmd.AddCommand(taskAddCmd)
-	taskCmd.AddCommand(taskEditCmd)
-	taskCmd.AddCommand(taskDeleteCmd)
 	taskCmd.AddCommand(taskRestoreCmd)
 }
 
@@ -80,6 +80,11 @@ func getProjectPath() (string, error) {
 
 	if !config.ProjectExists(cwd) {
 		return "", fmt.Errorf("not a Watchfire project. Run 'watchfire init' first")
+	}
+
+	// Self-heal: ensure project is in the global index
+	if err := config.EnsureProjectRegistered(cwd); err != nil {
+		return "", fmt.Errorf("failed to register project: %w", err)
 	}
 
 	return cwd, nil

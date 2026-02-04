@@ -26,7 +26,7 @@ func LoadTask(projectPath string, taskNumber int) (*models.Task, error) {
 
 // SaveTask saves a task to its YAML file.
 func SaveTask(projectPath string, task *models.Task) error {
-	if err := os.MkdirAll(ProjectTasksDir(projectPath), 0755); err != nil {
+	if err := os.MkdirAll(ProjectTasksDir(projectPath), 0o755); err != nil {
 		return err
 	}
 	return SaveYAML(TaskFile(projectPath, task.TaskNumber), task)

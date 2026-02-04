@@ -15,6 +15,7 @@ import (
 // EventType represents the type of file system event.
 type EventType int
 
+// Event types for file system changes.
 const (
 	EventProjectsIndexChanged EventType = iota
 	EventProjectChanged
@@ -85,7 +86,7 @@ func (w *Watcher) Start() error {
 // Stop stops the watcher.
 func (w *Watcher) Stop() {
 	close(w.done)
-	w.fsWatcher.Close()
+	_ = w.fsWatcher.Close()
 }
 
 // WatchProject adds a project to be watched.

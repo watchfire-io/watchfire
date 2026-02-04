@@ -22,3 +22,28 @@ func NewDaemonInfo(host string, port, pid int) *DaemonInfo {
 		StartedAt: time.Now().UTC(),
 	}
 }
+
+// AgentState represents the running agents file.
+// This corresponds to ~/.watchfire/agents.yaml.
+type AgentState struct {
+	Version int                `yaml:"version"`
+	Agents  []RunningAgentInfo `yaml:"agents"`
+}
+
+// RunningAgentInfo represents a running agent entry in agents.yaml.
+type RunningAgentInfo struct {
+	ProjectID   string `yaml:"project_id"`
+	ProjectName string `yaml:"project_name"`
+	ProjectPath string `yaml:"project_path"`
+	Mode        string `yaml:"mode"` // "chat" | "task" | "wildfire"
+	TaskNumber  int    `yaml:"task_number,omitempty"`
+	TaskTitle   string `yaml:"task_title,omitempty"`
+}
+
+// NewAgentState creates a new empty agent state.
+func NewAgentState() *AgentState {
+	return &AgentState{
+		Version: 1,
+		Agents:  []RunningAgentInfo{},
+	}
+}

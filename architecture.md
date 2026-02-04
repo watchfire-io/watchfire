@@ -205,6 +205,7 @@ The CLI/TUI is the primary interface for developers. A single binary (`watchfire
 | **Daemon not running** | CLI/TUI starts daemon automatically before proceeding |
 | **Daemon shuts down** | CLI/TUI closes |
 | **Multiple instances** | Can run multiple `watchfire` instances in different projects simultaneously |
+| **Project not in index** | CLI auto-registers the project in `~/.watchfire/projects.yaml` on any project-scoped command |
 
 ### Commands
 
@@ -235,6 +236,14 @@ The CLI/TUI is the primary interface for developers. A single binary (`watchfire
 |---------|-------|-------------|
 | `watchfire definition` | `def` | Edit project definition (interactive) |
 | `watchfire settings` | | Configure project settings (interactive) |
+
+#### Daemon
+
+| Command | Alias | Description |
+|---------|-------|-------------|
+| `watchfire daemon start` | | Start the daemon (no-op if already running) |
+| `watchfire daemon status` | | Show daemon host, port, PID, uptime, and active agents |
+| `watchfire daemon stop` | | Stop the daemon via SIGTERM |
 
 #### Agent
 
@@ -470,6 +479,7 @@ Split layout with tabs:
 ```
 ~/.watchfire/
 ├── daemon.yaml         # Connection info (host, port, PID, started_at)
+├── agents.yaml         # Running agents state (project, mode, task info)
 ├── projects.yaml       # Projects index (id, path, name, position)
 ├── settings.yaml       # Global settings (agent paths, defaults)
 └── logs/               # Session logs
@@ -650,6 +660,7 @@ projects:
 **Notes:**
 - `path` updated if same `project_id` opened from new location
 - `position` used for GUI ordering
+- **Self-healing:** Every project-scoped CLI command calls `EnsureProjectRegistered()`, which reads the local `.watchfire/project.yaml` and re-registers the project in the global index if missing, updates the path if the project moved, and reactivates it if archived. This means deleting `projects.yaml` or moving a project directory is automatically repaired on first use.
 
 ### Daemon Connection File Format
 
@@ -674,6 +685,25 @@ started_at: "2026-02-03T13:02:52Z"
 | File exists, PID dead | Daemon crashed | Client deletes stale file, starts daemon |
 
 PID check: `kill -0 <pid>` (returns 0 if process exists)
+
+### Agent State File Format
+
+Written by daemon agent manager (`~/.watchfire/agents.yaml`):
+
+```yaml
+version: 1
+agents:
+  - project_id: "abc12345"
+    project_name: "my-project"
+    project_path: "/home/user/my-project"
+    mode: "task"           # chat | task | wildfire
+    task_number: 1         # Only when mode is task or wildfire
+    task_title: "Add auth" # Only when mode is task or wildfire
+```
+
+- Updated by daemon agent manager whenever agents start or stop
+- Read by `watchfire daemon status` to display active agents
+- Cleaned up on daemon shutdown
 
 ---
 
@@ -722,9 +752,9 @@ On every client startup:
 
 | Aspect | Behavior |
 |--------|----------|
-| **Startup** | Started automatically by client if not running |
+| **Startup** | `watchfire daemon start`, or started automatically by any client command if not running |
 | **Persistence** | **Stays running** when clients close |
-| **Shutdown** | Only via system tray "Quit" or `watchfire daemon stop` |
+| **Shutdown** | `watchfire daemon stop`, or system tray "Quit" |
 | **Rationale** | Agents can continue working in background; system tray provides visibility |
 
 ---

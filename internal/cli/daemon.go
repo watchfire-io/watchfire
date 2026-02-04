@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -38,7 +39,7 @@ func startDaemon() error {
 	}
 
 	// Start daemon in background
-	cmd := exec.Command(daemonPath)
+	cmd := exec.CommandContext(context.TODO(), daemonPath)
 	cmd.Stdout = nil
 	cmd.Stderr = nil
 	cmd.Stdin = nil

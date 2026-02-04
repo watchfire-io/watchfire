@@ -2,6 +2,7 @@
 package project
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -98,7 +99,7 @@ func (m *Manager) CreateProject(opts CreateOptions) (*models.Project, error) {
 	}
 
 	// Ensure directory exists
-	if err := os.MkdirAll(opts.Path, 0755); err != nil {
+	if err := os.MkdirAll(opts.Path, 0o755); err != nil {
 		return nil, fmt.Errorf("failed to create directory: %w", err)
 	}
 
@@ -145,10 +146,8 @@ func (m *Manager) CreateProject(opts CreateOptions) (*models.Project, error) {
 		return nil, err
 	}
 
-	// Commit .gitignore change
-	if err := commitGitignore(opts.Path); err != nil {
-		// Non-fatal, continue
-	}
+	// Commit .gitignore change (non-fatal, ignore error)
+	_ = commitGitignore(opts.Path)
 
 	// Register project in global index
 	if err := config.RegisterProject(projectID, name, opts.Path); err != nil {
@@ -235,7 +234,7 @@ func ensureGitRepo(path string) error {
 		return nil // Already a git repo
 	}
 
-	cmd := exec.Command("git", "init")
+	cmd := exec.CommandContext(context.TODO(), "git", "init")
 	cmd.Dir = path
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("failed to initialize git: %w", err)
@@ -262,11 +261,11 @@ func addToGitignore(projectPath string) error {
 	}
 
 	// Append entry
-	f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	f, err := os.OpenFile(gitignorePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("failed to open .gitignore: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	// Add newline if file doesn't end with one
 	if len(content) > 0 && content[len(content)-1] != '\n' {
@@ -285,21 +284,21 @@ func addToGitignore(projectPath string) error {
 // commitGitignore commits the .gitignore change.
 func commitGitignore(projectPath string) error {
 	// Add .gitignore
-	cmd := exec.Command("git", "add", ".gitignore")
+	cmd := exec.CommandContext(context.TODO(), "git", "add", ".gitignore")
 	cmd.Dir = projectPath
 	if err := cmd.Run(); err != nil {
 		return err
 	}
 
 	// Commit
-	cmd = exec.Command("git", "commit", "-m", "chore: add .watchfire to gitignore")
+	cmd = exec.CommandContext(context.TODO(), "git", "commit", "-m", "chore: add .watchfire to gitignore")
 	cmd.Dir = projectPath
 	return cmd.Run()
 }
 
 // contains checks if a string contains a substring.
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
+	return len(s) >= len(substr) && (s == substr || s != "" && containsHelper(s, substr))
 }
 
 func containsHelper(s, substr string) bool {

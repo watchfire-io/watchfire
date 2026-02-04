@@ -34,7 +34,7 @@ build: build-daemon build-cli
 
 build-daemon:
 	@mkdir -p $(BUILD_DIR)
-	$(GOBUILD) -o $(BUILD_DIR)/$(DAEMON_BINARY) ./$(CMD_DIR)/watchfired
+	CGO_ENABLED=1 $(GOBUILD) -o $(BUILD_DIR)/$(DAEMON_BINARY) ./$(CMD_DIR)/watchfired
 
 build-cli:
 	@mkdir -p $(BUILD_DIR)

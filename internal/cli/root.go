@@ -8,9 +8,8 @@ import (
 var rootCmd = &cobra.Command{
 	Use:   "watchfire",
 	Short: "Orchestrate coding agent sessions based on specs",
-	Long: `Watchfire orchestrates coding agent sessions (starting with Claude Code)
-based on task files. It manages multiple projects in parallel, with one
-active task per project.`,
+	Long: `Watchfire orchestrates coding agent sessions based on task files.
+It manages multiple projects in parallel, with one active task per project.`,
 }
 
 // Execute runs the CLI.
@@ -19,8 +18,10 @@ func Execute() error {
 }
 
 func init() {
-	// Add subcommands
-	rootCmd.AddCommand(versionCmd)
+	// Add subcommands (alphabetical)
+	rootCmd.AddCommand(agentCmd)
+	rootCmd.AddCommand(daemonCmd)
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(taskCmd)
+	rootCmd.AddCommand(versionCmd)
 }

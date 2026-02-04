@@ -175,6 +175,65 @@ message DaemonStatus {
 }
 
 // ============================================================================
+// Agent Messages
+// ============================================================================
+
+message AgentStatus {
+  string project_id = 1;
+  string project_name = 2;
+  string mode = 3;                              // "chat" | "task" | "wildfire"
+  int32 task_number = 4;
+  string task_title = 5;
+  bool is_running = 6;
+}
+
+message StartAgentRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+  string mode = 3;                              // "chat" | "task" | "wildfire"
+  int32 task_number = 4;                        // Required for task/wildfire modes
+}
+
+message ScreenBuffer {
+  string project_id = 1;
+  repeated string lines = 2;
+  int32 cursor_row = 3;
+  int32 cursor_col = 4;
+  int32 rows = 5;
+  int32 cols = 6;
+}
+
+message SubscribeScreenRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+}
+
+message ScrollbackRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+  int32 offset = 3;
+  int32 limit = 4;
+}
+
+message ScrollbackLines {
+  repeated string lines = 1;
+  int32 total_lines = 2;
+}
+
+message SendInputRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+  bytes data = 3;
+}
+
+message ResizeRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+  int32 rows = 3;
+  int32 cols = 4;
+}
+
+// ============================================================================
 // Services
 // ============================================================================
 
@@ -206,4 +265,15 @@ service TaskService {
 service DaemonService {
   rpc GetStatus(google.protobuf.Empty) returns (DaemonStatus);
   rpc Shutdown(google.protobuf.Empty) returns (google.protobuf.Empty);
+}
+
+// AgentService handles agent lifecycle and terminal interaction
+service AgentService {
+  rpc StartAgent(StartAgentRequest) returns (AgentStatus);
+  rpc StopAgent(ProjectId) returns (google.protobuf.Empty);
+  rpc GetAgentStatus(ProjectId) returns (AgentStatus);
+  rpc SubscribeScreen(SubscribeScreenRequest) returns (stream ScreenBuffer);
+  rpc GetScrollback(ScrollbackRequest) returns (ScrollbackLines);
+  rpc SendInput(SendInputRequest) returns (google.protobuf.Empty);
+  rpc Resize(ResizeRequest) returns (google.protobuf.Empty);
 }

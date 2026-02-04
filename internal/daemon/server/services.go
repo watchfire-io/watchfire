@@ -11,6 +11,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/watchfire-io/watchfire/internal/config"
+	"github.com/watchfire-io/watchfire/internal/daemon/agent"
 	"github.com/watchfire-io/watchfire/internal/daemon/project"
 	"github.com/watchfire-io/watchfire/internal/daemon/task"
 	"github.com/watchfire-io/watchfire/internal/models"
@@ -23,20 +24,20 @@ import (
 // ProjectServiceServer is the server interface for ProjectService.
 type ProjectServiceServer interface {
 	ListProjects(context.Context, *emptypb.Empty) (*ProjectList, error)
-	GetProject(context.Context, *ProjectId) (*Project, error)
+	GetProject(context.Context, *ProjectID) (*Project, error)
 	CreateProject(context.Context, *CreateProjectRequest) (*Project, error)
 	UpdateProject(context.Context, *UpdateProjectRequest) (*Project, error)
-	DeleteProject(context.Context, *ProjectId) (*emptypb.Empty, error)
+	DeleteProject(context.Context, *ProjectID) (*emptypb.Empty, error)
 }
 
 // TaskServiceServer is the server interface for TaskService.
 type TaskServiceServer interface {
 	ListTasks(context.Context, *ListTasksRequest) (*TaskList, error)
-	GetTask(context.Context, *TaskId) (*Task, error)
+	GetTask(context.Context, *TaskID) (*Task, error)
 	CreateTask(context.Context, *CreateTaskRequest) (*Task, error)
 	UpdateTask(context.Context, *UpdateTaskRequest) (*Task, error)
-	DeleteTask(context.Context, *TaskId) (*Task, error)
-	RestoreTask(context.Context, *TaskId) (*Task, error)
+	DeleteTask(context.Context, *TaskID) (*Task, error)
+	RestoreTask(context.Context, *TaskID) (*Task, error)
 }
 
 // DaemonServiceServer is the server interface for DaemonService.
@@ -45,18 +46,27 @@ type DaemonServiceServer interface {
 	Shutdown(context.Context, *emptypb.Empty) (*emptypb.Empty, error)
 }
 
+// AgentServiceServer is the server interface for AgentService.
+type AgentServiceServer interface {
+	StartAgent(context.Context, *StartAgentRequest) (*AgentStatus, error)
+	StopAgent(context.Context, *ProjectID) (*emptypb.Empty, error)
+	GetAgentStatus(context.Context, *ProjectID) (*AgentStatus, error)
+}
+
 // ============================================================================
 // Message Types
 // ============================================================================
 
+// RequestMeta contains metadata about the client making a request.
 type RequestMeta struct {
 	Origin   string
-	ClientId string
+	ClientID string
 	Version  string
 }
 
+// Project represents a project in the gRPC API.
 type Project struct {
-	ProjectId        string
+	ProjectID        string
 	Name             string
 	Path             string
 	Status           string
@@ -73,15 +83,18 @@ type Project struct {
 	NextTaskNumber   int32
 }
 
-type ProjectId struct {
+// ProjectID identifies a project by its unique ID.
+type ProjectID struct {
 	Meta      *RequestMeta
-	ProjectId string
+	ProjectID string
 }
 
+// ProjectList holds a list of projects.
 type ProjectList struct {
 	Projects []*Project
 }
 
+// CreateProjectRequest contains the fields for creating a new project.
 type CreateProjectRequest struct {
 	Meta             *RequestMeta
 	Path             string
@@ -93,9 +106,10 @@ type CreateProjectRequest struct {
 	AutoStartTasks   bool
 }
 
+// UpdateProjectRequest contains the fields for updating an existing project.
 type UpdateProjectRequest struct {
 	Meta             *RequestMeta
-	ProjectId        string
+	ProjectID        string
 	Name             *string
 	Color            *string
 	DefaultBranch    *string
@@ -106,10 +120,11 @@ type UpdateProjectRequest struct {
 	Definition       *string
 }
 
+// Task represents a task in the gRPC API.
 type Task struct {
-	TaskId             string
+	TaskID             string
 	TaskNumber         int32
-	ProjectId          string
+	ProjectID          string
 	Title              string
 	Prompt             string
 	AcceptanceCriteria string
@@ -125,26 +140,30 @@ type Task struct {
 	DeletedAt          *timestamppb.Timestamp
 }
 
-type TaskId struct {
+// TaskID identifies a task by project ID and task number.
+type TaskID struct {
 	Meta       *RequestMeta
-	ProjectId  string
+	ProjectID  string
 	TaskNumber int32
 }
 
+// TaskList holds a list of tasks.
 type TaskList struct {
 	Tasks []*Task
 }
 
+// ListTasksRequest contains the parameters for listing tasks.
 type ListTasksRequest struct {
 	Meta           *RequestMeta
-	ProjectId      string
+	ProjectID      string
 	Status         *string
 	IncludeDeleted bool
 }
 
+// CreateTaskRequest contains the fields for creating a new task.
 type CreateTaskRequest struct {
 	Meta               *RequestMeta
-	ProjectId          string
+	ProjectID          string
 	Title              string
 	Prompt             string
 	AcceptanceCriteria *string
@@ -152,9 +171,10 @@ type CreateTaskRequest struct {
 	Position           *int32
 }
 
+// UpdateTaskRequest contains the fields for updating an existing task.
 type UpdateTaskRequest struct {
 	Meta               *RequestMeta
-	ProjectId          string
+	ProjectID          string
 	TaskNumber         int32
 	Title              *string
 	Prompt             *string
@@ -165,6 +185,7 @@ type UpdateTaskRequest struct {
 	Position           *int32
 }
 
+// DaemonStatus represents the current status of the daemon.
 type DaemonStatus struct {
 	Host           string
 	Port           int32
@@ -174,20 +195,91 @@ type DaemonStatus struct {
 	ActiveProjects []string
 }
 
+// AgentStatus represents the current status of an agent.
+type AgentStatus struct {
+	ProjectID   string
+	ProjectName string
+	Mode        string // "chat" | "task" | "wildfire"
+	TaskNumber  int32
+	TaskTitle   string
+	IsRunning   bool
+}
+
+// StartAgentRequest contains the parameters for starting an agent.
+type StartAgentRequest struct {
+	Meta       *RequestMeta
+	ProjectID  string
+	Mode       string // "chat" | "task" | "wildfire"
+	TaskNumber int32
+}
+
+// ScreenBuffer represents the current screen content of an agent session.
+type ScreenBuffer struct {
+	ProjectID string
+	Lines     []string
+	CursorRow int32
+	CursorCol int32
+	Rows      int32
+	Cols      int32
+}
+
+// SubscribeScreenRequest contains the parameters for subscribing to screen updates.
+type SubscribeScreenRequest struct {
+	Meta      *RequestMeta
+	ProjectID string
+}
+
+// ScrollbackRequest contains the parameters for fetching scrollback history.
+type ScrollbackRequest struct {
+	Meta      *RequestMeta
+	ProjectID string
+	Offset    int32
+	Limit     int32
+}
+
+// ScrollbackLines holds lines from the scrollback buffer.
+type ScrollbackLines struct {
+	Lines      []string
+	TotalLines int32
+}
+
+// SendInputRequest contains data to send as input to an agent session.
+type SendInputRequest struct {
+	Meta      *RequestMeta
+	ProjectID string
+	Data      []byte
+}
+
+// ResizeRequest contains the new dimensions for resizing an agent terminal.
+type ResizeRequest struct {
+	Meta      *RequestMeta
+	ProjectID string
+	Rows      int32
+	Cols      int32
+}
+
 // ============================================================================
 // Service Registration Functions
 // ============================================================================
 
+// RegisterProjectServiceServer registers the ProjectServiceServer with the gRPC server.
 func RegisterProjectServiceServer(s *grpc.Server, srv ProjectServiceServer) {
 	// In real implementation, this would use generated code from protoc
 	// For now, we'll implement a simple registration
 }
 
+// RegisterTaskServiceServer registers the TaskServiceServer with the gRPC server.
 func RegisterTaskServiceServer(s *grpc.Server, srv TaskServiceServer) {
 	// In real implementation, this would use generated code from protoc
 }
 
+// RegisterDaemonServiceServer registers the DaemonServiceServer with the gRPC server.
 func RegisterDaemonServiceServer(s *grpc.Server, srv DaemonServiceServer) {
+	// In real implementation, this would use generated code from protoc
+}
+
+// RegisterAgentServiceServer registers the AgentServiceServer with the gRPC server.
+func RegisterAgentServiceServer(s *grpc.Server, srv AgentServiceServer) {
 	// In real implementation, this would use generated code from protoc
 }
 
@@ -212,8 +304,8 @@ func (s *projectService) ListProjects(ctx context.Context, _ *emptypb.Empty) (*P
 	return list, nil
 }
 
-func (s *projectService) GetProject(ctx context.Context, req *ProjectId) (*Project, error) {
-	p, err := s.manager.GetProject(req.ProjectId)
+func (s *projectService) GetProject(ctx context.Context, req *ProjectID) (*Project, error) {
+	p, err := s.manager.GetProject(req.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -237,7 +329,7 @@ func (s *projectService) CreateProject(ctx context.Context, req *CreateProjectRe
 }
 
 func (s *projectService) UpdateProject(ctx context.Context, req *UpdateProjectRequest) (*Project, error) {
-	opts := project.UpdateOptions{ProjectID: req.ProjectId}
+	opts := project.UpdateOptions{ProjectID: req.ProjectID}
 	if req.Name != nil {
 		opts.Name = req.Name
 	}
@@ -270,8 +362,8 @@ func (s *projectService) UpdateProject(ctx context.Context, req *UpdateProjectRe
 	return modelToProtoProject(p), nil
 }
 
-func (s *projectService) DeleteProject(ctx context.Context, req *ProjectId) (*emptypb.Empty, error) {
-	err := s.manager.DeleteProject(req.ProjectId)
+func (s *projectService) DeleteProject(ctx context.Context, req *ProjectID) (*emptypb.Empty, error) {
+	err := s.manager.DeleteProject(req.ProjectID)
 	if err != nil {
 		return nil, err
 	}
@@ -288,9 +380,9 @@ func (s *taskService) ListTasks(ctx context.Context, req *ListTasksRequest) (*Ta
 	if err != nil {
 		return nil, err
 	}
-	entry := index.FindProject(req.ProjectId)
+	entry := index.FindProject(req.ProjectID)
 	if entry == nil {
-		return nil, fmt.Errorf("project not found: %s", req.ProjectId)
+		return nil, fmt.Errorf("project not found: %s", req.ProjectID)
 	}
 
 	tasks, err := s.manager.ListTasks(entry.Path, task.ListOptions{
@@ -303,26 +395,26 @@ func (s *taskService) ListTasks(ctx context.Context, req *ListTasksRequest) (*Ta
 
 	list := &TaskList{Tasks: make([]*Task, 0, len(tasks))}
 	for _, t := range tasks {
-		list.Tasks = append(list.Tasks, modelToProtoTask(t, req.ProjectId))
+		list.Tasks = append(list.Tasks, modelToProtoTask(t, req.ProjectID))
 	}
 	return list, nil
 }
 
-func (s *taskService) GetTask(ctx context.Context, req *TaskId) (*Task, error) {
+func (s *taskService) GetTask(ctx context.Context, req *TaskID) (*Task, error) {
 	index, err := config.LoadProjectsIndex()
 	if err != nil {
 		return nil, err
 	}
-	entry := index.FindProject(req.ProjectId)
+	entry := index.FindProject(req.ProjectID)
 	if entry == nil {
-		return nil, fmt.Errorf("project not found: %s", req.ProjectId)
+		return nil, fmt.Errorf("project not found: %s", req.ProjectID)
 	}
 
 	t, err := s.manager.GetTask(entry.Path, int(req.TaskNumber))
 	if err != nil {
 		return nil, err
 	}
-	return modelToProtoTask(t, req.ProjectId), nil
+	return modelToProtoTask(t, req.ProjectID), nil
 }
 
 func (s *taskService) CreateTask(ctx context.Context, req *CreateTaskRequest) (*Task, error) {
@@ -330,9 +422,9 @@ func (s *taskService) CreateTask(ctx context.Context, req *CreateTaskRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	entry := index.FindProject(req.ProjectId)
+	entry := index.FindProject(req.ProjectID)
 	if entry == nil {
-		return nil, fmt.Errorf("project not found: %s", req.ProjectId)
+		return nil, fmt.Errorf("project not found: %s", req.ProjectID)
 	}
 
 	opts := task.CreateOptions{
@@ -352,7 +444,7 @@ func (s *taskService) CreateTask(ctx context.Context, req *CreateTaskRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	return modelToProtoTask(t, req.ProjectId), nil
+	return modelToProtoTask(t, req.ProjectID), nil
 }
 
 func (s *taskService) UpdateTask(ctx context.Context, req *UpdateTaskRequest) (*Task, error) {
@@ -360,9 +452,9 @@ func (s *taskService) UpdateTask(ctx context.Context, req *UpdateTaskRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	entry := index.FindProject(req.ProjectId)
+	entry := index.FindProject(req.ProjectID)
 	if entry == nil {
-		return nil, fmt.Errorf("project not found: %s", req.ProjectId)
+		return nil, fmt.Errorf("project not found: %s", req.ProjectID)
 	}
 
 	opts := task.UpdateOptions{TaskNumber: int(req.TaskNumber)}
@@ -393,41 +485,41 @@ func (s *taskService) UpdateTask(ctx context.Context, req *UpdateTaskRequest) (*
 	if err != nil {
 		return nil, err
 	}
-	return modelToProtoTask(t, req.ProjectId), nil
+	return modelToProtoTask(t, req.ProjectID), nil
 }
 
-func (s *taskService) DeleteTask(ctx context.Context, req *TaskId) (*Task, error) {
+func (s *taskService) DeleteTask(ctx context.Context, req *TaskID) (*Task, error) {
 	index, err := config.LoadProjectsIndex()
 	if err != nil {
 		return nil, err
 	}
-	entry := index.FindProject(req.ProjectId)
+	entry := index.FindProject(req.ProjectID)
 	if entry == nil {
-		return nil, fmt.Errorf("project not found: %s", req.ProjectId)
+		return nil, fmt.Errorf("project not found: %s", req.ProjectID)
 	}
 
 	t, err := s.manager.DeleteTask(entry.Path, int(req.TaskNumber))
 	if err != nil {
 		return nil, err
 	}
-	return modelToProtoTask(t, req.ProjectId), nil
+	return modelToProtoTask(t, req.ProjectID), nil
 }
 
-func (s *taskService) RestoreTask(ctx context.Context, req *TaskId) (*Task, error) {
+func (s *taskService) RestoreTask(ctx context.Context, req *TaskID) (*Task, error) {
 	index, err := config.LoadProjectsIndex()
 	if err != nil {
 		return nil, err
 	}
-	entry := index.FindProject(req.ProjectId)
+	entry := index.FindProject(req.ProjectID)
 	if entry == nil {
-		return nil, fmt.Errorf("project not found: %s", req.ProjectId)
+		return nil, fmt.Errorf("project not found: %s", req.ProjectID)
 	}
 
 	t, err := s.manager.RestoreTask(entry.Path, int(req.TaskNumber))
 	if err != nil {
 		return nil, err
 	}
-	return modelToProtoTask(t, req.ProjectId), nil
+	return modelToProtoTask(t, req.ProjectID), nil
 }
 
 type daemonService struct {
@@ -440,13 +532,19 @@ func (s *daemonService) GetStatus(ctx context.Context, _ *emptypb.Empty) (*Daemo
 		return nil, err
 	}
 
+	agents := s.server.agentManager.ListAgents()
+	activeProjects := make([]string, 0, len(agents))
+	for _, a := range agents {
+		activeProjects = append(activeProjects, a.ProjectID)
+	}
+
 	return &DaemonStatus{
 		Host:           info.Host,
 		Port:           int32(info.Port),
 		Pid:            int32(info.PID),
 		StartedAt:      timestamppb.New(info.StartedAt),
-		ActiveAgents:   0, // Will be implemented later
-		ActiveProjects: []string{},
+		ActiveAgents:   int32(len(agents)),
+		ActiveProjects: activeProjects,
 	}, nil
 }
 
@@ -460,13 +558,32 @@ func (s *daemonService) Shutdown(ctx context.Context, _ *emptypb.Empty) (*emptyp
 	return &emptypb.Empty{}, nil
 }
 
+type agentService struct {
+	manager *agent.Manager
+}
+
+func (s *agentService) StartAgent(ctx context.Context, req *StartAgentRequest) (*AgentStatus, error) {
+	return nil, fmt.Errorf("agent spawning not yet implemented")
+}
+
+func (s *agentService) StopAgent(ctx context.Context, req *ProjectID) (*emptypb.Empty, error) {
+	return nil, fmt.Errorf("agent management not yet implemented")
+}
+
+func (s *agentService) GetAgentStatus(ctx context.Context, req *ProjectID) (*AgentStatus, error) {
+	return &AgentStatus{
+		ProjectID: req.ProjectID,
+		IsRunning: false,
+	}, nil
+}
+
 // ============================================================================
 // Conversion Functions
 // ============================================================================
 
 func modelToProtoProject(p *models.Project) *Project {
 	return &Project{
-		ProjectId:        p.ProjectID,
+		ProjectID:        p.ProjectID,
 		Name:             p.Name,
 		Status:           p.Status,
 		Color:            p.Color,
@@ -484,10 +601,10 @@ func modelToProtoProject(p *models.Project) *Project {
 }
 
 func modelToProtoTask(t *models.Task, projectID string) *Task {
-	task := &Task{
-		TaskId:             t.TaskID,
+	protoTask := &Task{
+		TaskID:             t.TaskID,
 		TaskNumber:         int32(t.TaskNumber),
-		ProjectId:          projectID,
+		ProjectID:          projectID,
 		Title:              t.Title,
 		Prompt:             t.Prompt,
 		AcceptanceCriteria: t.AcceptanceCriteria,
@@ -499,20 +616,20 @@ func modelToProtoTask(t *models.Task, projectID string) *Task {
 	}
 
 	if t.Success != nil {
-		task.Success = t.Success
+		protoTask.Success = t.Success
 	}
 	if t.FailureReason != "" {
-		task.FailureReason = &t.FailureReason
+		protoTask.FailureReason = &t.FailureReason
 	}
 	if t.StartedAt != nil {
-		task.StartedAt = timestamppb.New(*t.StartedAt)
+		protoTask.StartedAt = timestamppb.New(*t.StartedAt)
 	}
 	if t.CompletedAt != nil {
-		task.CompletedAt = timestamppb.New(*t.CompletedAt)
+		protoTask.CompletedAt = timestamppb.New(*t.CompletedAt)
 	}
 	if t.DeletedAt != nil {
-		task.DeletedAt = timestamppb.New(*t.DeletedAt)
+		protoTask.DeletedAt = timestamppb.New(*t.DeletedAt)
 	}
 
-	return task
+	return protoTask
 }
