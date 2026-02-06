@@ -22,6 +22,18 @@ const (
 	EventTaskChanged
 	EventTaskCreated
 	EventTaskDeleted
+	EventRefinePhaseEnded   // refine_done.yaml created
+	EventGeneratePhaseEnded // generate_done.yaml created
+	EventDefinitionDone     // definition_done.yaml created
+	EventTasksDone          // tasks_done.yaml created
+)
+
+// Signal file names for phase completion.
+const (
+	RefineDoneFile     = "refine_done.yaml"
+	GenerateDoneFile   = "generate_done.yaml"
+	DefinitionDoneFile = "definition_done.yaml"
+	TasksDoneFile      = "tasks_done.yaml"
 )
 
 // Event represents a file system change event.
@@ -109,6 +121,7 @@ func (w *Watcher) WatchProject(projectID, projectPath string) error {
 		log.Printf("Warning: failed to watch tasks dir: %v", err)
 	}
 
+	log.Printf("[watcher] Watching project %s: %s (tasks: %s)", projectID, watchfireDir, tasksDir)
 	return nil
 }
 
@@ -139,6 +152,7 @@ func (w *Watcher) processEvents() {
 			if !ok {
 				return
 			}
+			log.Printf("[watcher] fsnotify: %s %s", event.Op, event.Name)
 			w.handleEvent(event)
 		case err, ok := <-w.fsWatcher.Errors:
 			if !ok {
@@ -151,8 +165,11 @@ func (w *Watcher) processEvents() {
 
 // handleEvent processes a single file system event.
 func (w *Watcher) handleEvent(event fsnotify.Event) {
-	// Skip if not write or create
-	if event.Op&(fsnotify.Write|fsnotify.Create) == 0 {
+	// Accept write, create, and rename events.
+	// Rename is critical: atomic writes (write tmp → rename to target) produce
+	// Rename events on the target file. This is the standard pattern used by
+	// editors and AI tools like Claude Code.
+	if event.Op&(fsnotify.Write|fsnotify.Create|fsnotify.Rename) == 0 {
 		return
 	}
 
@@ -183,6 +200,7 @@ func (w *Watcher) debounceEvent(path string, fn func()) {
 
 // processFileChange handles a debounced file change.
 func (w *Watcher) processFileChange(path string, op fsnotify.Op) {
+	log.Printf("[watcher] debounce fired: %s (op=%s)", path, op)
 	filename := filepath.Base(path)
 	dir := filepath.Dir(path)
 
@@ -206,6 +224,40 @@ func (w *Watcher) processFileChange(path string, op fsnotify.Op) {
 		if dir == projectDir && filename == config.ProjectFileName {
 			w.eventsChan <- Event{
 				Type:      EventProjectChanged,
+				ProjectID: projectID,
+				Path:      path,
+			}
+			return
+		}
+
+		// Check for phase signal files
+		if dir == projectDir && filename == RefineDoneFile {
+			w.eventsChan <- Event{
+				Type:      EventRefinePhaseEnded,
+				ProjectID: projectID,
+				Path:      path,
+			}
+			return
+		}
+		if dir == projectDir && filename == GenerateDoneFile {
+			w.eventsChan <- Event{
+				Type:      EventGeneratePhaseEnded,
+				ProjectID: projectID,
+				Path:      path,
+			}
+			return
+		}
+		if dir == projectDir && filename == DefinitionDoneFile {
+			w.eventsChan <- Event{
+				Type:      EventDefinitionDone,
+				ProjectID: projectID,
+				Path:      path,
+			}
+			return
+		}
+		if dir == projectDir && filename == TasksDoneFile {
+			w.eventsChan <- Event{
+				Type:      EventTasksDone,
 				ProjectID: projectID,
 				Path:      path,
 			}

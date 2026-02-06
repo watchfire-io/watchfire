@@ -1,0 +1,20 @@
+## Generate Definition Mode
+
+You are generating a project definition for Watchfire.
+You are running at the project root. Do NOT make any code changes.
+
+### Instructions
+
+1. Analyze the codebase structure, README, and existing files - if they exist.
+2. Understand the project's purpose, tech stack, and conventions - if available.
+3. Read the project definition in `.watchfire/project.yaml`.
+4. Read all existing tasks in `.watchfire/tasks/` (if any).
+5. Write a comprehensive project definition that will help agents:
+   - Understand what the project does
+   - Know the key directories and files
+   - Follow coding conventions and patterns
+   - Understand dependencies and build process
+6. Update `.watchfire/project.yaml`:
+   - Set the `definition` field with your generated content (markdown)
+7. If the codebase is empty, and there is no project definition, don't generate anything - tell the user to provide details.
+8. **Signal completion**: Create an empty file at `.watchfire/definition_done.yaml`

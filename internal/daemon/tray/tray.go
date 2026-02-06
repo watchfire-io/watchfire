@@ -3,6 +3,7 @@ package tray
 import (
 	"fmt"
 	"log"
+	"sync"
 
 	"github.com/getlantern/systray"
 )
@@ -22,6 +23,10 @@ var (
 	noAgentsItem *systray.MenuItem
 	openGUIItem  *systray.MenuItem
 	quitItem     *systray.MenuItem
+
+	// Maps slot index → project ID for stop actions
+	slotMu       sync.RWMutex
+	slotProjects [maxAgentSlots]string
 )
 
 // Run starts the system tray. This blocks the calling goroutine (must be main).
@@ -107,49 +112,76 @@ func handleClicks() {
 		case <-agentOpenGUI[0].ClickedCh:
 			log.Println("Open in GUI: not yet implemented")
 		case <-agentStop[0].ClickedCh:
-			log.Println("Stop agent: not yet implemented")
+			stopAgentAtSlot(0)
 		case <-agentOpenGUI[1].ClickedCh:
 			log.Println("Open in GUI: not yet implemented")
 		case <-agentStop[1].ClickedCh:
-			log.Println("Stop agent: not yet implemented")
+			stopAgentAtSlot(1)
 		case <-agentOpenGUI[2].ClickedCh:
 			log.Println("Open in GUI: not yet implemented")
 		case <-agentStop[2].ClickedCh:
-			log.Println("Stop agent: not yet implemented")
+			stopAgentAtSlot(2)
 		case <-agentOpenGUI[3].ClickedCh:
 			log.Println("Open in GUI: not yet implemented")
 		case <-agentStop[3].ClickedCh:
-			log.Println("Stop agent: not yet implemented")
+			stopAgentAtSlot(3)
 		case <-agentOpenGUI[4].ClickedCh:
 			log.Println("Open in GUI: not yet implemented")
 		case <-agentStop[4].ClickedCh:
-			log.Println("Stop agent: not yet implemented")
+			stopAgentAtSlot(4)
 		case <-agentOpenGUI[5].ClickedCh:
 			log.Println("Open in GUI: not yet implemented")
 		case <-agentStop[5].ClickedCh:
-			log.Println("Stop agent: not yet implemented")
+			stopAgentAtSlot(5)
 		case <-agentOpenGUI[6].ClickedCh:
 			log.Println("Open in GUI: not yet implemented")
 		case <-agentStop[6].ClickedCh:
-			log.Println("Stop agent: not yet implemented")
+			stopAgentAtSlot(6)
 		case <-agentOpenGUI[7].ClickedCh:
 			log.Println("Open in GUI: not yet implemented")
 		case <-agentStop[7].ClickedCh:
-			log.Println("Stop agent: not yet implemented")
+			stopAgentAtSlot(7)
 		case <-agentOpenGUI[8].ClickedCh:
 			log.Println("Open in GUI: not yet implemented")
 		case <-agentStop[8].ClickedCh:
-			log.Println("Stop agent: not yet implemented")
+			stopAgentAtSlot(8)
 		case <-agentOpenGUI[9].ClickedCh:
 			log.Println("Open in GUI: not yet implemented")
 		case <-agentStop[9].ClickedCh:
-			log.Println("Stop agent: not yet implemented")
+			stopAgentAtSlot(9)
 		}
 	}
 }
 
+// stopAgentAtSlot stops the agent assigned to the given menu slot.
+func stopAgentAtSlot(slot int) {
+	slotMu.RLock()
+	projectID := slotProjects[slot]
+	slotMu.RUnlock()
+
+	if projectID == "" || state == nil {
+		return
+	}
+
+	log.Printf("Stopping agent for project %s (slot %d)", projectID, slot)
+	go state.StopAgent(projectID)
+}
+
 // UpdateAgents refreshes the agent menu items and tooltip.
 func UpdateAgents(agents []AgentInfo) {
+	// Update slot → project ID mapping
+	slotMu.Lock()
+	for i := 0; i < maxAgentSlots; i++ {
+		slotProjects[i] = ""
+	}
+	for i, agent := range agents {
+		if i >= maxAgentSlots {
+			break
+		}
+		slotProjects[i] = agent.ProjectID
+	}
+	slotMu.Unlock()
+
 	// Hide all slots first
 	for i := 0; i < maxAgentSlots; i++ {
 		agentSlots[i].Hide()
@@ -190,6 +222,8 @@ func formatAgentTitle(agent AgentInfo) string {
 		return fmt.Sprintf("● %s — Chat", agent.ProjectName)
 	case "task":
 		return fmt.Sprintf("● %s — Task #%04d: %s", agent.ProjectName, agent.TaskNumber, agent.TaskTitle)
+	case "start-all":
+		return fmt.Sprintf("● %s — Start All (Task #%04d)", agent.ProjectName, agent.TaskNumber)
 	case "wildfire":
 		return fmt.Sprintf("🔥 %s — Wildfire (Task #%04d)", agent.ProjectName, agent.TaskNumber)
 	default:

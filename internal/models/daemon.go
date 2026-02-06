@@ -35,7 +35,7 @@ type RunningAgentInfo struct {
 	ProjectID   string `yaml:"project_id"`
 	ProjectName string `yaml:"project_name"`
 	ProjectPath string `yaml:"project_path"`
-	Mode        string `yaml:"mode"` // "chat" | "task" | "wildfire"
+	Mode        string `yaml:"mode"` // "chat" | "task" | "start-all" | "wildfire"
 	TaskNumber  int    `yaml:"task_number,omitempty"`
 	TaskTitle   string `yaml:"task_title,omitempty"`
 }

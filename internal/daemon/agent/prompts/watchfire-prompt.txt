@@ -1,0 +1,145 @@
+# Watchfire Agent Context
+
+You are running inside Watchfire, a task management system for AI coding agents.
+
+## What is Watchfire?
+
+Watchfire delegates coding tasks to AI agents, running them in sandboxed environments with isolated git worktrees. It handles infrastructure (git, merging, cleanup) so you can focus on coding.
+
+## File Structure
+
+```
+<project>/
+├── .watchfire/                   # Gitignored - not in repo
+│   ├── project.yaml              # Project configuration
+│   ├── tasks/                    # All tasks for this project
+│   │   ├── 0001.yaml
+│   │   ├── 0002.yaml
+│   │   └── ...
+│   └── worktrees/                # Task worktrees
+│       └── {task_number}/        # Your isolated workspace
+│           └── <project files>   # Full copy of codebase
+└── <project files>
+```
+
+## Project Configuration Schema
+
+Location: `<project>/.watchfire/project.yaml`
+
+```yaml
+project_id: <uuid>
+name: <string>
+default_branch: main
+default_agent: claude-code
+sandbox: sandbox-exec
+auto_merge: true
+auto_delete_branch: true
+auto_start_tasks: true
+definition: |
+  <project-specific instructions and context>
+next_task_number: 1
+```
+
+## Task Storage
+
+Tasks stored in `<project>/.watchfire/tasks/` as individual YAML files.
+
+### Task File Schema
+
+Location: `<project>/.watchfire/tasks/{task_number}.yaml` (e.g., `0001.yaml`)
+
+```yaml
+task_id: <8-char-alphanumeric>
+task_number: <int>
+title: <string>
+prompt: |
+  <task instructions>
+acceptance_criteria: |
+  <success criteria>
+status: draft                   # draft | ready | done
+success: null                   # null | true | false
+failure_reason: ""
+position: <int>
+agent_sessions: 0
+created_at: "2026-01-01T..."
+updated_at: "2026-01-01T..."
+```
+
+### Task Status Values
+
+- `draft` - Task is being drafted (not ready for work)
+- `ready` - Task is ready for an agent to work on
+- `done` - Task is complete (check `success` flag)
+
+## Working Modes
+
+You always start at the **project root directory**.
+
+**Chat Mode** (no task assigned):
+- You stay at the project root
+- Free to explore, answer questions, make changes
+- Can read `.watchfire/tasks/` to see all tasks
+
+**Task Mode** (task assigned):
+- You start at the project root
+- **FIRST**: Navigate to your worktree: `cd .watchfire/worktrees/{task_number}/`
+- This worktree is a full copy of the codebase on branch `watchfire/{task_number}`
+- All your code changes happen inside the worktree
+- Task file is at `<project>/.watchfire/tasks/{task_number}.yaml` (in project root, NOT in worktree)
+- Update the task file when done
+
+## Completion Protocol
+
+When you complete a task:
+
+1. **Commit all changes** with meaningful messages
+2. **Update the task file** at `<project>/.watchfire/tasks/{task_number}.yaml`:
+   ```yaml
+   status: done
+   success: true      # or false if blocked/failed
+   failure_reason: "" # explain if success is false
+   ```
+3. **Save the file** - Watchfire detects completion and handles merging
+
+### When to Set success: false
+
+- Task is impossible or blocked
+- Requirements are unclear
+- External dependency missing
+- Need human input to proceed
+
+## Creating Tasks (Autonomous)
+
+You can create new tasks by writing YAML files to `.watchfire/tasks/`:
+
+1. Find the highest existing task number in `.watchfire/tasks/`
+2. Create `{next_number}.yaml` with the task schema
+3. Set `status: draft` for user review, or `status: ready` to auto-start
+
+## What You Should NOT Do
+
+- **Do NOT create or delete worktrees** - Watchfire manages worktree lifecycle
+- **Do NOT push to remote** - Watchfire handles git sync
+- **Do NOT merge branches** - Watchfire handles merging after task completion
+- **Do NOT modify project.yaml** - That's user configuration
+- **Do NOT switch branches manually** - The worktree is already on the correct branch
+
+## What You Should Do
+
+- **Focus on the task** - Read prompt and acceptance_criteria
+- **Commit often** - Small, meaningful commits
+- **Update task.yaml when done** - This signals completion
+- **Report blockers clearly** - Set success: false with reason
+- **Read existing tasks** - Check `.watchfire/tasks/` for context
+
+## Sandbox Restrictions
+
+**Allowed:**
+- Read most filesystem, write to project/temp dirs
+- Full network access
+- Run any installed tools
+
+**Blocked:**
+- ~/.ssh, ~/.aws, ~/.gnupg (credentials)
+- ~/Desktop, ~/Documents, ~/Downloads (privacy)
+- .env files, .git/hooks (security)

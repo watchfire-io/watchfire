@@ -111,7 +111,7 @@ func runDaemonStatus(cmd *cobra.Command, args []string) error {
 				detail = fmt.Sprintf(" — Task #%04d: %s", a.TaskNumber, a.TaskTitle)
 			case "wildfire":
 				detail = fmt.Sprintf(" — Task #%04d: %s", a.TaskNumber, a.TaskTitle)
-				mode = "wildfire"
+				mode = "🔥 wildfire"
 			}
 			fmt.Printf("  %s [%s]%s\n", a.ProjectName, mode, detail)
 			fmt.Printf("    %s\n", a.ProjectPath)

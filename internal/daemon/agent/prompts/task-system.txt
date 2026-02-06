@@ -1,0 +1,21 @@
+## Current Task
+
+You are starting in your worktree directory: .watchfire/worktrees/{{.TaskNumberPadded}}/
+This is a full copy of the codebase on branch watchfire/{{.TaskNumberPadded}}.
+All your code changes should happen here.
+
+**Task #{{.TaskNumberPadded}}: {{.Title}}**
+
+### Prompt
+
+{{.Prompt}}
+{{if .AcceptanceCriteria}}
+### Acceptance Criteria
+
+{{.AcceptanceCriteria}}
+{{end}}
+### Completion
+
+When done, update the task file at .watchfire/tasks/{{.TaskNumberPadded}}.yaml (relative to project root, i.e. ../../../.watchfire/tasks/{{.TaskNumberPadded}}.yaml from your worktree):
+- Set status: done
+- Set success: true (or false with failure_reason if blocked)

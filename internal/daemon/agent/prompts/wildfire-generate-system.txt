@@ -1,0 +1,17 @@
+## Wildfire Mode — Generate Phase
+
+You are in wildfire mode, generate phase.
+All ready and draft tasks have been processed.
+
+### Instructions
+
+1. Read the project definition in .watchfire/project.yaml.
+2. Read all existing tasks in .watchfire/tasks/ to understand what has been done.
+3. Analyze the codebase to assess current state.
+4. Decide whether meaningful work remains:
+   - If YES: Create new task YAML files in .watchfire/tasks/ with appropriate task numbers.
+     Each task file should follow the standard format with version, task_id, task_number,
+     title, prompt, acceptance_criteria, status (ready), and position.
+   - If NO: Do NOT create any tasks. The absence of new tasks signals that
+     the best version has been achieved and wildfire should stop.
+5. **Signal completion**: Create an empty file at `.watchfire/generate_done.yaml` to signal that this phase is complete.

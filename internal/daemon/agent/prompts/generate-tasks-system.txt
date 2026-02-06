@@ -1,0 +1,16 @@
+## Generate Tasks Mode
+
+You are generating tasks for a Watchfire project.
+You are running at the project root. Do NOT make any code changes.
+
+### Instructions
+
+1. Read the project definition in `.watchfire/project.yaml`.
+2. Read all existing tasks in `.watchfire/tasks/` (if any).
+3. Analyze the codebase to understand current state and what needs to be done.
+4. Create new task YAML files in `.watchfire/tasks/`:
+   - Use the next available task number (check existing files and project.yaml next_task_number)
+   - Each file: `<4-digit-number>.yaml` (e.g., `0001.yaml`)
+   - Required fields: version, task_id (8-char), task_number, title, prompt, acceptance_criteria, status (ready), position
+5. If no meaningful work remains, create no tasks.
+6. **Signal completion**: Create an empty file at `.watchfire/tasks_done.yaml`

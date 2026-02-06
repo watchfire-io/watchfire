@@ -1,0 +1,1 @@
+Analyze this project and generate new tasks if meaningful work remains, or signal completion by creating no tasks.

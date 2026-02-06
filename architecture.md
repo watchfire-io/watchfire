@@ -132,7 +132,7 @@ Coding Agent (e.g., Claude Code with --dangerously-skip-permissions)
 | **Sandbox profile** | Embedded in binary, not user-visible |
 | **PTY** | Agent runs in PTY via `github.com/creack/pty` |
 | **Terminal emulation** | Output parsed by `github.com/hinshun/vt10x` |
-| **Working directory** | Project root (inside worktree) |
+| **Working directory** | Task mode: worktree (`.watchfire/worktrees/<task_number>/`). Chat mode: project root. |
 | **Modes** | With prompt (task mode) or without (chat mode) |
 | **Yolo mode** | `--dangerously-skip-permissions` for Claude Code |
 | **System prompt** | `--append-system-prompt "..."` with embedded text |
@@ -162,6 +162,18 @@ sandbox-exec -f <profile> claude --dangerously-skip-permissions --append-system-
 |----------|----------|
 | **Agent updates task file** | Daemon reacts, processes git, moves to next task |
 | **Agent crashes (PTY exits)** | Daemon detects, stops task |
+
+### Phase Completion Signals
+
+The daemon detects phase completion via signal files created by the agent. The daemon deletes these files after processing.
+
+| Phase | Signal File | Agent Action | Daemon Response |
+|-------|-------------|--------------|-----------------|
+| **Task / Execute** | Task YAML `status: done` | Set status to done | Stop agent, merge worktree, start next |
+| **Refine** | `.watchfire/refine_done.yaml` | Create empty file | Stop agent, start next phase |
+| **Generate** | `.watchfire/generate_done.yaml` | Create empty file | Stop agent, check for new tasks or end wildfire |
+| **Generate Definition** | `.watchfire/definition_done.yaml` | Create empty file | Stop agent (single-shot command) |
+| **Generate Tasks** | `.watchfire/tasks_done.yaml` | Create empty file | Stop agent (single-shot command) |
 
 ### System Tray
 
@@ -250,9 +262,10 @@ The CLI/TUI is the primary interface for developers. A single binary (`watchfire
 | Command | Alias | Description |
 |---------|-------|-------------|
 | `watchfire agent start [taskid]` | | No taskid = chat mode. With taskid = marks ready + starts. Ctrl+C stops. |
+| `watchfire agent start all` | | Run all ready tasks in sequence, exit when none left. |
 | `watchfire agent generate definition` | `agent gen def` | One-shot: generate project definition (JSON output mode) |
 | `watchfire agent generate tasks` | `agent gen tasks` | One-shot: generate tasks (JSON output mode) |
-| `watchfire agent wildfire` | | Autonomous loop until no new tasks or Ctrl+C |
+| `watchfire agent wildfire` | | Autonomous three-phase loop until no new tasks or Ctrl+C |
 
 ### `watchfire init` Flow
 
@@ -355,11 +368,29 @@ When multiple tasks are in `ready` status, agent picks next by:
 
 ### Wildfire Mode
 
+Three-phase autonomous loop. Each phase is a separate agent process. The daemon manages transitions.
+
+| Phase | Working Dir | Completion Signal | Description |
+|-------|-------------|-------------------|-------------|
+| **Execute** | Worktree | Task YAML `status: done` | Work on ready tasks (same as task mode). One agent per task. |
+| **Refine** | Project root | `.watchfire/refine_done.yaml` | Analyze codebase, improve a draft task's prompt/criteria, set status: ready. |
+| **Generate** | Project root | `.watchfire/generate_done.yaml` | Analyze project, create new tasks if meaningful work remains. |
+
+**State machine:**
+```
+Execute (ready tasks) → Refine (draft tasks) → Generate (no tasks left)
+         ↑                      ↑                         |
+         └──────────────────────┘─────────────────────────┘
+                                                (if new tasks created → loop)
+                                                (if no new tasks → chat mode)
+```
+
 | Aspect | Behavior |
 |--------|----------|
 | **Entry** | `watchfire agent wildfire` |
-| **Loop** | Work ready tasks → generate more tasks → repeat |
-| **Stop conditions** | No new tasks generated after a round, OR Ctrl+C |
+| **Phase selection** | Daemon picks phase based on available tasks: ready → execute, draft → refine, none → generate |
+| **Phase completion** | Agent creates signal file → daemon detects, deletes file, stops agent → next phase |
+| **Stop conditions** | Generate phase creates no new tasks → transitions to chat mode, OR Ctrl+C |
 | **Autonomy** | Fully autonomous, no human approval between cycles |
 
 ---
@@ -696,7 +727,7 @@ agents:
   - project_id: "abc12345"
     project_name: "my-project"
     project_path: "/home/user/my-project"
-    mode: "task"           # chat | task | wildfire
+    mode: "task"           # chat | task | start-all | wildfire
     task_number: 1         # Only when mode is task or wildfire
     task_title: "Add auth" # Only when mode is task or wildfire
 ```
@@ -840,7 +871,8 @@ message BulkUpdateStatusRequest {
 | `StartAgent` | `StartAgentRequest` | `AgentStatus` | Start agent (chat or task mode) |
 | `StopAgent` | `ProjectId` | `AgentStatus` | Stop running agent |
 | `GetAgentStatus` | `ProjectId` | `AgentStatus` | Is agent running? Which task? |
-| `SubscribeScreen` | `SubscribeScreenRequest` | `stream ScreenBuffer` | Live terminal stream |
+| `SubscribeScreen` | `SubscribeScreenRequest` | `stream ScreenBuffer` | Live terminal stream (parsed via vt10x, for GUI) |
+| `SubscribeRawOutput` | `SubscribeRawOutputRequest` | `stream RawOutputChunk` | Raw PTY bytes stream (for CLI) |
 | `GetScrollback` | `ScrollbackRequest` | `ScrollbackLines` | Historical terminal lines |
 | `SendInput` | `SendInputRequest` | `Empty` | Send keystrokes to agent |
 | `Resize` | `ResizeRequest` | `Empty` | Resize terminal |
@@ -1098,22 +1130,28 @@ RestoreTask → clears deleted_at
 
 #### C5: `watchfire agent wildfire` Flow
 
-**Wildfire loop:**
+**Wildfire three-phase loop (daemon-managed):**
 ```
-A. Check for ready tasks
-   └─ If yes → work on first task → go to A
+1. Daemon checks for ready tasks
+   └─ If found → Execute phase: spawn agent in worktree (same as task mode)
+   └─ Agent completes → daemon loops back to step 1
 
-B. Check for draft tasks
-   └─ If yes → refine task → move to ready → work → go to A
+2. Daemon checks for draft tasks
+   └─ If found → Refine phase: spawn agent at project root
+   └─ Agent analyzes codebase, improves task, sets status: ready
+   └─ Agent completes → daemon loops back to step 1
 
-C. Generate new tasks
-   └─ Agent analyzes: definition, codebase, existing tasks, logs
-   └─ Agent decides: create tasks OR "best version achieved"
+3. If previous phase was Generate → wildfire complete
+   └─ Transition to chat mode
 
-D. Check outcome
-   └─ If new tasks → go to A
-   └─ If "best version" → EXIT wildfire → chat mode
+4. Generate phase: spawn agent at project root
+   └─ Agent analyzes: definition, codebase, existing tasks
+   └─ Agent decides: create new tasks OR create nothing ("best version")
+   └─ Agent completes → daemon loops back to step 1
+   └─ If no new tasks found → step 3 triggers chat transition
 ```
+
+Each phase is a separate agent process. The daemon manages all transitions.
 
 **Ctrl+C in wildfire:** Detaches only (agent continues in background)
 

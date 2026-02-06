@@ -107,6 +107,12 @@ func runWithTray(port int) {
 
 		log.Printf("Daemon started on port %d (PID %d)", srv.Port(), os.Getpid())
 
+		// Wire agent state changes to tray updates
+		srv.AgentManager().SetOnChange(func() {
+			trayState := server.NewTrayState(srv)
+			tray.UpdateAgents(trayState.ActiveAgents())
+		})
+
 		// Serve gRPC in background
 		go func() {
 			if err := srv.Serve(); err != nil {
@@ -173,6 +179,12 @@ func (l *lazyDaemonState) ActiveAgents() []tray.AgentInfo {
 		return server.NewTrayState(srv).ActiveAgents()
 	}
 	return nil
+}
+
+func (l *lazyDaemonState) StopAgent(projectID string) {
+	if srv := l.getSrv(); srv != nil {
+		server.NewTrayState(srv).StopAgent(projectID)
+	}
 }
 
 func (l *lazyDaemonState) RequestShutdown() {

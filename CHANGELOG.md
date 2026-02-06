@@ -19,18 +19,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `watchfire daemon status` — Show daemon host, port, PID, uptime, and active agents (project, mode, task)
 - `watchfire daemon stop` — Stop the daemon via SIGTERM with shutdown polling
 
-#### CLI — Agent Commands (stubs)
-- `watchfire agent start [task-number]` — Start agent session (validates task, stub)
-- `watchfire agent generate definition` (alias: `gen def`) — Generate project definition (stub)
-- `watchfire agent generate tasks` (alias: `gen tasks`) — Generate tasks from definition (stub)
-- `watchfire agent wildfire` — Run all ready tasks in sequence (stub)
+#### CLI — Agent Commands
+- `watchfire agent start [task-number|all]` — Start agent session in chat, task, or start-all mode
+- `watchfire agent generate definition` (alias: `gen def`) — Generate/update project definition
+- `watchfire agent generate tasks` (alias: `gen tasks`) — Generate tasks from project definition
+- `watchfire agent wildfire` — Autonomous three-phase loop (execute → refine → generate)
+- Terminal attach mode with raw PTY streaming, resize handling (SIGWINCH), and Ctrl+C forwarding
+- Automatic re-subscription for chaining modes (start-all, wildfire) when tasks complete
+
+#### CLI — gRPC Client
+- Daemon connection helper (`internal/cli/grpc.go`) with auto-discovery via `~/.watchfire/daemon.yaml`
 
 #### Daemon — Agent Infrastructure
-- Agent manager (`internal/daemon/agent/manager.go`) with lifecycle tracking
+- Agent manager (`internal/daemon/agent/manager.go`) with lifecycle tracking and mode support (chat, task, start-all, wildfire, generate-definition, generate-tasks)
+- Agent process management (`internal/daemon/agent/process.go`) with PTY spawning via `github.com/creack/pty`
+- Terminal emulation via `github.com/hinshun/vt10x` with screen buffer and scrollback
+- Git worktree management (`internal/daemon/agent/worktree.go`) — create, merge, and remove worktrees per task
+- macOS sandbox integration (`internal/daemon/agent/sandbox.go`) via `sandbox-exec`
+- Agent prompts system (`internal/daemon/agent/prompts/`) with embedded templates:
+  - Base Watchfire context prompt
+  - Task mode prompts (system + user)
+  - Wildfire refine/generate phase prompts
+  - Generate definition/tasks mode prompts
 - Agent state persistence (`~/.watchfire/agents.yaml`) — tracks running agents across CLI/daemon boundary
-- `AgentService` gRPC interface and stub implementation
-- `AgentService` proto definition with 7 RPCs (StartAgent, StopAgent, GetAgentStatus, SubscribeScreen, GetScrollback, SendInput, Resize)
-- Agent message types in proto (AgentStatus, ScreenBuffer, ScrollbackLines, etc.)
+- Signal file detection for phase completion (refine_done.yaml, generate_done.yaml, definition_done.yaml, tasks_done.yaml)
+- `AgentService` gRPC implementation with 8 RPCs (StartAgent, StopAgent, GetAgentStatus, SubscribeScreen, SubscribeRawOutput, GetScrollback, SendInput, Resize)
+- Agent message types in proto (AgentStatus, ScreenBuffer, RawOutputChunk, ScrollbackLines, etc.)
+- Task completion flow: agent writes `status: done` → watcher detects → daemon stops agent → auto-merge/cleanup
 - Wired agent manager into daemon server and system tray
 
 ### Changed

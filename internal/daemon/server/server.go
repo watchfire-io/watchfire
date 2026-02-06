@@ -4,6 +4,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"syscall"
@@ -12,9 +13,13 @@ import (
 
 	"github.com/watchfire-io/watchfire/internal/config"
 	"github.com/watchfire-io/watchfire/internal/daemon/agent"
+	"github.com/watchfire-io/watchfire/internal/daemon/agent/prompts"
 	"github.com/watchfire-io/watchfire/internal/daemon/project"
 	"github.com/watchfire-io/watchfire/internal/daemon/task"
 	"github.com/watchfire-io/watchfire/internal/daemon/tray"
+	"github.com/watchfire-io/watchfire/internal/daemon/watcher"
+	"github.com/watchfire-io/watchfire/internal/models"
+	pb "github.com/watchfire-io/watchfire/proto"
 )
 
 // Server is the daemon's gRPC server.
@@ -25,6 +30,7 @@ type Server struct {
 	projectManager *project.Manager
 	taskManager    *task.Manager
 	agentManager   *agent.Manager
+	watcher        *watcher.Watcher
 }
 
 // New creates a new server listening on the specified port.
@@ -45,6 +51,166 @@ func New(port int) (*Server, error) {
 	taskMgr := task.NewManager()
 	agentMgr := agent.NewManager()
 
+	// Create and start file watcher
+	w, err := watcher.New()
+	if err != nil {
+		listener.Close()
+		return nil, fmt.Errorf("failed to create watcher: %w", err)
+	}
+	if err := w.Start(); err != nil {
+		listener.Close()
+		return nil, fmt.Errorf("failed to start watcher: %w", err)
+	}
+
+	// Auto-watch all registered projects
+	if index, err := config.LoadProjectsIndex(); err == nil {
+		for _, entry := range index.Projects {
+			if watchErr := w.WatchProject(entry.ProjectID, entry.Path); watchErr != nil {
+				log.Printf("Warning: failed to watch project %s: %v", entry.Name, watchErr)
+			}
+		}
+	}
+
+	// Wire on-task-done callback for git merge + worktree cleanup
+	agentMgr.SetOnTaskDoneFn(func(projectPath string, taskNumber int, worktreePath string) {
+		if taskNumber == 0 || worktreePath == "" {
+			return
+		}
+		proj, err := config.LoadProject(projectPath)
+		if err != nil {
+			return
+		}
+
+		t, err := config.LoadTask(projectPath, taskNumber)
+		if err != nil || t == nil || t.Status != models.TaskStatusDone {
+			return
+		}
+
+		if proj.AutoMerge {
+			if err := agent.MergeWorktree(projectPath, taskNumber, proj.DefaultBranch); err != nil {
+				log.Printf("Auto-merge failed for task #%04d: %v", taskNumber, err)
+			} else {
+				log.Printf("Auto-merged task #%04d to %s", taskNumber, proj.DefaultBranch)
+			}
+		}
+		if proj.AutoDeleteBranch {
+			if err := agent.RemoveWorktree(projectPath, taskNumber); err != nil {
+				log.Printf("Failed to remove worktree for task #%04d: %v", taskNumber, err)
+			} else {
+				log.Printf("Removed worktree for task #%04d", taskNumber)
+			}
+		}
+	})
+
+	// Wire next-task callback for start-all and wildfire modes
+	agentMgr.SetNextTaskFn(func(projectID, projectPath string, mode agent.Mode, phase agent.WildfirePhase, rows, cols int) (*agent.StartOptions, error) {
+		proj, err := config.LoadProject(projectPath)
+		if err != nil {
+			return nil, err
+		}
+
+		// Start-all mode: chain through ready tasks only
+		if mode == agent.ModeStartAll {
+			readyStatus := string(models.TaskStatusReady)
+			tasks, err := taskMgr.ListTasks(projectPath, task.ListOptions{Status: &readyStatus})
+			if err != nil {
+				return nil, err
+			}
+			if len(tasks) == 0 {
+				return nil, nil // No more ready tasks — start-all done
+			}
+			t := tasks[0]
+			return &agent.StartOptions{
+				ProjectID:        projectID,
+				ProjectName:      proj.Name,
+				ProjectPath:      projectPath,
+				Mode:             agent.ModeStartAll,
+				TaskNumber:       t.TaskNumber,
+				TaskTitle:        t.Title,
+				TaskPrompt:       prompts.ComposeTaskUserPrompt(t.TaskNumber, t.Title),
+				TaskSystemPrompt: prompts.ComposeTaskSystemPrompt(proj, t.TaskNumber, t.Title, t.Prompt, t.AcceptanceCriteria),
+				Rows:             rows,
+				Cols:             cols,
+			}, nil
+		}
+
+		// Wildfire mode: three-phase state machine
+		if mode == agent.ModeWildfire {
+			// 1. Check for ready tasks → Execute phase
+			readyStatus := string(models.TaskStatusReady)
+			readyTasks, err := taskMgr.ListTasks(projectPath, task.ListOptions{Status: &readyStatus})
+			if err != nil {
+				return nil, err
+			}
+			if len(readyTasks) > 0 {
+				t := readyTasks[0]
+				return &agent.StartOptions{
+					ProjectID:        projectID,
+					ProjectName:      proj.Name,
+					ProjectPath:      projectPath,
+					Mode:             agent.ModeWildfire,
+					WildfirePhase:    agent.WildfirePhaseExecute,
+					TaskNumber:       t.TaskNumber,
+					TaskTitle:        t.Title,
+					TaskPrompt:       prompts.ComposeTaskUserPrompt(t.TaskNumber, t.Title),
+					TaskSystemPrompt: prompts.ComposeTaskSystemPrompt(proj, t.TaskNumber, t.Title, t.Prompt, t.AcceptanceCriteria),
+					Rows:             rows,
+					Cols:             cols,
+				}, nil
+			}
+
+			// 2. Check for draft tasks → Refine phase
+			draftStatus := string(models.TaskStatusDraft)
+			draftTasks, err := taskMgr.ListTasks(projectPath, task.ListOptions{Status: &draftStatus})
+			if err != nil {
+				return nil, err
+			}
+			if len(draftTasks) > 0 {
+				t := draftTasks[0]
+				return &agent.StartOptions{
+					ProjectID:        projectID,
+					ProjectName:      proj.Name,
+					ProjectPath:      projectPath,
+					Mode:             agent.ModeWildfire,
+					WildfirePhase:    agent.WildfirePhaseRefine,
+					TaskNumber:       t.TaskNumber,
+					TaskTitle:        t.Title,
+					TaskPrompt:       prompts.ComposeWildfireRefineUserPrompt(t.TaskNumber, t.Title),
+					TaskSystemPrompt: prompts.ComposeWildfireRefineSystemPrompt(proj, t.TaskNumber, t.Title, t.Prompt, t.AcceptanceCriteria),
+					Rows:             rows,
+					Cols:             cols,
+				}, nil
+			}
+
+			// 3. If previous phase was Generate → wildfire complete, transition to chat
+			if phase == agent.WildfirePhaseGenerate {
+				return &agent.StartOptions{
+					ProjectID:   projectID,
+					ProjectName: proj.Name,
+					ProjectPath: projectPath,
+					Mode:        agent.ModeChat,
+					Rows:        rows,
+					Cols:        cols,
+				}, nil
+			}
+
+			// 4. Otherwise → Generate phase
+			return &agent.StartOptions{
+				ProjectID:        projectID,
+				ProjectName:      proj.Name,
+				ProjectPath:      projectPath,
+				Mode:             agent.ModeWildfire,
+				WildfirePhase:    agent.WildfirePhaseGenerate,
+				TaskPrompt:       prompts.ComposeWildfireGenerateUserPrompt(),
+				TaskSystemPrompt: prompts.ComposeWildfireGenerateSystemPrompt(proj),
+				Rows:             rows,
+				Cols:             cols,
+			}, nil
+		}
+
+		return nil, nil
+	})
+
 	srv := &Server{
 		grpcServer:     grpcServer,
 		listener:       listener,
@@ -52,13 +218,17 @@ func New(port int) (*Server, error) {
 		projectManager: projectMgr,
 		taskManager:    taskMgr,
 		agentManager:   agentMgr,
+		watcher:        w,
 	}
 
-	// Register services
-	RegisterProjectServiceServer(grpcServer, &projectService{manager: projectMgr})
-	RegisterTaskServiceServer(grpcServer, &taskService{manager: taskMgr})
-	RegisterDaemonServiceServer(grpcServer, &daemonService{server: srv})
-	RegisterAgentServiceServer(grpcServer, &agentService{manager: agentMgr})
+	// Register services with generated proto descriptors
+	pb.RegisterProjectServiceServer(grpcServer, &projectService{manager: projectMgr})
+	pb.RegisterTaskServiceServer(grpcServer, &taskService{manager: taskMgr})
+	pb.RegisterDaemonServiceServer(grpcServer, &daemonService{server: srv})
+	pb.RegisterAgentServiceServer(grpcServer, &agentService{manager: agentMgr, watcher: w})
+
+	// Start watcher event processing loop
+	go srv.processWatcherEvents()
 
 	return srv, nil
 }
@@ -80,7 +250,154 @@ func (s *Server) Serve() error {
 
 // Stop gracefully stops the server.
 func (s *Server) Stop() {
+	// Stop watcher before agents (prevents new task-done events during shutdown)
+	if s.watcher != nil {
+		s.watcher.Stop()
+	}
+	// Stop all running agents
+	s.agentManager.StopAll()
 	s.grpcServer.GracefulStop()
+}
+
+// processWatcherEvents listens for file system events and handles them.
+func (s *Server) processWatcherEvents() {
+	for event := range s.watcher.Events() {
+		switch event.Type {
+		case watcher.EventTaskChanged, watcher.EventTaskCreated:
+			// Handle both: atomic writes (write tmp → rename) produce Create events
+			// even for existing files, so we can't rely on the distinction.
+			s.handleTaskChanged(event)
+		case watcher.EventRefinePhaseEnded:
+			s.handlePhaseEnded(event, agent.WildfirePhaseRefine)
+		case watcher.EventGeneratePhaseEnded:
+			s.handlePhaseEnded(event, agent.WildfirePhaseGenerate)
+		case watcher.EventDefinitionDone:
+			s.handleGenerateModeEnded(event, agent.ModeGenerateDefinition)
+		case watcher.EventTasksDone:
+			s.handleGenerateModeEnded(event, agent.ModeGenerateTasks)
+		}
+	}
+}
+
+// handleTaskChanged reacts to a task YAML file changing.
+// If the task status is "done" and the agent is working on that task, stop the agent.
+func (s *Server) handleTaskChanged(event watcher.Event) {
+	projectPath := s.projectPathForID(event.ProjectID)
+	log.Printf("[task-watch] Event for task #%04d in project %s (path: %s)", event.TaskNumber, event.ProjectID, projectPath)
+
+	t, err := config.LoadTask(projectPath, event.TaskNumber)
+	if err != nil {
+		log.Printf("[task-watch] Failed to load task #%04d: %v", event.TaskNumber, err)
+		return
+	}
+	if t == nil {
+		log.Printf("[task-watch] Task #%04d not found (nil)", event.TaskNumber)
+		return
+	}
+
+	log.Printf("[task-watch] Task #%04d status: %s", event.TaskNumber, t.Status)
+	if t.Status != models.TaskStatusDone {
+		return
+	}
+
+	running, ok := s.agentManager.GetAgent(event.ProjectID)
+	if !ok {
+		log.Printf("[task-watch] No agent running for project %s", event.ProjectID)
+		return
+	}
+	if running.TaskNumber != event.TaskNumber {
+		log.Printf("[task-watch] Agent working on task #%04d, not #%04d", running.TaskNumber, event.TaskNumber)
+		return
+	}
+
+	log.Printf("Task #%04d marked done — stopping agent for project %s", event.TaskNumber, event.ProjectID)
+	if err := s.agentManager.StopAgent(event.ProjectID); err != nil {
+		log.Printf("Failed to stop agent after task done: %v", err)
+	}
+}
+
+// handlePhaseEnded reacts to a wildfire phase signal file being created.
+// Deletes the signal file and stops the agent to trigger the next phase.
+func (s *Server) handlePhaseEnded(event watcher.Event, expectedPhase agent.WildfirePhase) {
+	projectPath := s.projectPathForID(event.ProjectID)
+	log.Printf("[phase-watch] %s signal detected for project %s", expectedPhase, event.ProjectID)
+
+	running, ok := s.agentManager.GetAgent(event.ProjectID)
+	if !ok {
+		log.Printf("[phase-watch] No agent running for project %s", event.ProjectID)
+		// Still delete the signal file
+		os.Remove(event.Path)
+		return
+	}
+
+	if running.Mode != agent.ModeWildfire {
+		log.Printf("[phase-watch] Agent not in wildfire mode (mode: %s)", running.Mode)
+		os.Remove(event.Path)
+		return
+	}
+
+	if running.WildfirePhase != expectedPhase {
+		log.Printf("[phase-watch] Agent in phase %s, not %s", running.WildfirePhase, expectedPhase)
+		os.Remove(event.Path)
+		return
+	}
+
+	// Delete the signal file before stopping
+	if err := os.Remove(event.Path); err != nil {
+		log.Printf("[phase-watch] Failed to delete signal file %s: %v", event.Path, err)
+	} else {
+		log.Printf("[phase-watch] Deleted signal file: %s", event.Path)
+	}
+
+	log.Printf("Wildfire %s phase ended — stopping agent for project %s", expectedPhase, event.ProjectID)
+	if err := s.agentManager.StopAgent(event.ProjectID); err != nil {
+		log.Printf("Failed to stop agent after phase end: %v", err)
+	}
+	_ = projectPath // used for logging context
+}
+
+// handleGenerateModeEnded reacts to a generate mode signal file being created.
+// Deletes the signal file and stops the agent (no chaining - single-shot command).
+func (s *Server) handleGenerateModeEnded(event watcher.Event, expectedMode agent.Mode) {
+	log.Printf("[generate-watch] %s signal detected for project %s", expectedMode, event.ProjectID)
+
+	running, ok := s.agentManager.GetAgent(event.ProjectID)
+	if !ok {
+		log.Printf("[generate-watch] No agent running for project %s", event.ProjectID)
+		os.Remove(event.Path)
+		return
+	}
+
+	if running.Mode != expectedMode {
+		log.Printf("[generate-watch] Agent not in %s mode (mode: %s)", expectedMode, running.Mode)
+		os.Remove(event.Path)
+		return
+	}
+
+	// Delete the signal file before stopping
+	if err := os.Remove(event.Path); err != nil {
+		log.Printf("[generate-watch] Failed to delete signal file %s: %v", event.Path, err)
+	} else {
+		log.Printf("[generate-watch] Deleted signal file: %s", event.Path)
+	}
+
+	log.Printf("%s complete — stopping agent for project %s", expectedMode, event.ProjectID)
+	if err := s.agentManager.StopAgent(event.ProjectID); err != nil {
+		log.Printf("Failed to stop agent after %s: %v", expectedMode, err)
+	}
+}
+
+// projectPathForID resolves a project ID to its filesystem path.
+func (s *Server) projectPathForID(projectID string) string {
+	index, err := config.LoadProjectsIndex()
+	if err != nil {
+		return ""
+	}
+	entry := index.FindProject(projectID)
+	if entry == nil {
+		return ""
+	}
+	return entry.Path
 }
 
 // TrayState adapts a Server to the tray.DaemonState interface.
@@ -113,6 +430,7 @@ func (t *TrayState) ActiveAgents() []tray.AgentInfo {
 	agents := make([]tray.AgentInfo, 0, len(running))
 	for _, a := range running {
 		agents = append(agents, tray.AgentInfo{
+			ProjectID:   a.ProjectID,
 			ProjectName: a.ProjectName,
 			Mode:        string(a.Mode),
 			TaskNumber:  a.TaskNumber,
@@ -120,6 +438,13 @@ func (t *TrayState) ActiveAgents() []tray.AgentInfo {
 		})
 	}
 	return agents
+}
+
+// StopAgent stops the agent for the given project.
+func (t *TrayState) StopAgent(projectID string) {
+	if err := t.srv.agentManager.StopAgent(projectID); err != nil {
+		log.Printf("Failed to stop agent from tray: %v", err)
+	}
 }
 
 // RequestShutdown sends SIGINT to the current process to trigger a graceful shutdown.

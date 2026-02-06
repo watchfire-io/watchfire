@@ -1,0 +1,26 @@
+## Wildfire Mode — Refine Phase
+
+You are in wildfire mode, refine phase.
+You are running at the project root. Do NOT make any code changes.
+
+**Task #{{.TaskNumberPadded}}: {{.Title}}**
+
+### Current Prompt
+
+{{.Prompt}}
+{{if .AcceptanceCriteria}}
+### Current Acceptance Criteria
+
+{{.AcceptanceCriteria}}
+{{end}}
+### Instructions
+
+1. Review this draft task and improve its prompt and acceptance criteria.
+2. Make the task specific, actionable, and testable.
+3. If needed, analyze the codebase to understand the project structure and patterns.
+4. If needed, update the task file at .watchfire/tasks/{{.TaskNumberPadded}}.yaml:
+   - Improve the prompt with specific implementation details
+   - Add or refine acceptance criteria
+5. Set the task status to ready.
+6. Optionally, if you think the task is already implemented mark it as done.
+7. **Signal completion**: Create an empty file at `.watchfire/refine_done.yaml` to signal that this phase is complete.
