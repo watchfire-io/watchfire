@@ -727,35 +727,76 @@ agents:
   - project_id: "abc12345"
     project_name: "my-project"
     project_path: "/home/user/my-project"
-    mode: "task"           # chat | task | start-all | wildfire
-    task_number: 1         # Only when mode is task or wildfire
-    task_title: "Add auth" # Only when mode is task or wildfire
+    mode: "task"              # chat | task | start-all | wildfire
+    task_number: 1            # Only when mode is task or wildfire
+    task_title: "Add auth"    # Only when mode is task or wildfire
+    issue_type: "rate_limited"  # auth_required | rate_limited | "" (optional)
+    issue_message: "You've hit your limit"  # Original error message (optional)
 ```
 
 - Updated by daemon agent manager whenever agents start or stop
 - Read by `watchfire daemon status` to display active agents
 - Cleaned up on daemon shutdown
+- `issue_type` and `issue_message` reflect current blocking issue if any
 
 ---
 
 ## Agent Detection & Error Handling
 
+### Issue Detection Architecture
+
+The daemon detects issues (auth errors, rate limits) in real-time by scanning PTY output in the read loop. Detection happens in `Process.detectIssues()` which is called after each PTY read. Lines are buffered and scanned for known patterns.
+
+```
+PTY Read → detectIssues() → Pattern Match → AgentIssue → Broadcast to Subscribers
+```
+
+### Issue Types
+
+| Type | Constant | Patterns |
+|------|----------|----------|
+| **Auth Required** | `auth_required` | "API Error: 401", "OAuth token expired", "Please run /login" |
+| **Rate Limited** | `rate_limited` | "You've hit your limit", "rate limit", "too many requests", "API Error: 429" |
+
 ### Auth Issues
 
 | Aspect | Behavior |
 |--------|----------|
-| **Detection** | Daemon parses agent TUI output for auth-required messages |
-| **Claude Code** | Detects "login required" or similar message pattern |
-| **Response** | Daemon notifies clients, user must resolve outside app |
+| **Detection** | Daemon parses agent PTY output for auth-required patterns |
+| **Claude Code** | Detects "401 authentication_error", "OAuth token expired", "/login" prompts |
+| **Agent state** | Agent keeps running (user needs terminal access for `/login`) |
+| **Notification** | Clients receive issue via `SubscribeAgentIssues` stream |
+| **Recovery** | User runs `/login` in terminal, issue auto-clears on successful auth |
 
 ### Rate Limits
 
 | Aspect | Behavior |
 |--------|----------|
-| **Detection** | Daemon parses agent output for rate limit messages |
-| **Cooldown** | Read duration from agent response if available |
-| **Fallback** | Exponential backoff if duration not available |
-| **User override** | User can manually resume or adjust cooldown |
+| **Detection** | Daemon parses agent output for rate limit patterns |
+| **Reset time parsing** | Extracts reset time from messages like "resets 4am (Europe/Lisbon)" |
+| **Agent state** | Agent keeps running (allows user to wait or take action) |
+| **Notification** | Clients receive issue with `reset_at` and `cooldown_until` timestamps |
+| **User override** | Call `ResumeAgent` RPC to clear cooldown and retry |
+
+### gRPC RPCs for Issues
+
+| RPC | Purpose |
+|-----|---------|
+| `SubscribeAgentIssues` | Stream of `AgentIssue` messages when issues detected/cleared |
+| `ResumeAgent` | Clear current issue (e.g., after rate limit cooldown) |
+| `GetAgentStatus` | Includes current `AgentIssue` if any |
+
+### AgentIssue Message
+
+```protobuf
+message AgentIssue {
+  string issue_type = 1;                    // "auth_required" | "rate_limited" | ""
+  google.protobuf.Timestamp detected_at = 2;
+  string message = 3;                       // Original error message from agent
+  optional google.protobuf.Timestamp reset_at = 4;      // When limit resets
+  optional google.protobuf.Timestamp cooldown_until = 5; // When to auto-resume
+}
+```
 
 ### Startup Checks
 
@@ -870,12 +911,14 @@ message BulkUpdateStatusRequest {
 |-----|---------|----------|-------|
 | `StartAgent` | `StartAgentRequest` | `AgentStatus` | Start agent (chat or task mode) |
 | `StopAgent` | `ProjectId` | `AgentStatus` | Stop running agent |
-| `GetAgentStatus` | `ProjectId` | `AgentStatus` | Is agent running? Which task? |
+| `GetAgentStatus` | `ProjectId` | `AgentStatus` | Is agent running? Which task? Includes current issue. |
 | `SubscribeScreen` | `SubscribeScreenRequest` | `stream ScreenBuffer` | Live terminal stream (parsed via vt10x, for GUI) |
 | `SubscribeRawOutput` | `SubscribeRawOutputRequest` | `stream RawOutputChunk` | Raw PTY bytes stream (for CLI) |
 | `GetScrollback` | `ScrollbackRequest` | `ScrollbackLines` | Historical terminal lines |
 | `SendInput` | `SendInputRequest` | `Empty` | Send keystrokes to agent |
 | `Resize` | `ResizeRequest` | `Empty` | Resize terminal |
+| `SubscribeAgentIssues` | `SubscribeAgentIssuesRequest` | `stream AgentIssue` | Real-time auth/rate limit issue notifications |
+| `ResumeAgent` | `ProjectId` | `AgentStatus` | Clear current issue (e.g., after rate limit) |
 
 ### BranchService
 

@@ -186,6 +186,7 @@ message AgentStatus {
   string task_title = 5;
   bool is_running = 6;
   string wildfire_phase = 7;                    // "execute" | "refine" | "generate" | "" (wildfire only)
+  optional AgentIssue issue = 8;                // Current blocking issue, if any
 }
 
 message StartAgentRequest {
@@ -244,6 +245,19 @@ message RawOutputChunk {
   bytes data = 2;
 }
 
+message AgentIssue {
+  string issue_type = 1;                              // "auth_required" | "rate_limited" | ""
+  google.protobuf.Timestamp detected_at = 2;
+  string message = 3;
+  optional google.protobuf.Timestamp reset_at = 4;    // When limit resets (rate limits)
+  optional google.protobuf.Timestamp cooldown_until = 5; // When to auto-resume
+}
+
+message SubscribeAgentIssuesRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+}
+
 // ============================================================================
 // Services
 // ============================================================================
@@ -288,4 +302,6 @@ service AgentService {
   rpc SendInput(SendInputRequest) returns (google.protobuf.Empty);
   rpc Resize(ResizeRequest) returns (google.protobuf.Empty);
   rpc SubscribeRawOutput(SubscribeRawOutputRequest) returns (stream RawOutputChunk);
+  rpc SubscribeAgentIssues(SubscribeAgentIssuesRequest) returns (stream AgentIssue);
+  rpc ResumeAgent(ProjectId) returns (AgentStatus);  // Clear rate limit cooldown
 }

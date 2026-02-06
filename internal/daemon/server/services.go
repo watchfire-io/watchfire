@@ -570,7 +570,12 @@ func (s *agentService) GetAgentStatus(_ context.Context, req *pb.ProjectId) (*pb
 			IsRunning: false,
 		}, nil
 	}
-	return &pb.AgentStatus{
+	return buildAgentStatus(running), nil
+}
+
+// buildAgentStatus creates an AgentStatus proto from a RunningAgent.
+func buildAgentStatus(running *agent.RunningAgent) *pb.AgentStatus {
+	status := &pb.AgentStatus{
 		ProjectId:     running.ProjectID,
 		ProjectName:   running.ProjectName,
 		Mode:          string(running.Mode),
@@ -578,7 +583,33 @@ func (s *agentService) GetAgentStatus(_ context.Context, req *pb.ProjectId) (*pb
 		TaskTitle:     running.TaskTitle,
 		IsRunning:     true,
 		WildfirePhase: string(running.WildfirePhase),
-	}, nil
+	}
+
+	// Include current issue if any
+	if issue := running.Process.GetIssue(); issue != nil {
+		status.Issue = issueToProto(issue)
+	}
+
+	return status
+}
+
+// issueToProto converts an agent.AgentIssue to a proto AgentIssue.
+func issueToProto(issue *agent.AgentIssue) *pb.AgentIssue {
+	if issue == nil {
+		return nil
+	}
+	pbIssue := &pb.AgentIssue{
+		IssueType:  string(issue.Type),
+		DetectedAt: timestamppb.New(issue.DetectedAt),
+		Message:    issue.Message,
+	}
+	if issue.ResetAt != nil {
+		pbIssue.ResetAt = timestamppb.New(*issue.ResetAt)
+	}
+	if issue.CooldownUntil != nil {
+		pbIssue.CooldownUntil = timestamppb.New(*issue.CooldownUntil)
+	}
+	return pbIssue
 }
 
 func (s *agentService) SubscribeRawOutput(req *pb.SubscribeRawOutputRequest, stream grpc.ServerStreamingServer[pb.RawOutputChunk]) error {
@@ -680,6 +711,54 @@ func (s *agentService) GetScrollback(_ context.Context, req *pb.ScrollbackReques
 		Lines:      lines,
 		TotalLines: int32(total),
 	}, nil
+}
+
+func (s *agentService) SubscribeAgentIssues(req *pb.SubscribeAgentIssuesRequest, stream grpc.ServerStreamingServer[pb.AgentIssue]) error {
+	running, ok := s.manager.GetAgent(req.ProjectId)
+	if !ok {
+		return fmt.Errorf("no agent running for project: %s", req.ProjectId)
+	}
+
+	subID := uuid.New().String()
+	ch := running.Process.SubscribeIssues(subID)
+	defer running.Process.UnsubscribeIssues(subID)
+
+	// Send current issue immediately if any
+	if issue := running.Process.GetIssue(); issue != nil {
+		if err := stream.Send(issueToProto(issue)); err != nil {
+			return err
+		}
+	}
+
+	for {
+		select {
+		case issue, ok := <-ch:
+			if !ok {
+				return nil
+			}
+			// Send issue update (nil means cleared, send empty issue)
+			pbIssue := issueToProto(issue)
+			if pbIssue == nil {
+				pbIssue = &pb.AgentIssue{IssueType: ""}
+			}
+			if err := stream.Send(pbIssue); err != nil {
+				return err
+			}
+		case <-running.Process.Done():
+			return nil
+		case <-stream.Context().Done():
+			return stream.Context().Err()
+		}
+	}
+}
+
+func (s *agentService) ResumeAgent(_ context.Context, req *pb.ProjectId) (*pb.AgentStatus, error) {
+	running, ok := s.manager.GetAgent(req.ProjectId)
+	if !ok {
+		return nil, fmt.Errorf("no agent running for project: %s", req.ProjectId)
+	}
+	running.Process.ClearIssue()
+	return buildAgentStatus(running), nil
 }
 
 // ============================================================================

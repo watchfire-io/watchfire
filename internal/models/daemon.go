@@ -32,12 +32,14 @@ type AgentState struct {
 
 // RunningAgentInfo represents a running agent entry in agents.yaml.
 type RunningAgentInfo struct {
-	ProjectID   string `yaml:"project_id"`
-	ProjectName string `yaml:"project_name"`
-	ProjectPath string `yaml:"project_path"`
-	Mode        string `yaml:"mode"` // "chat" | "task" | "start-all" | "wildfire"
-	TaskNumber  int    `yaml:"task_number,omitempty"`
-	TaskTitle   string `yaml:"task_title,omitempty"`
+	ProjectID    string `yaml:"project_id"`
+	ProjectName  string `yaml:"project_name"`
+	ProjectPath  string `yaml:"project_path"`
+	Mode         string `yaml:"mode"` // "chat" | "task" | "start-all" | "wildfire"
+	TaskNumber   int    `yaml:"task_number,omitempty"`
+	TaskTitle    string `yaml:"task_title,omitempty"`
+	IssueType    string `yaml:"issue_type,omitempty"`    // "auth_required" | "rate_limited" | ""
+	IssueMessage string `yaml:"issue_message,omitempty"` // Original error message
 }
 
 // NewAgentState creates a new empty agent state.

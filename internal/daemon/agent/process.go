@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"syscall"
@@ -51,6 +52,12 @@ type Process struct {
 
 	scrollMu   sync.RWMutex
 	scrollback []string
+
+	// Issue detection
+	issueMu    sync.RWMutex
+	issue      *AgentIssue
+	issueSubs  map[string]chan *AgentIssue
+	lineBuffer strings.Builder // Accumulate partial lines for detection
 }
 
 // NewProcess creates and starts a new agent process with PTY and vt10x terminal emulation.
@@ -89,6 +96,7 @@ func NewProcess(opts ProcessOptions) (*Process, error) {
 		rawSubs:    make(map[string]chan []byte),
 		screenSubs: make(map[string]chan *ScreenUpdate),
 		scrollback: make([]string, 0, 1024),
+		issueSubs:  make(map[string]chan *AgentIssue),
 	}
 
 	go p.readLoop()
@@ -104,6 +112,9 @@ func (p *Process) readLoop() {
 		if n > 0 {
 			data := make([]byte, n)
 			copy(data, buf[:n])
+
+			// Detect issues in output (auth errors, rate limits)
+			p.detectIssues(data)
 
 			// Broadcast raw data to CLI subscribers
 			p.broadcastRaw(data)
@@ -354,4 +365,115 @@ func (p *Process) IsRunning() bool {
 func (p *Process) logf(format string, args ...interface{}) {
 	prefix := fmt.Sprintf("[agent:%s] ", p.projectID)
 	log.Printf(prefix+format, args...)
+}
+
+// detectIssues scans PTY output for auth errors and rate limits.
+func (p *Process) detectIssues(data []byte) {
+	p.issueMu.Lock()
+	defer p.issueMu.Unlock()
+
+	// Append data to line buffer
+	p.lineBuffer.Write(data)
+
+	// Process complete lines
+	content := p.lineBuffer.String()
+	lines := strings.Split(content, "\n")
+
+	// Keep the last incomplete line in the buffer
+	if len(lines) > 0 {
+		p.lineBuffer.Reset()
+		p.lineBuffer.WriteString(lines[len(lines)-1])
+		lines = lines[:len(lines)-1]
+	}
+
+	// Check each complete line for issues
+	for _, line := range lines {
+		// Strip ANSI escape codes for cleaner matching
+		cleanLine := stripANSI(line)
+		if cleanLine == "" {
+			continue
+		}
+
+		if issue := DetectIssue(cleanLine); issue != nil {
+			p.setIssueLocked(issue)
+			return // Only report first issue found
+		}
+	}
+}
+
+// stripANSI removes ANSI escape codes from a string.
+func stripANSI(s string) string {
+	// Simple regex to strip common ANSI escape sequences
+	ansiPattern := regexp.MustCompile(`\x1b\[[0-9;]*[a-zA-Z]|\x1b\][^\x07]*\x07`)
+	return strings.TrimSpace(ansiPattern.ReplaceAllString(s, ""))
+}
+
+// setIssueLocked sets the current issue and broadcasts to subscribers.
+// Must be called while holding issueMu.
+func (p *Process) setIssueLocked(issue *AgentIssue) {
+	p.issue = issue
+	p.logf("Issue detected: type=%s message=%q", issue.Type, issue.Message)
+
+	// Broadcast to subscribers (non-blocking)
+	for _, ch := range p.issueSubs {
+		select {
+		case ch <- issue:
+		default:
+			// Drop if subscriber can't keep up
+		}
+	}
+}
+
+// SetIssue sets the current issue and broadcasts to subscribers.
+func (p *Process) SetIssue(issue *AgentIssue) {
+	p.issueMu.Lock()
+	defer p.issueMu.Unlock()
+	p.setIssueLocked(issue)
+}
+
+// ClearIssue clears the current issue (e.g., after user runs /login or rate limit resets).
+func (p *Process) ClearIssue() {
+	p.issueMu.Lock()
+	defer p.issueMu.Unlock()
+
+	if p.issue != nil {
+		p.logf("Issue cleared: type=%s", p.issue.Type)
+		p.issue = nil
+
+		// Broadcast nil to indicate issue cleared
+		for _, ch := range p.issueSubs {
+			select {
+			case ch <- nil:
+			default:
+			}
+		}
+	}
+}
+
+// GetIssue returns the current issue, or nil if none.
+func (p *Process) GetIssue() *AgentIssue {
+	p.issueMu.RLock()
+	defer p.issueMu.RUnlock()
+	return p.issue
+}
+
+// SubscribeIssues creates an issue subscription for the given subscriber ID.
+func (p *Process) SubscribeIssues(id string) chan *AgentIssue {
+	p.issueMu.Lock()
+	defer p.issueMu.Unlock()
+
+	ch := make(chan *AgentIssue, 16)
+	p.issueSubs[id] = ch
+	return ch
+}
+
+// UnsubscribeIssues removes an issue subscription.
+func (p *Process) UnsubscribeIssues(id string) {
+	p.issueMu.Lock()
+	defer p.issueMu.Unlock()
+
+	if ch, ok := p.issueSubs[id]; ok {
+		close(ch)
+		delete(p.issueSubs, id)
+	}
 }

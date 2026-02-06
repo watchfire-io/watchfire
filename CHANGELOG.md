@@ -51,10 +51,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Generate definition/tasks mode prompts
 - Agent state persistence (`~/.watchfire/agents.yaml`) — tracks running agents across CLI/daemon boundary
 - Signal file detection for phase completion (refine_done.yaml, generate_done.yaml, definition_done.yaml, tasks_done.yaml)
-- `AgentService` gRPC implementation with 8 RPCs (StartAgent, StopAgent, GetAgentStatus, SubscribeScreen, SubscribeRawOutput, GetScrollback, SendInput, Resize)
+- `AgentService` gRPC implementation with 10 RPCs (StartAgent, StopAgent, GetAgentStatus, SubscribeScreen, SubscribeRawOutput, GetScrollback, SendInput, Resize, SubscribeAgentIssues, ResumeAgent)
 - Agent message types in proto (AgentStatus, ScreenBuffer, RawOutputChunk, ScrollbackLines, etc.)
 - Task completion flow: agent writes `status: done` → watcher detects → daemon stops agent → auto-merge/cleanup
 - Wired agent manager into daemon server and system tray
+
+#### Daemon — Agent Issue Detection
+- Real-time detection of auth errors and rate limits in PTY output (`internal/daemon/agent/issue.go`)
+- Auth error detection: API 401 errors, OAuth token expiration, `/login` prompts
+- Rate limit detection: 429 errors, "hit your limit" messages, with reset time parsing
+- Issue subscriptions via `SubscribeAgentIssues` streaming RPC
+- `ResumeAgent` RPC to clear rate limit cooldown
+- `GetAgentStatus` now includes current blocking issue if any
+- Agent continues running during issues (user can run `/login` or wait for rate limit reset)
+- Pattern matching with ANSI escape code stripping for reliable detection
 
 ### Changed
 - CLI help commands reordered alphabetically
