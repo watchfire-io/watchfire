@@ -43,6 +43,7 @@ type RunningAgent struct {
 	ProjectID     string
 	ProjectName   string
 	ProjectPath   string
+	ProjectColor  string
 	Mode          Mode
 	WildfirePhase WildfirePhase
 	TaskNumber    int
@@ -56,6 +57,7 @@ type StartOptions struct {
 	ProjectID        string
 	ProjectName      string
 	ProjectPath      string
+	ProjectColor     string
 	Mode             Mode
 	WildfirePhase    WildfirePhase
 	TaskNumber       int
@@ -225,6 +227,7 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 		ProjectID:     opts.ProjectID,
 		ProjectName:   opts.ProjectName,
 		ProjectPath:   opts.ProjectPath,
+		ProjectColor:  opts.ProjectColor,
 		Mode:          opts.Mode,
 		WildfirePhase: opts.WildfirePhase,
 		TaskNumber:    opts.TaskNumber,

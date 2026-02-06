@@ -12,9 +12,10 @@ type DaemonState interface {
 
 // AgentInfo describes a running agent for display in the tray menu.
 type AgentInfo struct {
-	ProjectID   string
-	ProjectName string
-	Mode        string // "chat", "task", "start-all", "wildfire"
-	TaskNumber  int
-	TaskTitle   string
+	ProjectID    string
+	ProjectName  string
+	ProjectColor string // Hex color for display
+	Mode         string // "chat", "task", "start-all", "wildfire"
+	TaskNumber   int
+	TaskTitle    string
 }

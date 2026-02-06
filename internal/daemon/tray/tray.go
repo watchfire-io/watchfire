@@ -1,7 +1,11 @@
 package tray
 
 import (
+	"bytes"
 	"fmt"
+	"image"
+	"image/color"
+	"image/png"
 	"log"
 	"sync"
 
@@ -27,6 +31,10 @@ var (
 	// Maps slot index → project ID for stop actions
 	slotMu       sync.RWMutex
 	slotProjects [maxAgentSlots]string
+
+	// Cache generated icons by hex color
+	iconCache   = make(map[string][]byte)
+	iconCacheMu sync.RWMutex
 )
 
 // Run starts the system tray. This blocks the calling goroutine (must be main).
@@ -196,6 +204,10 @@ func UpdateAgents(agents []AgentInfo) {
 				break
 			}
 			agentSlots[i].SetTitle(formatAgentTitle(agent))
+			// Set colored circle icon for the menu item
+			if icon := getColoredCircleIcon(agent.ProjectColor); icon != nil {
+				agentSlots[i].SetIcon(icon)
+			}
 			agentSlots[i].Show()
 		}
 	}
@@ -219,14 +231,92 @@ func formatTooltip(projects, active int) string {
 func formatAgentTitle(agent AgentInfo) string {
 	switch agent.Mode {
 	case "chat":
-		return fmt.Sprintf("● %s — Chat", agent.ProjectName)
+		return fmt.Sprintf("%s — Chat", agent.ProjectName)
 	case "task":
-		return fmt.Sprintf("● %s — Task #%04d: %s", agent.ProjectName, agent.TaskNumber, agent.TaskTitle)
+		return fmt.Sprintf("%s — Task #%04d: %s", agent.ProjectName, agent.TaskNumber, agent.TaskTitle)
 	case "start-all":
-		return fmt.Sprintf("● %s — Start All (Task #%04d)", agent.ProjectName, agent.TaskNumber)
+		return fmt.Sprintf("%s — Start All (Task #%04d)", agent.ProjectName, agent.TaskNumber)
 	case "wildfire":
-		return fmt.Sprintf("🔥 %s — Wildfire (Task #%04d)", agent.ProjectName, agent.TaskNumber)
+		return fmt.Sprintf("%s — Wildfire (Task #%04d)", agent.ProjectName, agent.TaskNumber)
 	default:
-		return fmt.Sprintf("● %s", agent.ProjectName)
+		return agent.ProjectName
 	}
+}
+
+// getColoredCircleIcon returns a PNG icon of a colored circle for the given hex color.
+// Icons are cached to avoid regenerating them.
+func getColoredCircleIcon(hexColor string) []byte {
+	if hexColor == "" {
+		hexColor = "#808080" // Default gray
+	}
+
+	// Check cache first
+	iconCacheMu.RLock()
+	if icon, ok := iconCache[hexColor]; ok {
+		iconCacheMu.RUnlock()
+		return icon
+	}
+	iconCacheMu.RUnlock()
+
+	// Generate new icon
+	icon := generateColoredCircle(hexColor, 16)
+
+	// Cache it
+	iconCacheMu.Lock()
+	iconCache[hexColor] = icon
+	iconCacheMu.Unlock()
+
+	return icon
+}
+
+// generateColoredCircle creates a PNG image of a filled circle with the given color.
+func generateColoredCircle(hexColor string, size int) []byte {
+	r, g, b := parseHexColor(hexColor)
+	fillColor := color.RGBA{R: uint8(r), G: uint8(g), B: uint8(b), A: 255}
+
+	// Create image with transparent background
+	img := image.NewRGBA(image.Rect(0, 0, size, size))
+
+	// Draw filled circle using midpoint algorithm
+	cx, cy := size/2, size/2
+	radius := size/2 - 1
+
+	for y := 0; y < size; y++ {
+		for x := 0; x < size; x++ {
+			dx := x - cx
+			dy := y - cy
+			if dx*dx+dy*dy <= radius*radius {
+				img.Set(x, y, fillColor)
+			}
+			// Transparent elsewhere (default zero value is transparent)
+		}
+	}
+
+	// Encode to PNG
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return nil
+	}
+	return buf.Bytes()
+}
+
+// parseHexColor parses a hex color string (#RGB or #RRGGBB) into RGB values.
+func parseHexColor(hex string) (r, g, b int) {
+	if len(hex) == 0 || hex[0] != '#' {
+		return 128, 128, 128 // Default gray
+	}
+	hex = hex[1:]
+
+	switch len(hex) {
+	case 3: // #RGB
+		fmt.Sscanf(hex, "%1x%1x%1x", &r, &g, &b)
+		r *= 17 // Expand 0-15 to 0-255
+		g *= 17
+		b *= 17
+	case 6: // #RRGGBB
+		fmt.Sscanf(hex, "%2x%2x%2x", &r, &g, &b)
+	default:
+		return 128, 128, 128 // Default gray
+	}
+	return
 }

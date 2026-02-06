@@ -21,7 +21,9 @@ func init() {
 	// Add subcommands (alphabetical)
 	rootCmd.AddCommand(agentCmd)
 	rootCmd.AddCommand(daemonCmd)
+	rootCmd.AddCommand(definitionCmd)
 	rootCmd.AddCommand(initCmd)
+	rootCmd.AddCommand(settingsCmd)
 	rootCmd.AddCommand(taskCmd)
 	rootCmd.AddCommand(versionCmd)
 }

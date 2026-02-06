@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### CLI — Project Configuration Commands
+- `watchfire definition` (alias: `def`) — Edit project definition in external editor ($EDITOR, $VISUAL, vim, vi, nano)
+- `watchfire settings` — Configure project settings interactively (name, color, branch, automation toggles)
+
+#### System Tray — Colored Project Icons
+- Agent menu items now display a dynamically generated colored circle icon based on the project's hex color setting
+- Icons are cached to avoid regeneration for the same color
+
 #### CLI — Self-Healing Project Index
 - Project-scoped CLI commands now auto-register the project in `~/.watchfire/projects.yaml` if missing
 - Automatically updates the project path in the global index if the project directory was moved

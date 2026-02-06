@@ -124,6 +124,7 @@ func New(port int) (*Server, error) {
 				ProjectID:        projectID,
 				ProjectName:      proj.Name,
 				ProjectPath:      projectPath,
+				ProjectColor:     proj.Color,
 				Mode:             agent.ModeStartAll,
 				TaskNumber:       t.TaskNumber,
 				TaskTitle:        t.Title,
@@ -148,6 +149,7 @@ func New(port int) (*Server, error) {
 					ProjectID:        projectID,
 					ProjectName:      proj.Name,
 					ProjectPath:      projectPath,
+					ProjectColor:     proj.Color,
 					Mode:             agent.ModeWildfire,
 					WildfirePhase:    agent.WildfirePhaseExecute,
 					TaskNumber:       t.TaskNumber,
@@ -171,6 +173,7 @@ func New(port int) (*Server, error) {
 					ProjectID:        projectID,
 					ProjectName:      proj.Name,
 					ProjectPath:      projectPath,
+					ProjectColor:     proj.Color,
 					Mode:             agent.ModeWildfire,
 					WildfirePhase:    agent.WildfirePhaseRefine,
 					TaskNumber:       t.TaskNumber,
@@ -185,12 +188,13 @@ func New(port int) (*Server, error) {
 			// 3. If previous phase was Generate → wildfire complete, transition to chat
 			if phase == agent.WildfirePhaseGenerate {
 				return &agent.StartOptions{
-					ProjectID:   projectID,
-					ProjectName: proj.Name,
-					ProjectPath: projectPath,
-					Mode:        agent.ModeChat,
-					Rows:        rows,
-					Cols:        cols,
+					ProjectID:    projectID,
+					ProjectName:  proj.Name,
+					ProjectPath:  projectPath,
+					ProjectColor: proj.Color,
+					Mode:         agent.ModeChat,
+					Rows:         rows,
+					Cols:         cols,
 				}, nil
 			}
 
@@ -199,6 +203,7 @@ func New(port int) (*Server, error) {
 				ProjectID:        projectID,
 				ProjectName:      proj.Name,
 				ProjectPath:      projectPath,
+				ProjectColor:     proj.Color,
 				Mode:             agent.ModeWildfire,
 				WildfirePhase:    agent.WildfirePhaseGenerate,
 				TaskPrompt:       prompts.ComposeWildfireGenerateUserPrompt(),
@@ -430,11 +435,12 @@ func (t *TrayState) ActiveAgents() []tray.AgentInfo {
 	agents := make([]tray.AgentInfo, 0, len(running))
 	for _, a := range running {
 		agents = append(agents, tray.AgentInfo{
-			ProjectID:   a.ProjectID,
-			ProjectName: a.ProjectName,
-			Mode:        string(a.Mode),
-			TaskNumber:  a.TaskNumber,
-			TaskTitle:   a.TaskTitle,
+			ProjectID:    a.ProjectID,
+			ProjectName:  a.ProjectName,
+			ProjectColor: a.ProjectColor,
+			Mode:         string(a.Mode),
+			TaskNumber:   a.TaskNumber,
+			TaskTitle:    a.TaskTitle,
 		})
 	}
 	return agents
