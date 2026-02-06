@@ -14,4 +14,6 @@ All ready and draft tasks have been processed.
      title, prompt, acceptance_criteria, status (ready), and position.
    - If NO: Do NOT create any tasks. The absence of new tasks signals that
      the best version has been achieved and wildfire should stop.
-5. **Signal completion**: Create an empty file at `.watchfire/generate_done.yaml` to signal that this phase is complete.
+5. Always aim to create the BEST version of the idea in the project defitions, dont' go against what it's writted, but feel free to expand on it by brainstorming new addition. 
+6. Feel free to update the project definitions by adding more to it never change it to something different, or go against what's defined there.
+7. **Signal completion**: Create an empty file at `.watchfire/generate_done.yaml` to signal that this phase is complete.
