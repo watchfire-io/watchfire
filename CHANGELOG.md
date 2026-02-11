@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### TUI — Interactive Split-View Interface
+- `watchfire` (no args) — Launch interactive TUI with split-view layout
+- Split-panel layout: task list (left) + agent terminal (right), draggable divider
+- Left panel tabs: Tasks (grouped by status), Definition (read-only + $EDITOR), Settings (inline form)
+- Right panel tabs: Chat (live agent terminal), Logs (session history viewer)
+- Full task management: add, edit, status transitions (draft/ready/done), soft delete
+- Agent terminal with raw PTY streaming, keyboard input forwarding, and scrollback
+- Agent control: start/stop, chat/task/start-all/wildfire modes with auto-start chat
+- Wildfire phase display (Execute/Refine/Generate) in terminal panel
+- Agent issue banners: auth required and rate limit detection with recovery actions
+- Help overlay (Ctrl+h) with full keybinding reference
+- Task add/edit overlays with multiline textarea fields
+- Context-sensitive status bar with key hints and connection indicator
+- Keyboard navigation: vim-style (j/k), arrows, tab switching (1/2/3), panel focus (Tab)
+- Mouse support: click to focus/select, scroll, drag divider to resize panels
+- Auto-reconnect to daemon with "Disconnected" indicator and 3-second retry
+- Minimum terminal size detection (80x24)
+- ANSI 256 color styling with light/dark terminal adaptation (lipgloss.AdaptiveColor)
+
 #### CLI — Project Configuration Commands
 - `watchfire definition` (alias: `def`) — Edit project definition in external editor ($EDITOR, $VISUAL, vim, vi, nano)
 - `watchfire settings` — Configure project settings interactively (name, color, branch, automation toggles)
@@ -66,13 +85,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Agent continues running during issues (user can run `/login` or wait for rate limit reset)
 - Pattern matching with ANSI escape code stripping for reliable detection
 
+#### Daemon — Session Logs
+- Session log system (`internal/config/log.go`, `internal/models/log.go`) — writes YAML-header log files per agent session
+- Log storage at `~/.watchfire/logs/<project_id>/<logID>.log`
+- `LogService` gRPC service with `ListLogs` and `GetLog` RPCs
+- Proto messages: `LogEntry`, `LogList`, `LogContent`, `ListLogsRequest`, `GetLogRequest`
+
+#### Daemon — Resilience Improvements
+- Watcher re-watch on chain: chained agents (wildfire/start-all) re-watch the project to pick up directories created during earlier phases
+- Polling fallback: task-mode agents poll task YAML every 5s as safety net for missed watcher events (kqueue overflow, late directory creation)
+- Task number sync (`SyncNextTaskNumber`): scans task files and updates `next_task_number` when agents create task files directly
+- ANSI screen content: `ScreenBuffer` now includes full ANSI SGR rendering for richer terminal display
+- Initial screen snapshot sent on `SubscribeScreen` connect so TUI sees current state immediately
+- PTY size passthrough: `StartAgent` accepts rows/cols from client, forwarded to agent PTY
+- Stale project index cleanup: removes duplicate entries for the same path in `projects.yaml`
+
 ### Changed
 - CLI help commands reordered alphabetically
 - Migrated golangci-lint configuration to v2 format
+- `StartAgent` now stops any existing agent before starting a new one (instead of returning existing)
+- `StopAgent` from user (CLI/TUI) explicitly prevents wildfire/start-all chaining via `StopAgentByUser`
+- CLI Ctrl+C in wildfire/start-all modes now stops the agent and breaks the re-subscribe loop (instead of forwarding Ctrl+C to agent)
+- `MergeWorktree` returns `(bool, error)` — skips merge when no file differences exist (detects via `git diff --stat`)
+- `onTaskDoneFn` returns bool to control whether chaining continues after task completion
+- Architecture doc updated with worktree resilience, task lifecycle, TUI layout, and watcher improvements
 
 ### Fixed
 - `formatTaskNumber` in `config/paths.go` — int-to-string conversion produced wrong results
 - Resolved all 74 golangci-lint issues across the codebase (var-naming, noctx, errcheck, gofmt, doc comments, octal literals, etc.)
+- Stale branch handling: worktree creation now deletes existing branch and recreates from current HEAD (instead of reusing old commit)
+- Merge conflict recovery: `git merge --abort` on failure restores clean working directory
+- Chain stop on merge failure: prevents cascading failures in wildfire/start-all modes
 
 ## [0.1.0] Ember - 2026-02-04
 

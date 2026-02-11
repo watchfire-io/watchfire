@@ -128,6 +128,54 @@ func GetNextTaskNumber(projectPath string) (int, error) {
 	return project.NextTaskNumber, nil
 }
 
+// SyncNextTaskNumber scans the tasks directory and updates next_task_number
+// in project.yaml if it's behind the highest existing task file.
+// This handles the case where agents create task files directly (bypassing
+// the task manager) without incrementing the counter.
+func SyncNextTaskNumber(projectPath string) error {
+	project, err := LoadProject(projectPath)
+	if err != nil || project == nil {
+		return err
+	}
+
+	tasksDir := ProjectTasksDir(projectPath)
+	if !FileExists(tasksDir) {
+		return nil
+	}
+
+	entries, err := os.ReadDir(tasksDir)
+	if err != nil {
+		return err
+	}
+
+	highest := 0
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".yaml") {
+			continue
+		}
+		numStr := strings.TrimSuffix(name, ".yaml")
+		num, err := strconv.Atoi(numStr)
+		if err != nil {
+			continue
+		}
+		if num > highest {
+			highest = num
+		}
+	}
+
+	// next_task_number should be highest + 1
+	needed := highest + 1
+	if needed > project.NextTaskNumber {
+		project.NextTaskNumber = needed
+		return SaveProject(projectPath, project)
+	}
+	return nil
+}
+
 // WatchTasksDir returns the path to watch for task file changes.
 func WatchTasksDir(projectPath string) string {
 	return filepath.Join(ProjectDir(projectPath), TasksDirName)

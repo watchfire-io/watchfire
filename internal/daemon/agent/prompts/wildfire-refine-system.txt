@@ -23,4 +23,5 @@ You are running at the project root. Do NOT make any code changes.
    - Add or refine acceptance criteria
 5. Set the task status to ready.
 6. Optionally, if you think the task is already implemented mark it as done.
-7. **Signal completion**: Create an empty file at `.watchfire/refine_done.yaml` to signal that this phase is complete.
+7. **IMPORTANT**: If you modify `.gitignore`, only ADD entries — never remove `.watchfire/` or any existing lines.
+8. **Signal completion**: Create an empty file at `.watchfire/refine_done.yaml` to signal that this phase is complete.

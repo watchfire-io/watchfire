@@ -60,13 +60,17 @@ func RegisterProject(projectID, name, path string) error {
 		return err
 	}
 
-	// Check if already registered
+	// Check if already registered by ID
 	existing := index.FindProject(projectID)
 	if existing != nil {
-		// Update path if changed
 		existing.Path = path
 		existing.Name = name
 		return SaveProjectsIndex(index)
+	}
+
+	// Remove stale entry for the same path (different project ID)
+	if stale := index.FindProjectByPath(path); stale != nil {
+		index.RemoveProject(stale.ProjectID)
 	}
 
 	// Add new entry

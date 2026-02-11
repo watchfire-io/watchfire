@@ -443,6 +443,8 @@ func (s *agentService) StartAgent(_ context.Context, req *pb.StartAgentRequest) 
 			TaskTitle:        taskTitle,
 			TaskPrompt:       taskPrompt,
 			TaskSystemPrompt: taskSystemPrompt,
+			Rows:             int(req.Rows),
+			Cols:             int(req.Cols),
 		})
 		if err != nil {
 			return nil, err
@@ -475,6 +477,8 @@ func (s *agentService) StartAgent(_ context.Context, req *pb.StartAgentRequest) 
 			Mode:             mode,
 			TaskPrompt:       taskPrompt,
 			TaskSystemPrompt: taskSystemPrompt,
+			Rows:             int(req.Rows),
+			Cols:             int(req.Cols),
 		})
 		if err != nil {
 			return nil, err
@@ -504,6 +508,8 @@ func (s *agentService) StartAgent(_ context.Context, req *pb.StartAgentRequest) 
 			Mode:             mode,
 			TaskPrompt:       taskPrompt,
 			TaskSystemPrompt: taskSystemPrompt,
+			Rows:             int(req.Rows),
+			Cols:             int(req.Cols),
 		})
 		if err != nil {
 			return nil, err
@@ -534,6 +540,8 @@ func (s *agentService) StartAgent(_ context.Context, req *pb.StartAgentRequest) 
 		TaskTitle:        taskTitle,
 		TaskPrompt:       taskPrompt,
 		TaskSystemPrompt: taskSystemPrompt,
+		Rows:             int(req.Rows),
+		Cols:             int(req.Cols),
 	})
 	if err != nil {
 		return nil, err
@@ -556,7 +564,7 @@ func (s *agentService) StartAgent(_ context.Context, req *pb.StartAgentRequest) 
 }
 
 func (s *agentService) StopAgent(_ context.Context, req *pb.ProjectId) (*emptypb.Empty, error) {
-	if err := s.manager.StopAgent(req.ProjectId); err != nil {
+	if err := s.manager.StopAgentByUser(req.ProjectId); err != nil {
 		return nil, err
 	}
 	return &emptypb.Empty{}, nil
@@ -652,6 +660,21 @@ func (s *agentService) SubscribeScreen(req *pb.SubscribeScreenRequest, stream gr
 	ch := running.Process.SubscribeScreen(subID)
 	defer running.Process.UnsubscribeScreen(subID)
 
+	// Send initial snapshot so the TUI sees the current screen when connecting
+	if snapshot := running.Process.SnapshotScreen(); snapshot != nil {
+		if err := stream.Send(&pb.ScreenBuffer{
+			ProjectId:   snapshot.ProjectID,
+			Lines:       snapshot.Lines,
+			CursorRow:   int32(snapshot.CursorRow),
+			CursorCol:   int32(snapshot.CursorCol),
+			Rows:        int32(snapshot.Rows),
+			Cols:        int32(snapshot.Cols),
+			AnsiContent: snapshot.AnsiContent,
+		}); err != nil {
+			return err
+		}
+	}
+
 	for {
 		select {
 		case update, ok := <-ch:
@@ -659,12 +682,13 @@ func (s *agentService) SubscribeScreen(req *pb.SubscribeScreenRequest, stream gr
 				return nil
 			}
 			if err := stream.Send(&pb.ScreenBuffer{
-				ProjectId: update.ProjectID,
-				Lines:     update.Lines,
-				CursorRow: int32(update.CursorRow),
-				CursorCol: int32(update.CursorCol),
-				Rows:      int32(update.Rows),
-				Cols:      int32(update.Cols),
+				ProjectId:   update.ProjectID,
+				Lines:       update.Lines,
+				CursorRow:   int32(update.CursorRow),
+				CursorCol:   int32(update.CursorCol),
+				Rows:        int32(update.Rows),
+				Cols:        int32(update.Cols),
+				AnsiContent: update.AnsiContent,
 			}); err != nil {
 				return err
 			}
@@ -759,6 +783,57 @@ func (s *agentService) ResumeAgent(_ context.Context, req *pb.ProjectId) (*pb.Ag
 	}
 	running.Process.ClearIssue()
 	return buildAgentStatus(running), nil
+}
+
+// --- LogService ---
+
+type logService struct {
+	pb.UnimplementedLogServiceServer
+}
+
+func (s *logService) ListLogs(_ context.Context, req *pb.ListLogsRequest) (*pb.LogList, error) {
+	logs, err := config.ListLogs(req.ProjectId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list logs: %w", err)
+	}
+
+	list := &pb.LogList{Logs: make([]*pb.LogEntry, 0, len(logs))}
+	for _, l := range logs {
+		list.Logs = append(list.Logs, &pb.LogEntry{
+			LogId:         l.LogID,
+			ProjectId:     l.ProjectID,
+			TaskNumber:    int32(l.TaskNumber),
+			SessionNumber: int32(l.SessionNumber),
+			Agent:         l.Agent,
+			Mode:          l.Mode,
+			StartedAt:     l.StartedAt,
+			EndedAt:       l.EndedAt,
+			Status:        l.Status,
+		})
+	}
+	return list, nil
+}
+
+func (s *logService) GetLog(_ context.Context, req *pb.GetLogRequest) (*pb.LogContent, error) {
+	entry, content, err := config.ReadLog(req.ProjectId, req.LogId)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read log: %w", err)
+	}
+
+	return &pb.LogContent{
+		Entry: &pb.LogEntry{
+			LogId:         entry.LogID,
+			ProjectId:     entry.ProjectID,
+			TaskNumber:    int32(entry.TaskNumber),
+			SessionNumber: int32(entry.SessionNumber),
+			Agent:         entry.Agent,
+			Mode:          entry.Mode,
+			StartedAt:     entry.StartedAt,
+			EndedAt:       entry.EndedAt,
+			Status:        entry.Status,
+		},
+		Content: content,
+	}, nil
 }
 
 // ============================================================================

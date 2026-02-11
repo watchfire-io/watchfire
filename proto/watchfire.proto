@@ -194,6 +194,8 @@ message StartAgentRequest {
   string project_id = 2;
   string mode = 3;                              // "chat" | "task" | "start-all" | "wildfire"
   int32 task_number = 4;                        // Required for task/start-all modes
+  int32 rows = 5;                               // Initial PTY rows (0 = use default)
+  int32 cols = 6;                               // Initial PTY cols (0 = use default)
 }
 
 message ScreenBuffer {
@@ -203,6 +205,7 @@ message ScreenBuffer {
   int32 cursor_col = 4;
   int32 rows = 5;
   int32 cols = 6;
+  string ansi_content = 7;  // full screen as ANSI SGR text
 }
 
 message SubscribeScreenRequest {
@@ -290,6 +293,48 @@ service TaskService {
 service DaemonService {
   rpc GetStatus(google.protobuf.Empty) returns (DaemonStatus);
   rpc Shutdown(google.protobuf.Empty) returns (google.protobuf.Empty);
+}
+
+// LogService handles session log retrieval
+service LogService {
+  rpc ListLogs(ListLogsRequest) returns (LogList);
+  rpc GetLog(GetLogRequest) returns (LogContent);
+}
+
+// ============================================================================
+// Log Messages
+// ============================================================================
+
+message ListLogsRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+}
+
+message LogEntry {
+  string log_id = 1;
+  string project_id = 2;
+  int32 task_number = 3;
+  int32 session_number = 4;
+  string agent = 5;
+  string mode = 6;
+  string started_at = 7;
+  string ended_at = 8;
+  string status = 9;
+}
+
+message LogList {
+  repeated LogEntry logs = 1;
+}
+
+message GetLogRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+  string log_id = 3;
+}
+
+message LogContent {
+  LogEntry entry = 1;
+  string content = 2;
 }
 
 // AgentService handles agent lifecycle and terminal interaction

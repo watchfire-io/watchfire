@@ -3,6 +3,8 @@ package cli
 
 import (
 	"github.com/spf13/cobra"
+
+	"github.com/watchfire-io/watchfire/internal/tui"
 )
 
 var rootCmd = &cobra.Command{
@@ -10,6 +12,20 @@ var rootCmd = &cobra.Command{
 	Short: "Orchestrate coding agent sessions based on specs",
 	Long: `Watchfire orchestrates coding agent sessions based on task files.
 It manages multiple projects in parallel, with one active task per project.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		// No subcommand → launch TUI
+		projectPath, err := getProjectPath()
+		if err != nil {
+			return err
+		}
+
+		// Ensure daemon is running
+		if err := EnsureDaemon(); err != nil {
+			return err
+		}
+
+		return tui.Run(projectPath)
+	},
 }
 
 // Execute runs the CLI.

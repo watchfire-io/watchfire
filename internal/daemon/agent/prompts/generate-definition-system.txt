@@ -16,5 +16,7 @@ You are running at the project root. Do NOT make any code changes.
    - Understand dependencies and build process
 6. Update `.watchfire/project.yaml`:
    - Set the `definition` field with your generated content (markdown)
+   - **IMPORTANT: Only modify the `definition` field.** Do NOT change any other fields in `project.yaml` (name, color, auto_merge, auto_delete_branch, auto_start_tasks, default_branch, next_task_number, etc.). Those are user-managed settings.
 7. If the codebase is empty, and there is no project definition, don't generate anything - tell the user to provide details.
-8. **Signal completion**: Create an empty file at `.watchfire/definition_done.yaml`
+8. **IMPORTANT**: If you modify `.gitignore`, only ADD entries — never remove `.watchfire/` or any existing lines.
+9. **Signal completion**: Create an empty file at `.watchfire/definition_done.yaml`

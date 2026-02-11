@@ -68,6 +68,8 @@ The daemon is the backend brain of Watchfire. It manages multiple projects simul
 | **Robustness** | Handles create-then-rename pattern (common with AI tools) |
 | **Global watched** | `~/.watchfire/projects.yaml` |
 | **Per-project watched** | `.watchfire/project.yaml`, `.watchfire/tasks/*.yaml` |
+| **Re-watch on chain** | When agents chain (wildfire/start-all), project is re-watched to pick up directories created during earlier phases |
+| **Polling fallback** | Task-mode agents poll task YAML every 5s as safety net for missed watcher events (kqueue overflow, late directory creation) |
 | **Reaction** | File changes trigger real-time updates to connected clients |
 
 ### Git Worktree Management
@@ -78,6 +80,9 @@ The daemon is the backend brain of Watchfire. It manages multiple projects simul
 | **Branch naming** | `watchfire/<task_number>` (e.g., `watchfire/0001`) |
 | **Location** | Agent runs inside worktree, not main working tree |
 | **Completion** | On task completion, daemon merges worktree to target branch, deletes worktree |
+| **Stale branches** | If a branch already exists when creating a worktree, deletes it and recreates from current HEAD |
+| **Merge conflict** | On merge failure, runs `git merge --abort` to restore clean working directory |
+| **Chain stop** | Merge failure stops wildfire/start-all chaining (prevents cascading failures) |
 | **Pruning** | Periodically detects and cleans orphaned worktrees |
 
 ### Coding Agent Abstraction
@@ -152,16 +157,18 @@ sandbox-exec -f <profile> claude --dangerously-skip-permissions --append-system-
 3. Daemon spawns coding agent in sandboxed PTY (inside worktree)
 4. Daemon streams screen buffer to subscribed clients
 5. Agent updates task file when done (status: completed/failed)
-6. Daemon detects file change via fsnotify
+6. Daemon detects via fsnotify OR polling fallback (5s interval)
 7. Daemon kills agent (if still running)
 8. Daemon processes git rules (merge, delete worktree)
-9. Daemon starts next task (if queued)
+   - If merge conflicts → abort merge, stop chain
+9. Daemon starts next task (if queued and merge succeeded)
 ```
 
 | Scenario | Behavior |
 |----------|----------|
 | **Agent updates task file** | Daemon reacts, processes git, moves to next task |
 | **Agent crashes (PTY exits)** | Daemon detects, stops task |
+| **Watcher misses event** | Polling fallback detects task done within 5s, stops agent |
 
 ### Phase Completion Signals
 
@@ -289,7 +296,7 @@ The CLI/TUI is the primary interface for developers. A single binary (`watchfire
 
 ```
 ┌──────────────────────────────────────────────────────────────────────┐
-│ [project-name]  Tasks | Definitions | Settings         [Chat] [Logs]│
+│ ● project-name  Tasks | Definition | Settings    Chat | Logs  ● Idle│
 ├────────────────────────────────────────┬─────────────────────────────┤
 │  Task List                             │  Agent Terminal / Logs      │
 │                                        │                             │
@@ -306,9 +313,28 @@ The CLI/TUI is the primary interface for developers. A single binary (`watchfire
 │    #0006 Fix bug in auth         ✗     │                             │
 │                                        │                             │
 ├────────────────────────────────────────┴─────────────────────────────┤
-│ Ctrl+q quit  Ctrl+? help  Tab switch panel           a add  s start │
+│ Ctrl+q quit  Ctrl+h help  Tab switch panel           a add  s start │
 └──────────────────────────────────────────────────────────────────────┘
 ```
+
+**Header bar:**
+
+| Element | Position | Description |
+|---------|----------|-------------|
+| **Project dot** | Far left | Colored dot using `project.color` |
+| **Project name** | After dot | Project name from `project.yaml` |
+| **Left tabs** | Center-left | `Tasks`, `Definition`, `Settings` — active tab highlighted |
+| **Right tabs** | Center-right | `Chat`, `Logs` — active tab highlighted |
+| **Agent badge** | Far right | `● Idle`, `● Working`, `● Wildfire`, `⚠ Issue` |
+
+**Status bar:**
+
+| Element | Position | Description |
+|---------|----------|-------------|
+| **Key hints** | Left | Context-sensitive shortcuts for current focus/state |
+| **Connection status** | Right | `Connected` or `⚠ Disconnected` (with reconnect indicator) |
+
+**Panel divider:** Draggable with mouse to resize left/right split.
 
 **Left panel tabs:**
 
@@ -332,19 +358,24 @@ The CLI/TUI is the primary interface for developers. A single binary (`watchfire
 | `Tab` | Switch between left/right panels |
 | `j/k` or `↓/↑` | Move up/down in lists |
 | `h/l` or `←/→` | Switch tabs |
+| `1/2/3` | Switch left panel tabs (Tasks/Definition/Settings) |
 | `Enter` | Select/edit item |
+| `Esc` | Close overlay / cancel / go back |
+| `Ctrl+s` | Save in overlay forms |
 | `Mouse click` | Select item, switch panels/tabs |
 | `Mouse scroll` | Scroll lists and terminal |
 | `Ctrl+q` | Quit |
-| `Ctrl+?` or `Ctrl+h` | Help overlay |
+| `Ctrl+h` | Help overlay |
 
 **Task actions (when task list focused):**
 
 | Key | Action |
 |-----|--------|
 | `a` | Add new task |
-| `e` | Edit selected task |
+| `e` / `Enter` | Edit selected task |
 | `s` | Start task (move to Ready + start agent) |
+| `r` | Move task to Ready |
+| `t` | Move task to Draft |
 | `d` | Mark done |
 | `x` | Delete (soft) |
 
@@ -358,6 +389,346 @@ The CLI/TUI is the primary interface for developers. A single binary (`watchfire
 - Scroll support in all panels
 - Real-time updates from daemon
 - Type into agent terminal when Chat panel focused
+
+### TUI Architecture
+
+**Pattern:** Bubbletea Elm architecture (Model → Update → View).
+
+| Concept | Role |
+|---------|------|
+| **Model** | Application state: tasks, agent status, terminal buffer, focus, overlays |
+| **Update** | Processes messages (key events, mouse events, gRPC responses, window resize) → returns new model + commands |
+| **View** | Renders model to string using lipgloss styling → Bubbletea writes to terminal |
+
+**Component hierarchy:**
+
+```
+App (root model)
+├── Header              — project dot, name, tab selectors, agent badge
+├── LeftPanel
+│   ├── TaskList        — grouped task list with status sections
+│   ├── DefinitionView  — read-only viewport of project definition
+│   └── SettingsForm    — editable project settings fields
+├── RightPanel
+│   ├── Terminal        — raw PTY output viewport
+│   └── LogViewer       — log list + log content viewport
+├── StatusBar           — key hints, connection status
+└── Overlays
+    ├── HelpOverlay     — keybinding reference
+    ├── TaskAddForm     — title, prompt, criteria, status fields
+    ├── TaskEditForm    — edit existing task fields
+    └── ConfirmDialog   — inline y/n confirmation in status bar
+```
+
+**Message routing:** Global keybindings (Ctrl+q, Tab, Ctrl+h) are handled at root level first. If an overlay is active, it captures all remaining input. Otherwise, input routes to the focused panel.
+
+**Custom message types:**
+
+| Message | Source | Purpose |
+|---------|--------|---------|
+| `DaemonConnectedMsg` | Init command | Daemon gRPC connection established |
+| `DaemonDisconnectedMsg` | Connection monitor | Lost connection to daemon |
+| `ProjectLoadedMsg` | `GetProject` RPC | Project data loaded |
+| `TasksLoadedMsg` | `ListTasks` RPC | Task list refreshed |
+| `AgentStatusMsg` | `GetAgentStatus` RPC | Agent status polled |
+| `ScreenUpdateMsg` | `SubscribeScreen` stream | Pre-rendered ANSI screen from agent |
+| `AgentIssueMsg` | `SubscribeAgentIssues` stream | Auth/rate limit issue detected or cleared |
+| `TaskSavedMsg` | `CreateTask`/`UpdateTask` RPC | Task save confirmed |
+| `ProjectSavedMsg` | `UpdateProject` RPC | Settings/definition save confirmed |
+| `LogsLoadedMsg` | `ListLogs` RPC | Log list loaded |
+| `LogContentMsg` | `GetLog` RPC | Single log content loaded |
+| `ErrorMsg` | Any RPC | gRPC error to display |
+
+**Command pattern:** All gRPC calls are wrapped as `tea.Cmd` functions. Streaming RPCs (`SubscribeScreen`, `SubscribeAgentIssues`) run in goroutines that call `Program.Send()` to push messages back into the update loop.
+
+### TUI State Management
+
+| State | Source RPC | Cache Strategy |
+|-------|-----------|----------------|
+| **Project config** | `GetProject` | Load once on startup, refresh on `ProjectSavedMsg` |
+| **Task list** | `ListTasks` | Load on startup, refresh after any task mutation |
+| **Agent status** | `GetAgentStatus` | Poll every 2s while agent running |
+| **Terminal output** | `SubscribeScreen` | Pre-rendered ANSI screen snapshots (viewport displays latest) |
+| **Agent issues** | `SubscribeAgentIssues` | Latest issue held in model, cleared when issue resolves |
+| **Logs list** | `ListLogs` | Load on demand when Logs tab selected |
+| **Log content** | `GetLog` | Load on demand when log selected |
+
+**Note:** The TUI does NOT use the `Subscribe` event stream. That stream is designed for the GUI's multi-project view. The TUI is project-scoped and uses targeted RPCs: `SubscribeScreen` for pre-rendered ANSI content, `SubscribeAgentIssues` for issue notifications, and polling `GetAgentStatus` for agent state.
+
+### TUI gRPC Usage
+
+Full mapping of TUI actions to gRPC RPCs:
+
+| TUI Action | RPC | Service |
+|------------|-----|---------|
+| Load project | `GetProject` | ProjectService |
+| Save definition | `UpdateProject` | ProjectService |
+| Save settings | `UpdateProject` | ProjectService |
+| List tasks | `ListTasks` | TaskService |
+| Add task | `CreateTask` | TaskService |
+| Edit task | `UpdateTask` | TaskService |
+| Change task status | `UpdateTask` | TaskService |
+| Delete task | `DeleteTask` | TaskService |
+| Restore task | `RestoreTask` | TaskService |
+| Start agent | `StartAgent` | AgentService |
+| Stop agent | `StopAgent` | AgentService |
+| Poll agent status | `GetAgentStatus` | AgentService |
+| Stream terminal | `SubscribeScreen` | AgentService |
+| Send keystrokes | `SendInput` | AgentService |
+| Resize terminal | `Resize` | AgentService |
+| Stream issues | `SubscribeAgentIssues` | AgentService |
+| Clear issue | `ResumeAgent` | AgentService |
+| List logs | `ListLogs` | LogService |
+| View log | `GetLog` | LogService |
+| Check daemon | `GetStatus` | DaemonService |
+
+**Note:** The TUI uses `SubscribeScreen` (pre-rendered ANSI from vt10x), not `SubscribeRawOutput` (raw PTY bytes). Since Bubbletea's Elm architecture requires deterministic rendering via the `View()` method, raw bytes cannot be cleanly integrated — they would need a separate terminal emulator. Instead, the daemon's vt10x terminal emulates the PTY output and sends pre-rendered ANSI SGR text, which the TUI displays in a lipgloss viewport. `SubscribeRawOutput` is used by the CLI's direct-attach mode, where raw bytes can be written to stdout.
+
+### TUI Terminal Panel
+
+The right panel's Chat tab renders live agent output.
+
+**Rendering approach:** Pre-rendered ANSI screen snapshots arrive via `SubscribeScreen`. The daemon's vt10x terminal emulator parses raw PTY output and renders the visible screen as ANSI SGR text. The TUI stores the latest snapshot and displays it in a lipgloss viewport, fitting naturally into Bubbletea's Elm update/view cycle.
+
+| Aspect | Behavior |
+|--------|----------|
+| **Scrollback** | Viewport supports scrollback via mouse scroll and `PgUp`/`PgDn` when terminal focused |
+| **Input mode** | When Chat panel focused, all keystrokes sent to agent via `SendInput` RPC |
+| **Global shortcuts** | `Ctrl+q`, `Tab`, `Ctrl+h` intercepted before input reaches agent |
+| **Resize** | Right panel size change → `Resize` RPC (debounced 100ms) → daemon resizes PTY → agent receives SIGWINCH |
+| **Empty state** | "No agent running. Press `s` on a task to start." |
+| **Agent exited** | "Agent stopped." with last output visible in scrollback |
+| **Wildfire display** | Shows current phase badge above terminal: `Execute #0001`, `Refine`, `Generate` |
+
+### TUI Task Status Display
+
+| Internal Status | Display Label | Terminal Visual |
+|-----------------|---------------|-----------------|
+| `draft` | Draft | `[ ]` default style |
+| `ready` (no agent) | Ready | `[R]` highlighted |
+| `ready` (agent active) | Active | `[●]` animated spinner |
+| `done` (success: true) | Done | `[✓]` green |
+| `done` (success: false) | Failed | `[✗]` red |
+
+**Task list item format:**
+```
+[●] #0002 Implement login flow
+[R] #0007 Add search feature
+[ ] #0001 Setup project structure
+[✓] #0003 Create database schema
+[✗] #0006 Fix bug in auth
+```
+
+Tasks are grouped by status section (Draft, Ready, Done) with section headers showing count.
+
+### TUI Agent Issue Display
+
+Agent issues (auth errors, rate limits) appear as colored banners above the terminal viewport in the right panel.
+
+| Issue Type | Banner Color | Banner Text | Recovery Action |
+|------------|-------------|-------------|-----------------|
+| `auth_required` | Yellow | `⚠ Authentication required — switch to Chat and run /login` | User switches to terminal, runs `/login` in agent |
+| `rate_limited` | Yellow | `⚠ Rate limited — resets at {time}` | Wait for reset, or press `R` to resume (`ResumeAgent` RPC) |
+| (cleared) | (none) | Banner removed | Automatic on issue clear |
+
+The agent badge in the header also changes to `⚠ Issue` when an issue is active.
+
+### TUI Definition Editor
+
+The Definition tab displays the project definition text.
+
+| Aspect | Behavior |
+|--------|----------|
+| **Display** | Read-only `bubbles/viewport` showing definition markdown as plain text |
+| **Edit** | Press `e` or `Enter` → launches `$EDITOR` via `tea.ExecProcess` |
+| **Suspend/resume** | TUI suspends (Bubbletea gives up terminal), external editor takes over, TUI resumes when editor exits |
+| **Save** | On editor exit, TUI reads temp file content, calls `UpdateProject` RPC with new definition |
+| **Pattern** | Same approach as existing CLI `definition.go` — external editor for multiline content |
+
+### TUI Settings View
+
+The Settings tab shows an inline form for project configuration.
+
+| Field | Type | Maps To |
+|-------|------|---------|
+| **Name** | Text input | `project.name` |
+| **Color** | Text input (hex) | `project.color` |
+| **Default branch** | Text input | `project.default_branch` |
+| **Auto-merge** | Toggle (on/off) | `project.auto_merge` |
+| **Auto-delete branch** | Toggle (on/off) | `project.auto_delete_branch` |
+| **Auto-start tasks** | Toggle (on/off) | `project.auto_start_tasks` |
+
+**Navigation:** `j/k` moves between fields. `Enter` or `Space` edits text fields or toggles booleans. Changes saved immediately via `UpdateProject` RPC. Brief "Saved" indicator shown in status bar on success.
+
+### TUI Logs Tab
+
+The right panel's Logs tab shows past agent session logs.
+
+| Aspect | Behavior |
+|--------|----------|
+| **List view** | `bubbles/list` showing log entries, newest first |
+| **Entry format** | `Task #0001 — Session 2 — 2026-02-03 14:30 (completed)` or `Chat — Session 1 — ...` |
+| **View log** | `Enter` on entry → switches to `bubbles/viewport` showing log content |
+| **Back** | `Esc` returns to log list |
+| **Loading** | Logs loaded on demand: `ListLogs` RPC when tab selected, `GetLog` RPC when entry opened |
+
+### TUI Overlays & Modals
+
+Overlays render on top of the main layout and capture all input until dismissed.
+
+**Architecture:** Root model has an `activeOverlay` field. When set, the view function renders the overlay on top, and the update function routes all input to the overlay first.
+
+| Overlay | Trigger | Fields / Content | Dismiss |
+|---------|---------|------------------|---------|
+| **Help** | `Ctrl+h` | Keybinding reference table | `Esc` or `Ctrl+h` |
+| **Add Task** | `a` (task list focused) | Title (text), Prompt (textarea), Criteria (textarea), Status (draft/ready) | `Ctrl+s` saves, `Esc` cancels |
+| **Edit Task** | `e` or `Enter` (task list focused) | Same fields as Add, pre-filled | `Ctrl+s` saves, `Esc` cancels |
+| **Confirm Delete** | `x` (task list focused) | Inline in status bar: `Delete task #0001? (y/n)` | `y` confirms, `n` or `Esc` cancels |
+| **Quit Confirm** | `Ctrl+q` (if agent running) | Inline in status bar: `Agent running. Quit? (y/n)` | `y` quits, `n` or `Esc` cancels |
+
+**Multiline fields** (Prompt, Acceptance Criteria) use `bubbles/textarea`. Submit with `Ctrl+s`, cancel with `Esc`. `Tab` in textarea inserts a tab character (panel switching disabled while overlay active).
+
+### TUI Header & Status Bar
+
+**Header format:**
+```
+● project-name  Tasks | Definition | Settings    Chat | Logs  ● Working
+```
+
+| Element | Description |
+|---------|-------------|
+| **Project dot** | Circle in project's configured color |
+| **Project name** | From `project.yaml` |
+| **Left tabs** | Active tab is bold/highlighted, inactive is dimmed |
+| **Right tabs** | Same styling as left tabs |
+| **Agent badge** | Current agent state (see below) |
+
+**Agent badge states:**
+
+| State | Badge |
+|-------|-------|
+| No agent | `● Idle` (dim) |
+| Agent running (task) | `● Task #0001` (green) |
+| Agent running (chat) | `● Chat` (green) |
+| Agent running (wildfire) | `● Wildfire` (orange) |
+| Agent issue | `⚠ Issue` (yellow) |
+
+**Status bar key hints by context:**
+
+| Context | Key Hints |
+|---------|-----------|
+| Task list | `Ctrl+q quit  Ctrl+h help  Tab switch  a add  e edit  s start  r ready  d done  x delete` |
+| Terminal | `Ctrl+q quit  Ctrl+h help  Tab switch  (input goes to agent)` |
+| Definition | `Ctrl+q quit  Ctrl+h help  Tab switch  e edit  (opens $EDITOR)` |
+| Settings | `Ctrl+q quit  Ctrl+h help  Tab switch  j/k navigate  Enter edit  Space toggle` |
+| Overlay | `Ctrl+s save  Esc cancel` |
+
+### TUI Focus Management
+
+The TUI has two focus zones: left panel and right panel.
+
+| Aspect | Behavior |
+|--------|----------|
+| **Switch focus** | `Tab` toggles between left and right panel |
+| **Visual indicator** | Focused panel has highlighted/bright border, unfocused panel has dimmed border |
+| **Mouse click** | Clicking inside a panel focuses it; clicking a tab switches to that tab |
+| **Chat focus** | When Chat (right panel) is focused, all input routes to agent via `SendInput` except global shortcuts (`Ctrl+q`, `Tab`, `Ctrl+h`) |
+| **Left panel focus** | Single-letter shortcuts (`a`, `e`, `s`, `r`, `t`, `d`, `x`) active only when left panel focused |
+| **Tab switching** | `1/2/3` switches left panel tabs, `h/l` or `←/→` switches tabs in focused panel |
+
+### TUI Resize Behavior
+
+| Aspect | Behavior |
+|--------|----------|
+| **Window resize** | `tea.WindowSizeMsg` → recalculate panel dimensions → propagate to all children |
+| **Default split** | 40% left / 60% right |
+| **Draggable divider** | Mouse drag on divider adjusts split ratio |
+| **Minimum terminal size** | 80 columns × 24 rows. Below this, display "Terminal too small" message |
+| **Agent resize** | Right panel dimension change → `Resize` RPC (debounced 100ms) → daemon resizes PTY |
+
+### TUI Styling
+
+| Element | Color / Style |
+|---------|---------------|
+| **Focused border** | Bright white or project color |
+| **Unfocused border** | Dim gray |
+| **Active tab** | Bold, underlined |
+| **Inactive tab** | Dim |
+| **Task: draft** | Default foreground |
+| **Task: ready** | Cyan/blue |
+| **Task: active (agent)** | Green with spinner |
+| **Task: done (success)** | Green |
+| **Task: done (failed)** | Red |
+| **Issue banner** | Yellow background, dark text |
+| **Status bar** | Inverted (light text on dark background) |
+| **Header** | Bold project name, styled tabs |
+
+**Color approach:** ANSI 256 colors (not true color) for broad terminal compatibility. Use `lipgloss.AdaptiveColor` to provide both light and dark terminal variants for each color.
+
+### TUI Startup Flow
+
+Step-by-step sequence when `watchfire` is invoked with no arguments:
+
+```
+1. Cobra detects no subcommand → launches Bubbletea program
+2. Init() returns startup commands:
+   a. Check/start daemon (read daemon.yaml, verify PID, start if needed)
+   b. Connect to daemon via gRPC
+3. On DaemonConnectedMsg:
+   a. Load project (GetProject RPC)
+   b. Load tasks (ListTasks RPC)
+   c. Check agent status (GetAgentStatus RPC)
+4. On data loaded:
+   a. If agent running → subscribe to SubscribeRawOutput + SubscribeAgentIssues
+   b. If no agent → auto-start chat session (StartAgent RPC, mode=chat)
+5. Render initial view
+6. Enter main update/view loop
+```
+
+**Auto-reconnect:** If daemon connection drops, TUI shows "Disconnected" in status bar and attempts reconnection every 3 seconds. On reconnect, reloads project/tasks and resubscribes to streams.
+
+### TUI Error States
+
+| Error | Display | Recovery |
+|-------|---------|----------|
+| **Daemon not running** | "Starting daemon..." progress in center | Auto-start daemon, retry connection |
+| **Connection lost** | "⚠ Disconnected" in status bar | Auto-reconnect every 3s |
+| **Daemon shut down** | "Daemon shut down. Press any key to exit." | Exit TUI |
+| **Agent crashed** | "Agent stopped unexpectedly." in terminal panel | User restarts via `s` |
+| **Project not found** | "Not a Watchfire project. Run `watchfire init` first." → exit | User runs `watchfire init` |
+| **gRPC error** | Brief error flash in status bar (3s) | Automatic retry for transient errors |
+| **Git not found** | "Git is required. Install git and try again." → exit | User installs git |
+| **Agent binary missing** | "Claude Code not found. Configure path in settings." → exit | User configures agent path |
+
+### TUI v1 Scope
+
+**Included:**
+- Split-view layout (left panel + right panel)
+- Task CRUD with full status transitions (draft ↔ ready → done)
+- Agent terminal streaming via raw PTY bytes
+- Agent start/stop (chat, task, start-all, wildfire modes)
+- Wildfire phase display in terminal panel
+- Project definition editing via external `$EDITOR`
+- Settings form with inline editing
+- Help overlay with keybinding reference
+- Issue banners (auth required, rate limited) with recovery actions
+- Mouse support (click, scroll, drag divider)
+- Keyboard navigation (vim-style + arrows)
+- Context-sensitive status bar with key hints
+- Connection status with auto-reconnect
+- Log list and log viewer
+
+**Excluded (future):**
+- Inline definition editor (always uses `$EDITOR` in v1)
+- Task drag-to-reorder
+- Trash tab (soft-deleted tasks managed via CLI commands)
+- Branch management tab
+- Log deletion from TUI
+- Task search/filter
+- Multi-project switching
+- Theme customization
+- Notifications
+- Split terminal (multiple agents visible)
 
 ### Task Work Order
 
@@ -1202,20 +1573,25 @@ Each phase is a separate agent process. The daemon manages all transitions.
 
 #### C6: TUI Interaction
 
+**Startup:** See "TUI Startup Flow" subsection for the full step-by-step sequence (Cobra → Bubbletea → daemon connect → load data → subscribe/auto-start → render).
+
 **Layout:**
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│ [project-name]  Tasks | Definitions | Settings       [Chat] │
+│ ● project-name  Tasks | Definition | Settings  Chat | Logs │
 ├────────────────────────────────┬────────────────────────────┤
 │  LEFT PANEL                    │  RIGHT PANEL               │
-│  (Task list / Definitions /    │  (Agent terminal)          │
-│   Settings)                    │                            │
+│  (Task list / Definition /     │  (Agent terminal +         │
+│   Settings)                    │   issue banners)           │
 └────────────────────────────────┴────────────────────────────┘
 ```
 
 **On TUI open:**
-- If agent running → attach, show current state + stream
+- If agent running → attach, show current state + stream via `SubscribeRawOutput`
 - If no agent → auto-start chat session
+- Subscribe to `SubscribeAgentIssues` for auth/rate limit banners
+
+**Auto-reconnect:** If daemon connection drops, status bar shows "⚠ Disconnected" and TUI retries every 3s. On reconnect, reloads project/tasks and resubscribes to streams.
 
 **Global shortcuts:**
 
@@ -1240,7 +1616,8 @@ Each phase is a separate agent process. The daemon manages all transitions.
 | `1/2/3` | Switch tabs |
 
 **Right panel — Chat:**
-- All input goes to agent
+- All input goes to agent (except global shortcuts)
+- Issue banners (auth, rate limit) appear above terminal viewport when active
 - Ctrl+C detaches (task/wildfire) or stops (chat)
 - Mouse scroll for scrollback
 

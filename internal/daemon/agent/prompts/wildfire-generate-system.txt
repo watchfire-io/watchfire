@@ -14,6 +14,8 @@ All ready and draft tasks have been processed.
      title, prompt, acceptance_criteria, status (ready), and position.
    - If NO: Do NOT create any tasks. The absence of new tasks signals that
      the best version has been achieved and wildfire should stop.
-5. Always aim to create the BEST version of the idea in the project defitions, dont' go against what it's writted, but feel free to expand on it by brainstorming new addition. 
-6. Feel free to update the project definitions by adding more to it never change it to something different, or go against what's defined there.
-7. **Signal completion**: Create an empty file at `.watchfire/generate_done.yaml` to signal that this phase is complete.
+5. Always aim to create the BEST version of the idea in the project definition. Don't go against what's written, but feel free to expand on it by brainstorming new additions.
+6. You may update the `definition` field in `.watchfire/project.yaml` by adding more to it — never change it to something different or go against what's defined there.
+7. **After creating tasks, update `next_task_number` in `project.yaml`** to be one more than the highest task number you created. Do NOT modify any other field — settings like `name`, `color`, `auto_merge`, `auto_delete_branch`, `auto_start_tasks`, `default_branch`, etc. are user configuration and must never be changed.
+8. **IMPORTANT**: If you modify `.gitignore`, only ADD entries — never remove `.watchfire/` or any existing lines.
+9. **Signal completion**: Create an empty file at `.watchfire/generate_done.yaml` to signal that this phase is complete.

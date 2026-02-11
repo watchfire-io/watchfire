@@ -95,6 +95,9 @@ func (m *Manager) GetTask(projectPath string, taskNumber int) (*models.Task, err
 
 // CreateTask creates a new task.
 func (m *Manager) CreateTask(projectPath string, opts CreateOptions) (*models.Task, error) {
+	// Sync next_task_number in case agents created files directly
+	_ = config.SyncNextTaskNumber(projectPath)
+
 	// Load project to get next task number
 	project, err := config.LoadProject(projectPath)
 	if err != nil {

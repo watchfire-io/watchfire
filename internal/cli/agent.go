@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"sync"
 	"syscall"
 	"time"
 
@@ -209,18 +210,31 @@ func runAgentAttach(projectPath, mode string, taskNumber int32) error {
 		}
 	}()
 
-	// Handle SIGINT — forward Ctrl+C to agent process
+	// userStopped tracks whether the user explicitly stopped the agent (Ctrl+C / SIGINT)
+	// in wildfire/start-all modes, so the CLI can break out of the re-subscribe loop.
+	isChaining := mode == "wildfire" || mode == "start-all"
+	userStopped := make(chan struct{})
+	var userStoppedOnce sync.Once
+
+	// Handle SIGINT
 	sigintCh := make(chan os.Signal, 1)
 	signal.Notify(sigintCh, syscall.SIGINT)
 	go func() {
 		<-sigintCh
-		_, _ = client.SendInput(ctx, &pb.SendInputRequest{
-			ProjectId: project.ProjectID,
-			Data:      []byte{3}, // Ctrl+C
-		})
+		if isChaining {
+			userStoppedOnce.Do(func() { close(userStopped) })
+			_, _ = client.StopAgent(ctx, &pb.ProjectId{ProjectId: project.ProjectID})
+		} else {
+			_, _ = client.SendInput(ctx, &pb.SendInputRequest{
+				ProjectId: project.ProjectID,
+				Data:      []byte{3}, // Ctrl+C
+			})
+		}
 	}()
 
-	// Input goroutine: read from stdin and send to agent
+	// Input goroutine: read from stdin and send to agent.
+	// In wildfire/start-all modes, intercept Ctrl+C (byte 0x03) to trigger a user stop
+	// instead of forwarding it to the agent.
 	go func() {
 		buf := make([]byte, 1024)
 		for {
@@ -228,6 +242,14 @@ func runAgentAttach(projectPath, mode string, taskNumber int32) error {
 			if n > 0 {
 				data := make([]byte, n)
 				copy(data, buf[:n])
+
+				// In chaining modes, intercept lone Ctrl+C byte
+				if isChaining && n == 1 && data[0] == 3 {
+					userStoppedOnce.Do(func() { close(userStopped) })
+					_, _ = client.StopAgent(ctx, &pb.ProjectId{ProjectId: project.ProjectID})
+					return
+				}
+
 				_, sendErr := client.SendInput(ctx, &pb.SendInputRequest{
 					ProjectId: project.ProjectID,
 					Data:      data,
@@ -254,7 +276,23 @@ func runAgentAttach(projectPath, mode string, taskNumber int32) error {
 			}
 
 			// Non-chaining modes: done
-			if mode != "wildfire" && mode != "start-all" {
+			if !isChaining {
+				break
+			}
+
+			// If user explicitly stopped, don't wait for next task
+			stopped := false
+			select {
+			case <-userStopped:
+				stopped = true
+			default:
+			}
+			if stopped {
+				if mode == "wildfire" {
+					os.Stdout.Write([]byte("\r\n--- 🔥 Wildfire stopped by user ---\r\n"))
+				} else {
+					os.Stdout.Write([]byte("\r\n--- Start-all stopped by user ---\r\n"))
+				}
 				break
 			}
 
@@ -264,6 +302,17 @@ func runAgentAttach(projectPath, mode string, taskNumber int32) error {
 			nextRunning := false
 			for i := 0; i < 25; i++ { // up to 5s at 200ms intervals
 				time.Sleep(200 * time.Millisecond)
+
+				// Check if user stopped during polling
+				select {
+				case <-userStopped:
+					stopped = true
+				default:
+				}
+				if stopped {
+					break
+				}
+
 				agentStatus, err := client.GetAgentStatus(ctx, &pb.ProjectId{
 					ProjectId: project.ProjectID,
 				})
@@ -292,6 +341,15 @@ func runAgentAttach(projectPath, mode string, taskNumber int32) error {
 					nextRunning = true
 					break
 				}
+			}
+
+			if stopped {
+				if mode == "wildfire" {
+					os.Stdout.Write([]byte("\r\n--- 🔥 Wildfire stopped by user ---\r\n"))
+				} else {
+					os.Stdout.Write([]byte("\r\n--- Start-all stopped by user ---\r\n"))
+				}
+				break
 			}
 
 			if !nextRunning {

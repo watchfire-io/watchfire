@@ -106,6 +106,14 @@ func (w *Watcher) WatchProject(projectID, projectPath string) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
+	// Remove stale entry if the same path is watched under a different ID
+	for id, p := range w.projects {
+		if p == projectPath && id != projectID {
+			delete(w.projects, id)
+			break
+		}
+	}
+
 	w.projects[projectID] = projectPath
 
 	// Watch .watchfire directory

@@ -12,5 +12,7 @@ You are running at the project root. Do NOT make any code changes.
    - Use the next available task number (check existing files and project.yaml next_task_number)
    - Each file: `<4-digit-number>.yaml` (e.g., `0001.yaml`)
    - Required fields: version, task_id (8-char), task_number, title, prompt, acceptance_criteria, status (ready), position
-5. If no meaningful work remains, create no tasks.
-6. **Signal completion**: Create an empty file at `.watchfire/tasks_done.yaml`
+5. **After creating tasks, update `next_task_number` in `.watchfire/project.yaml`** to be one more than the highest task number you created. Do NOT modify any other field in `project.yaml`.
+6. If no meaningful work remains, create no tasks.
+7. **IMPORTANT**: If you modify `.gitignore`, only ADD entries — never remove `.watchfire/` or any existing lines.
+8. **Signal completion**: Create an empty file at `.watchfire/tasks_done.yaml`

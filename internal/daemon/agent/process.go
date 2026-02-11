@@ -17,12 +17,13 @@ import (
 
 // ScreenUpdate represents a parsed terminal screen state.
 type ScreenUpdate struct {
-	ProjectID string
-	Lines     []string
-	CursorRow int
-	CursorCol int
-	Rows      int
-	Cols      int
+	ProjectID   string
+	Lines       []string
+	CursorRow   int
+	CursorCol   int
+	Rows        int
+	Cols        int
+	AnsiContent string
 }
 
 // ProcessOptions contains options for creating a new agent process.
@@ -44,7 +45,8 @@ type Process struct {
 	rows, cols int
 	done       chan struct{}
 	exitErr    error
-	sandboxTmp string
+	sandboxTmp  string
+	cleanupOnce sync.Once
 
 	subMu      sync.RWMutex
 	rawSubs    map[string]chan []byte
@@ -52,12 +54,14 @@ type Process struct {
 
 	scrollMu   sync.RWMutex
 	scrollback []string
+	startedAt  time.Time
 
 	// Issue detection
-	issueMu    sync.RWMutex
-	issue      *AgentIssue
-	issueSubs  map[string]chan *AgentIssue
-	lineBuffer strings.Builder // Accumulate partial lines for detection
+	issueMu        sync.RWMutex
+	issue          *AgentIssue
+	issueSubs      map[string]chan *AgentIssue
+	lineBuffer     strings.Builder // Accumulate partial lines for detection
+	cleanLineCount int             // Non-issue lines seen since last issue
 }
 
 // NewProcess creates and starts a new agent process with PTY and vt10x terminal emulation.
@@ -96,6 +100,7 @@ func NewProcess(opts ProcessOptions) (*Process, error) {
 		rawSubs:    make(map[string]chan []byte),
 		screenSubs: make(map[string]chan *ScreenUpdate),
 		scrollback: make([]string, 0, 1024),
+		startedAt:  time.Now().UTC(),
 		issueSubs:  make(map[string]chan *AgentIssue),
 	}
 
@@ -163,12 +168,159 @@ func (p *Process) snapshotScreen() *ScreenUpdate {
 	cur := p.vt.Cursor()
 
 	return &ScreenUpdate{
-		ProjectID: p.projectID,
-		Lines:     lines,
-		CursorRow: cur.Y,
-		CursorCol: cur.X,
-		Rows:      rows,
-		Cols:      cols,
+		ProjectID:   p.projectID,
+		Lines:       lines,
+		CursorRow:   cur.Y,
+		CursorCol:   cur.X,
+		Rows:        rows,
+		Cols:        cols,
+		AnsiContent: p.renderScreenANSI(rows, cols),
+	}
+}
+
+// SnapshotScreen returns the current screen state (exported for initial snapshot on subscribe).
+func (p *Process) SnapshotScreen() *ScreenUpdate {
+	return p.snapshotScreen()
+}
+
+// vt10x attr constants (unexported in the package).
+const (
+	vtAttrReverse   = 1
+	vtAttrUnderline = 2
+	vtAttrBold      = 4
+	vtAttrItalic    = 16
+)
+
+// renderScreenANSI iterates over the vt10x cell grid and emits ANSI SGR-colored text.
+// Trailing default-color spaces are stripped to avoid overflowing the viewport.
+func (p *Process) renderScreenANSI(rows, cols int) string {
+	var sb strings.Builder
+	sb.Grow(cols * rows * 3)
+
+	for row := 0; row < rows; row++ {
+		if row > 0 {
+			sb.WriteByte('\n')
+		}
+
+		// Find last significant column (non-space or non-default attributes)
+		lastCol := cols - 1
+		for lastCol >= 0 {
+			g := p.vt.Cell(lastCol, row)
+			ch := g.Char
+			if ch == 0 {
+				ch = ' '
+			}
+			if ch != ' ' || g.FG != vt10x.DefaultFG || g.BG != vt10x.DefaultBG || g.Mode != 0 {
+				break
+			}
+			lastCol--
+		}
+
+		var lastFG vt10x.Color = vt10x.DefaultFG
+		var lastBG vt10x.Color = vt10x.DefaultBG
+		var lastBold, lastItalic, lastUnderline, lastReverse bool
+		inSGR := false
+
+		for col := 0; col <= lastCol; col++ {
+			g := p.vt.Cell(col, row)
+
+			ch := g.Char
+			if ch == 0 {
+				ch = ' '
+			}
+
+			fg := g.FG
+			bg := g.BG
+			bold := g.Mode&vtAttrBold != 0
+			italic := g.Mode&vtAttrItalic != 0
+			underline := g.Mode&vtAttrUnderline != 0
+			reverse := g.Mode&vtAttrReverse != 0
+
+			if fg != lastFG || bg != lastBG || bold != lastBold || italic != lastItalic || underline != lastUnderline || reverse != lastReverse {
+				sb.WriteString("\033[0")
+
+				if bold {
+					sb.WriteString(";1")
+				}
+				if italic {
+					sb.WriteString(";3")
+				}
+				if underline {
+					sb.WriteString(";4")
+				}
+				if reverse {
+					sb.WriteString(";7")
+				}
+
+				if fg != vt10x.DefaultFG {
+					writeSGRColor(&sb, fg, true)
+				}
+				if bg != vt10x.DefaultBG {
+					writeSGRColor(&sb, bg, false)
+				}
+
+				sb.WriteByte('m')
+				inSGR = true
+
+				lastFG = fg
+				lastBG = bg
+				lastBold = bold
+				lastItalic = italic
+				lastUnderline = underline
+				lastReverse = reverse
+			}
+
+			sb.WriteRune(ch)
+		}
+
+		if inSGR {
+			sb.WriteString("\033[0m")
+		}
+	}
+
+	return sb.String()
+}
+
+// writeSGRColor writes an SGR color parameter for the given vt10x color.
+func writeSGRColor(sb *strings.Builder, c vt10x.Color, isFG bool) {
+	idx := uint32(c)
+
+	// Sentinel values (DefaultFG, DefaultBG, DefaultCursor) have bit 24 set — skip
+	if idx >= 1<<24 {
+		return
+	}
+
+	if idx < 8 {
+		// Standard ANSI 0-7
+		if isFG {
+			fmt.Fprintf(sb, ";%d", 30+idx)
+		} else {
+			fmt.Fprintf(sb, ";%d", 40+idx)
+		}
+	} else if idx < 16 {
+		// Bright ANSI 8-15
+		if isFG {
+			fmt.Fprintf(sb, ";%d", 90+idx-8)
+		} else {
+			fmt.Fprintf(sb, ";%d", 100+idx-8)
+		}
+	} else if idx < 256 {
+		// 256-color palette
+		if isFG {
+			fmt.Fprintf(sb, ";38;5;%d", idx)
+		} else {
+			fmt.Fprintf(sb, ";48;5;%d", idx)
+		}
+	} else {
+		// 24-bit RGB: value is r<<16 | g<<8 | b
+		r := (idx >> 16) & 0xFF
+		g := (idx >> 8) & 0xFF
+		b := idx & 0xFF
+		if isFG {
+			fmt.Fprintf(sb, ";38;2;%d;%d;%d", r, g, b)
+		} else {
+			fmt.Fprintf(sb, ";48;2;%d;%d;%d", r, g, b)
+		}
 	}
 }
 
@@ -208,7 +360,7 @@ func (p *Process) Stop() {
 	// Wait up to 5 seconds for graceful exit
 	select {
 	case <-p.done:
-		p.cleanup()
+		p.Cleanup()
 		return
 	case <-time.After(5 * time.Second):
 	}
@@ -216,17 +368,20 @@ func (p *Process) Stop() {
 	// Force kill
 	_ = p.cmd.Process.Kill()
 	<-p.done
-	p.cleanup()
+	p.Cleanup()
 }
 
-// cleanup removes temp files after process exit.
-func (p *Process) cleanup() {
-	if p.ptyFile != nil {
-		p.ptyFile.Close()
-	}
-	if p.sandboxTmp != "" {
-		os.Remove(p.sandboxTmp)
-	}
+// Cleanup releases process resources (PTY file, sandbox temp file).
+// Safe to call multiple times — only runs once.
+func (p *Process) Cleanup() {
+	p.cleanupOnce.Do(func() {
+		if p.ptyFile != nil {
+			_ = p.ptyFile.Close()
+		}
+		if p.sandboxTmp != "" {
+			_ = os.Remove(p.sandboxTmp)
+		}
+	})
 }
 
 // Done returns a channel that is closed when the process exits.
@@ -344,6 +499,21 @@ func (p *Process) GetScrollback(offset, limit int) ([]string, int) {
 	return result, total
 }
 
+// GetFullScrollback returns all scrollback lines.
+func (p *Process) GetFullScrollback() []string {
+	p.scrollMu.RLock()
+	defer p.scrollMu.RUnlock()
+
+	result := make([]string, len(p.scrollback))
+	copy(result, p.scrollback)
+	return result
+}
+
+// StartedAt returns when the process was created.
+func (p *Process) StartedAt() time.Time {
+	return p.startedAt
+}
+
 // TerminalSize returns the current terminal dimensions.
 func (p *Process) TerminalSize() (rows, cols int) {
 	p.mu.RLock()
@@ -387,16 +557,36 @@ func (p *Process) detectIssues(data []byte) {
 	}
 
 	// Check each complete line for issues
+	hasNonEmpty := false
 	for _, line := range lines {
 		// Strip ANSI escape codes for cleaner matching
 		cleanLine := stripANSI(line)
 		if cleanLine == "" {
 			continue
 		}
+		hasNonEmpty = true
 
 		if issue := DetectIssue(cleanLine); issue != nil {
+			p.cleanLineCount = 0
 			p.setIssueLocked(issue)
 			return // Only report first issue found
+		}
+	}
+
+	// Auto-clear: if we have an active issue and see enough normal output,
+	// the agent has resumed working — clear the issue banner.
+	if hasNonEmpty && p.issue != nil {
+		p.cleanLineCount++
+		if p.cleanLineCount >= 3 {
+			p.logf("Issue auto-cleared after %d clean line batches", p.cleanLineCount)
+			p.cleanLineCount = 0
+			p.issue = nil
+			for _, ch := range p.issueSubs {
+				select {
+				case ch <- nil:
+				default:
+				}
+			}
 		}
 	}
 }

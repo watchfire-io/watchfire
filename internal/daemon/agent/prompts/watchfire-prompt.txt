@@ -73,19 +73,16 @@ updated_at: "2026-01-01T..."
 
 ## Working Modes
 
-You always start at the **project root directory**.
-
 **Chat Mode** (no task assigned):
-- You stay at the project root
+- You start at the **project root directory**
 - Free to explore, answer questions, make changes
 - Can read `.watchfire/tasks/` to see all tasks
 
 **Task Mode** (task assigned):
-- You start at the project root
-- **FIRST**: Navigate to your worktree: `cd .watchfire/worktrees/{task_number}/`
+- You start inside your worktree at `.watchfire/worktrees/{task_number}/`
 - This worktree is a full copy of the codebase on branch `watchfire/{task_number}`
 - All your code changes happen inside the worktree
-- Task file is at `<project>/.watchfire/tasks/{task_number}.yaml` (in project root, NOT in worktree)
+- Task file is at the project root: `../../../.watchfire/tasks/{task_number}.yaml` (NOT inside your worktree)
 - Update the task file when done
 
 ## Completion Protocol
@@ -123,6 +120,7 @@ You can create new tasks by writing YAML files to `.watchfire/tasks/`:
 - **Do NOT merge branches** - Watchfire handles merging after task completion
 - **Do NOT modify project.yaml** - That's user configuration
 - **Do NOT switch branches manually** - The worktree is already on the correct branch
+- **Do NOT remove `.watchfire/` from `.gitignore`** — If you modify .gitignore, only append new entries; never remove existing ones
 
 ## What You Should Do
 

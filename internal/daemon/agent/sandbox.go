@@ -54,7 +54,7 @@ const profileTemplate = `(version 1)
 (allow file-write* (subpath "%s/.rustup"))
 
 ; PROTECTED - Block writes even in project
-(deny file-write* (regex #"\.env.*"))
+(deny file-write* (regex #"/\.env($|[^/]*)"))
 (deny file-write* (subpath "%s/.git/hooks"))
 
 ; NETWORK, DEVICES, PROCESS, IPC
@@ -63,6 +63,8 @@ const profileTemplate = `(version 1)
 (allow file-write* (subpath "/dev"))
 (allow process-exec*)
 (allow process-fork)
+(allow process-info*)
+(allow signal)
 (allow mach*)
 (allow sysctl*)
 (allow ipc*)
@@ -70,8 +72,9 @@ const profileTemplate = `(version 1)
 `
 
 // GenerateProfile generates a macOS sandbox-exec profile for the given home and project directories.
-func GenerateProfile(homeDir, projectDir string) string {
-	return fmt.Sprintf(profileTemplate,
+// If trace is true, a (trace ...) directive is prepended to log denied operations for debugging.
+func GenerateProfile(homeDir, projectDir string, trace bool) string {
+	profile := fmt.Sprintf(profileTemplate,
 		// DENY sensitive credential paths (5 args: homeDir)
 		homeDir, homeDir, homeDir, homeDir, homeDir,
 		// DENY protected user folders (6 args: homeDir)
@@ -85,12 +88,18 @@ func GenerateProfile(homeDir, projectDir string) string {
 		// PROTECTED - .git/hooks (1 arg: projectDir)
 		projectDir,
 	)
+	if trace {
+		profile = "(trace \"/tmp/watchfire-sandbox-trace.sb\")\n" + profile
+	}
+	return profile
 }
 
 // SpawnSandboxed creates an exec.Cmd that runs the given command inside a macOS sandbox.
 // The caller is responsible for starting the process (e.g. via PTY).
+// Set WATCHFIRE_SANDBOX_TRACE=1 to enable trace logging of denied operations to /tmp/watchfire-sandbox-trace.sb.
 func SpawnSandboxed(homeDir, projectDir, command string, args ...string) (*exec.Cmd, string, error) {
-	profile := GenerateProfile(homeDir, projectDir)
+	trace := os.Getenv("WATCHFIRE_SANDBOX_TRACE") == "1"
+	profile := GenerateProfile(homeDir, projectDir, trace)
 
 	// Write profile to temp file
 	tmpFile, err := os.CreateTemp("", "watchfire-sandbox-*.sb")

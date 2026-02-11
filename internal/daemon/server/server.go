@@ -71,35 +71,58 @@ func New(port int) (*Server, error) {
 		}
 	}
 
-	// Wire on-task-done callback for git merge + worktree cleanup
-	agentMgr.SetOnTaskDoneFn(func(projectPath string, taskNumber int, worktreePath string) {
+	// Wire on-task-done callback for git merge + worktree cleanup.
+	// Returns true if chaining should continue, false to stop (e.g. merge conflict).
+	agentMgr.SetOnTaskDoneFn(func(projectPath string, taskNumber int, worktreePath string) bool {
 		if taskNumber == 0 || worktreePath == "" {
-			return
+			log.Printf("[merge] Skipping merge: taskNumber=%d worktreePath=%q", taskNumber, worktreePath)
+			return true
 		}
 		proj, err := config.LoadProject(projectPath)
 		if err != nil {
-			return
+			log.Printf("[merge] Failed to load project for task #%04d: %v", taskNumber, err)
+			return false
 		}
 
 		t, err := config.LoadTask(projectPath, taskNumber)
-		if err != nil || t == nil || t.Status != models.TaskStatusDone {
-			return
+		if err != nil || t == nil {
+			log.Printf("[merge] Failed to load task #%04d: %v", taskNumber, err)
+			return false
 		}
+		if t.Status != models.TaskStatusDone {
+			log.Printf("[merge] Task #%04d not done (status: %s), skipping merge", taskNumber, t.Status)
+			return true
+		}
+		log.Printf("[merge] Task #%04d done, proceeding with merge (auto_merge=%v, auto_delete=%v)", taskNumber, proj.AutoMerge, proj.AutoDeleteBranch)
 
+		var merged bool
+		mergeFailed := false
 		if proj.AutoMerge {
-			if err := agent.MergeWorktree(projectPath, taskNumber, proj.DefaultBranch); err != nil {
-				log.Printf("Auto-merge failed for task #%04d: %v", taskNumber, err)
+			var err error
+			merged, err = agent.MergeWorktree(projectPath, taskNumber, proj.DefaultBranch)
+			if err != nil {
+				log.Printf("[merge] Auto-merge failed for task #%04d: %v", taskNumber, err)
+				mergeFailed = true
+			} else if merged {
+				log.Printf("[merge] Auto-merged task #%04d to %s", taskNumber, proj.DefaultBranch)
 			} else {
-				log.Printf("Auto-merged task #%04d to %s", taskNumber, proj.DefaultBranch)
+				log.Printf("[merge] Task #%04d has no file differences — skipped merge", taskNumber)
 			}
 		}
-		if proj.AutoDeleteBranch {
-			if err := agent.RemoveWorktree(projectPath, taskNumber); err != nil {
-				log.Printf("Failed to remove worktree for task #%04d: %v", taskNumber, err)
+		if proj.AutoDeleteBranch && !mergeFailed {
+			if err := agent.RemoveWorktree(projectPath, taskNumber, merged); err != nil {
+				log.Printf("[merge] Failed to remove worktree for task #%04d: %v", taskNumber, err)
 			} else {
-				log.Printf("Removed worktree for task #%04d", taskNumber)
+				log.Printf("[merge] Removed worktree for task #%04d", taskNumber)
 			}
 		}
+		return !mergeFailed
+	})
+
+	// Wire watch-project callback so chained agents re-watch the project
+	// (picks up directories like .watchfire/tasks/ created during earlier phases)
+	agentMgr.SetWatchProjectFn(func(projectID, projectPath string) {
+		_ = w.WatchProject(projectID, projectPath)
 	})
 
 	// Wire next-task callback for start-all and wildfire modes
@@ -231,6 +254,7 @@ func New(port int) (*Server, error) {
 	pb.RegisterTaskServiceServer(grpcServer, &taskService{manager: taskMgr})
 	pb.RegisterDaemonServiceServer(grpcServer, &daemonService{server: srv})
 	pb.RegisterAgentServiceServer(grpcServer, &agentService{manager: agentMgr, watcher: w})
+	pb.RegisterLogServiceServer(grpcServer, &logService{})
 
 	// Start watcher event processing loop
 	go srv.processWatcherEvents()
@@ -272,6 +296,13 @@ func (s *Server) processWatcherEvents() {
 			// Handle both: atomic writes (write tmp → rename) produce Create events
 			// even for existing files, so we can't rely on the distinction.
 			s.handleTaskChanged(event)
+			// Sync next_task_number — agents create task files directly,
+			// bypassing the task manager that normally increments it.
+			if path := s.projectPathForID(event.ProjectID); path != "" {
+				if err := config.SyncNextTaskNumber(path); err != nil {
+					log.Printf("[task-watch] Failed to sync next_task_number: %v", err)
+				}
+			}
 		case watcher.EventRefinePhaseEnded:
 			s.handlePhaseEnded(event, agent.WildfirePhaseRefine)
 		case watcher.EventGeneratePhaseEnded:
@@ -305,20 +336,15 @@ func (s *Server) handleTaskChanged(event watcher.Event) {
 		return
 	}
 
-	running, ok := s.agentManager.GetAgent(event.ProjectID)
-	if !ok {
-		log.Printf("[task-watch] No agent running for project %s", event.ProjectID)
-		return
-	}
-	if running.TaskNumber != event.TaskNumber {
-		log.Printf("[task-watch] Agent working on task #%04d, not #%04d", running.TaskNumber, event.TaskNumber)
-		return
-	}
-
+	// Use StopAgentForTask to atomically verify the agent is still working on
+	// this specific task before stopping. Run in a goroutine to avoid blocking
+	// the event processing loop — StopAgent can take up to 5+ seconds.
 	log.Printf("Task #%04d marked done — stopping agent for project %s", event.TaskNumber, event.ProjectID)
-	if err := s.agentManager.StopAgent(event.ProjectID); err != nil {
-		log.Printf("Failed to stop agent after task done: %v", err)
-	}
+	go func() {
+		if err := s.agentManager.StopAgentForTask(event.ProjectID, event.TaskNumber); err != nil {
+			log.Printf("[task-watch] Stop skipped for project %s task #%04d: %v", event.ProjectID, event.TaskNumber, err)
+		}
+	}()
 }
 
 // handlePhaseEnded reacts to a wildfire phase signal file being created.
@@ -331,19 +357,19 @@ func (s *Server) handlePhaseEnded(event watcher.Event, expectedPhase agent.Wildf
 	if !ok {
 		log.Printf("[phase-watch] No agent running for project %s", event.ProjectID)
 		// Still delete the signal file
-		os.Remove(event.Path)
+		_ = os.Remove(event.Path)
 		return
 	}
 
 	if running.Mode != agent.ModeWildfire {
 		log.Printf("[phase-watch] Agent not in wildfire mode (mode: %s)", running.Mode)
-		os.Remove(event.Path)
+		_ = os.Remove(event.Path)
 		return
 	}
 
 	if running.WildfirePhase != expectedPhase {
 		log.Printf("[phase-watch] Agent in phase %s, not %s", running.WildfirePhase, expectedPhase)
-		os.Remove(event.Path)
+		_ = os.Remove(event.Path)
 		return
 	}
 
@@ -354,10 +380,13 @@ func (s *Server) handlePhaseEnded(event watcher.Event, expectedPhase agent.Wildf
 		log.Printf("[phase-watch] Deleted signal file: %s", event.Path)
 	}
 
+	// Run StopAgent in a goroutine to avoid blocking the event processing loop.
 	log.Printf("Wildfire %s phase ended — stopping agent for project %s", expectedPhase, event.ProjectID)
-	if err := s.agentManager.StopAgent(event.ProjectID); err != nil {
-		log.Printf("Failed to stop agent after phase end: %v", err)
-	}
+	go func() {
+		if err := s.agentManager.StopAgent(event.ProjectID); err != nil {
+			log.Printf("Failed to stop agent after phase end: %v", err)
+		}
+	}()
 	_ = projectPath // used for logging context
 }
 
@@ -369,13 +398,13 @@ func (s *Server) handleGenerateModeEnded(event watcher.Event, expectedMode agent
 	running, ok := s.agentManager.GetAgent(event.ProjectID)
 	if !ok {
 		log.Printf("[generate-watch] No agent running for project %s", event.ProjectID)
-		os.Remove(event.Path)
+		_ = os.Remove(event.Path)
 		return
 	}
 
 	if running.Mode != expectedMode {
 		log.Printf("[generate-watch] Agent not in %s mode (mode: %s)", expectedMode, running.Mode)
-		os.Remove(event.Path)
+		_ = os.Remove(event.Path)
 		return
 	}
 
@@ -386,10 +415,13 @@ func (s *Server) handleGenerateModeEnded(event watcher.Event, expectedMode agent
 		log.Printf("[generate-watch] Deleted signal file: %s", event.Path)
 	}
 
+	// Run StopAgent in a goroutine to avoid blocking the event processing loop.
 	log.Printf("%s complete — stopping agent for project %s", expectedMode, event.ProjectID)
-	if err := s.agentManager.StopAgent(event.ProjectID); err != nil {
-		log.Printf("Failed to stop agent after %s: %v", expectedMode, err)
-	}
+	go func() {
+		if err := s.agentManager.StopAgent(event.ProjectID); err != nil {
+			log.Printf("Failed to stop agent after %s: %v", expectedMode, err)
+		}
+	}()
 }
 
 // projectPathForID resolves a project ID to its filesystem path.
@@ -448,7 +480,7 @@ func (t *TrayState) ActiveAgents() []tray.AgentInfo {
 
 // StopAgent stops the agent for the given project.
 func (t *TrayState) StopAgent(projectID string) {
-	if err := t.srv.agentManager.StopAgent(projectID); err != nil {
+	if err := t.srv.agentManager.StopAgentByUser(projectID); err != nil {
 		log.Printf("Failed to stop agent from tray: %v", err)
 	}
 }
