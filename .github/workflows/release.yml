@@ -40,6 +40,25 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Import code signing certificate
+        if: ${{ secrets.CSC_LINK != '' }}
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        run: |
+          # Create a temporary keychain
+          KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
+          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          # Import certificate
+          echo "$CSC_LINK" | base64 --decode > $RUNNER_TEMP/certificate.p12
+          security import $RUNNER_TEMP/certificate.p12 -P "$CSC_KEY_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security set-key-partition-list -S apple-tool:,apple: -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          rm $RUNNER_TEMP/certificate.p12
+
       - name: Build daemon
         run: make build-daemon-${{ matrix.arch }}
 
@@ -47,7 +66,7 @@ jobs:
         run: make build-cli-${{ matrix.arch }}
 
       - name: Code sign binaries
-        if: env.CODESIGN_IDENTITY != ''
+        if: ${{ secrets.CODESIGN_IDENTITY != '' }}
         env:
           CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
         run: |
@@ -55,7 +74,7 @@ jobs:
           bash scripts/codesign.sh build/watchfire-${{ matrix.arch }}
 
       - name: Notarize binaries
-        if: env.APPLE_ID != ''
+        if: ${{ secrets.APPLE_ID != '' }}
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
