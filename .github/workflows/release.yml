@@ -34,6 +34,13 @@ jobs:
           - runner: macos-latest
             arch: amd64
     runs-on: ${{ matrix.runner }}
+    env:
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -41,10 +48,7 @@ jobs:
           go-version-file: go.mod
 
       - name: Import code signing certificate
-        if: ${{ secrets.CSC_LINK != '' }}
-        env:
-          CSC_LINK: ${{ secrets.CSC_LINK }}
-          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+        if: env.CSC_LINK != ''
         run: |
           # Create a temporary keychain
           KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
@@ -66,19 +70,13 @@ jobs:
         run: make build-cli-${{ matrix.arch }}
 
       - name: Code sign binaries
-        if: ${{ secrets.CODESIGN_IDENTITY != '' }}
-        env:
-          CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
+        if: env.CODESIGN_IDENTITY != ''
         run: |
           bash scripts/codesign.sh build/watchfired-${{ matrix.arch }}
           bash scripts/codesign.sh build/watchfire-${{ matrix.arch }}
 
       - name: Notarize binaries
-        if: ${{ secrets.APPLE_ID != '' }}
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        if: env.APPLE_ID != ''
         run: |
           bash scripts/notarize-binary.sh build/watchfired-${{ matrix.arch }}
           bash scripts/notarize-binary.sh build/watchfire-${{ matrix.arch }}
