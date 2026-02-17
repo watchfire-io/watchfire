@@ -1332,7 +1332,7 @@ message Log {
 
 | RPC | Request | Response | Notes |
 |-----|---------|----------|-------|
-| `GetStatus` | `Empty` | `DaemonStatus` | Port, uptime, active agents |
+| `GetStatus` | `Empty` | `DaemonStatus` | Port, uptime, active agents, update info (`update_available`, `update_version`, `update_url`) |
 | `Shutdown` | `Empty` | `Empty` | Graceful shutdown |
 
 ### SettingsService
@@ -1947,12 +1947,20 @@ watchfire/
 ├── cmd/
 │   ├── watchfired/       # Daemon entry point
 │   └── watchfire/        # CLI/TUI entry point
-├── internal/             # Shared Go packages
+├── internal/
+│   ├── buildinfo/        # Build-time version vars (injected via ldflags)
+│   ├── updater/          # GitHub Releases update checker + binary replacer
+│   ├── cli/              # CLI commands
+│   ├── config/           # YAML loading/saving, path helpers
+│   ├── daemon/           # Daemon packages (agent, server, watcher, etc.)
+│   ├── models/           # Data structures
+│   └── tui/              # TUI components
 ├── proto/                # Protobuf definitions
 ├── gui/                  # Electron app
 ├── assets/               # Icons, images
-├── scripts/              # Build scripts
-├── version.json          # Version tracking
+├── scripts/              # Build & signing scripts
+├── .github/workflows/    # CI/CD (ci.yml, release.yml)
+├── version.json          # Version tracking (single source of truth)
 ├── CHANGELOG.md          # Release changelog
 ├── Makefile              # Dev commands
 └── ...
@@ -1963,12 +1971,15 @@ watchfire/
 ### Dev Commands
 
 ```makefile
-make dev-daemon    # Run daemon in foreground with hot reload
-make dev-tui       # Build and run TUI
-make dev-gui       # Run Electron in dev mode
-make build         # Build all components
-make test          # Run all tests
-make lint          # Run all linters
+make dev-daemon       # Run daemon in foreground with hot reload
+make dev-tui          # Build and run TUI
+make dev-gui          # Run Electron in dev mode
+make build            # Build all Go binaries (native arch)
+make build-universal  # Build universal (arm64+amd64) Go binaries via lipo
+make sync-version     # Sync version.json → gui/package.json
+make package-gui      # Build universal binaries + package Electron DMG
+make test             # Run all tests
+make lint             # Run all linters
 ```
 
 Ad-hoc: `go run ./cmd/watchfire` or `go run ./cmd/watchfired`
@@ -1985,30 +1996,44 @@ Ad-hoc: `go run ./cmd/watchfire` or `go run ./cmd/watchfired`
 
 ## CI/CD (GitHub Actions)
 
-### On Pull Request
+### On Pull Request (`ci.yml`)
 
-- Build all components
-- Run all tests
-- Run all linters
-- Block merge if any fail
+| Job | Runner | Description |
+|-----|--------|-------------|
+| `go-lint` | `macos-latest` | `golangci-lint` |
+| `go-test` | `macos-latest` | `make test` |
+| `go-build-arm64` | `macos-14` | Build daemon + CLI for arm64 (native, avoids CGO cross-compile) |
+| `go-build-amd64` | `macos-13` | Build daemon + CLI for amd64 (native, avoids CGO cross-compile) |
+| `gui-lint-build` | `macos-latest` | `npm ci` + `npm run build` |
+| `proto-lint` | `ubuntu-latest` | `buf lint` |
 
-### On Push/Merge to Main
+### On Push to Main (`release.yml`)
 
-1. Run build, test, lint
-2. Read `version.json` for version number
-3. Create or replace draft release for that version
-4. Build artifacts:
-   - `Watchfire.dmg` — Universal installer (GUI + CLI + daemon)
-   - `watchfire-cli-darwin-arm64` — CLI only
-   - `watchfire-cli-darwin-amd64` — CLI only
-   - `watchfired-darwin-arm64` — Daemon only
-   - `watchfired-darwin-amd64` — Daemon only
-5. Attach artifacts to draft release
-6. Generate release notes from `CHANGELOG.md`
+1. **`version`** job — read `version.json`, output version + codename for other jobs
+2. **`build-go`** job — matrix `{macos-14/arm64, macos-13/amd64}`. Build with ldflags, codesign, notarize, upload arch-specific artifacts
+3. **`build-gui`** job — download both arch artifacts, `lipo` universal binaries, sync version, `npm ci && npm run package` with signing env vars. Uploads DMG + zip + `latest-mac.yml`
+4. **`release`** job — create/update draft GitHub Release with all artifacts + changelog notes
+
+**Build artifacts:**
+- `Watchfire.dmg` — Universal installer (GUI + CLI + daemon)
+- `watchfire-darwin-arm64` / `watchfire-darwin-amd64` — CLI only
+- `watchfired-darwin-arm64` / `watchfired-darwin-amd64` — Daemon only
+
+### Required GitHub Secrets
+
+| Secret | Purpose |
+|--------|---------|
+| `CSC_LINK` | Base64 .p12 certificate (Developer ID Application) |
+| `CSC_KEY_PASSWORD` | .p12 password |
+| `APPLE_ID` | Apple ID email |
+| `APPLE_APP_SPECIFIC_PASSWORD` | App-specific password |
+| `APPLE_TEAM_ID` | Developer Team ID |
+| `CODESIGN_IDENTITY` | Signing identity string |
 
 ### Version Tracking
 
-**version.json:**
+**`version.json`** is the single source of truth for version info. Go binaries receive the version via `-ldflags` at build time (`internal/buildinfo`). `gui/package.json` version is synced via `make sync-version`.
+
 ```json
 {
   "version": "0.1.0",
@@ -2040,11 +2065,23 @@ Manual step: Edit draft release → Publish
 
 ### macOS DMG (Watchfire.dmg)
 
-- Contains `Watchfire.app` (Electron GUI)
-- On first launch, app installs CLI tools:
-  - Copies `watchfire` to `/usr/local/bin/`
-  - Copies `watchfired` to `/usr/local/bin/`
-  - Prompts user for permission if needed
+| Aspect | Behavior |
+|--------|----------|
+| **Binary bundling** | `watchfire` and `watchfired` bundled in `Watchfire.app/Contents/Resources/` via electron-builder `extraResources` |
+| **Universal binaries** | Fat binaries created with `lipo` from separate arm64 + amd64 builds |
+| **First-launch install** | App checks if `/usr/local/bin/watchfire[d]` exists and matches app version. If missing/outdated, shows install dialog. |
+| **Admin privileges** | Tries direct copy; falls back to `osascript` with `administrator privileges` (macOS password prompt) |
+| **Homebrew detection** | Checks if installed binary is a symlink from Homebrew (`/opt/homebrew/`, `/usr/local/Cellar/`). If so, skips and informs user. |
+| **Version sync** | `version.json` is single source of truth. `gui/package.json` version synced via `make sync-version`. Go binaries get version via `-ldflags`. |
+
+### Code Signing & Notarization
+
+| Aspect | Behavior |
+|--------|----------|
+| **Certificate** | Developer ID Application (.p12), stored as GitHub Secret `CSC_LINK` |
+| **Hardened runtime** | Required for notarization. Entitlements in `gui/entitlements.mac.plist` |
+| **GUI signing** | electron-builder handles signing + notarization via env vars |
+| **Standalone binaries** | Signed with `codesign --sign --options runtime --timestamp`, notarized via `xcrun notarytool` |
 
 ### Homebrew
 
@@ -2065,12 +2102,11 @@ Tap repo: `watchfire/homebrew-tap` (separate repo, auto-updated on release)
 
 ### Auto-Update
 
-| Component | Mechanism |
-|-----------|-----------|
-| **GUI** | `electron-updater` (checks GitHub releases) |
-| **CLI/Daemon** | Custom updater (checks GitHub releases, downloads, replaces) |
-
-Update flow: GUI updates itself, then updates CLI/daemon binaries
+| Component | Mechanism | Details |
+|-----------|-----------|---------|
+| **GUI** | `electron-updater` | Checks GitHub Releases for `latest-mac.yml`. Downloads `.zip` update. On restart, new app's first-launch logic updates CLI/daemon binaries. |
+| **CLI** | `watchfire update` | Queries GitHub Releases API. Downloads arch-specific binaries. Stops daemon if running. Atomically replaces self + daemon binary. Restarts daemon. |
+| **Daemon** | Startup check | Checks GitHub on startup (based on settings frequency). Stores result in memory. Exposes via `DaemonStatus.update_available/update_version/update_url` fields for clients to display. |
 
 ---
 

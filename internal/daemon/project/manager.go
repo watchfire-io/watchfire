@@ -34,6 +34,13 @@ type CreateOptions struct {
 	AutoStartTasks   bool
 }
 
+// ProjectWithEntry pairs a loaded project with its index entry data (path, position).
+type ProjectWithEntry struct {
+	Project  *models.Project
+	Path     string
+	Position int
+}
+
 // UpdateOptions contains options for updating a project.
 type UpdateOptions struct {
 	ProjectID        string
@@ -47,65 +54,77 @@ type UpdateOptions struct {
 	Definition       *string
 }
 
-// ListProjects returns all registered projects.
-func (m *Manager) ListProjects() ([]*models.Project, error) {
+// ListProjects returns all registered projects with their index entry data.
+func (m *Manager) ListProjects() ([]ProjectWithEntry, error) {
 	index, err := config.LoadProjectsIndex()
 	if err != nil {
 		return nil, err
 	}
 
-	var projects []*models.Project
+	var results []ProjectWithEntry
 	for _, entry := range index.Projects {
 		project, err := config.LoadProject(entry.Path)
 		if err != nil {
 			continue // Skip projects that can't be loaded
 		}
 		if project != nil {
-			projects = append(projects, project)
+			results = append(results, ProjectWithEntry{
+				Project:  project,
+				Path:     entry.Path,
+				Position: entry.Position,
+			})
 		}
 	}
 
-	return projects, nil
+	return results, nil
 }
 
-// GetProject retrieves a project by ID.
-func (m *Manager) GetProject(projectID string) (*models.Project, error) {
+// GetProject retrieves a project by ID with its index entry data.
+func (m *Manager) GetProject(projectID string) (ProjectWithEntry, error) {
 	index, err := config.LoadProjectsIndex()
 	if err != nil {
-		return nil, err
+		return ProjectWithEntry{}, err
 	}
 
 	entry := index.FindProject(projectID)
 	if entry == nil {
-		return nil, fmt.Errorf("project not found: %s", projectID)
+		return ProjectWithEntry{}, fmt.Errorf("project not found: %s", projectID)
 	}
 
 	project, err := config.LoadProject(entry.Path)
 	if err != nil {
-		return nil, err
+		return ProjectWithEntry{}, err
 	}
 	if project == nil {
-		return nil, fmt.Errorf("project file not found: %s", entry.Path)
+		return ProjectWithEntry{}, fmt.Errorf("project file not found: %s", entry.Path)
 	}
 
-	return project, nil
+	return ProjectWithEntry{
+		Project:  project,
+		Path:     entry.Path,
+		Position: entry.Position,
+	}, nil
 }
 
-// CreateProject initializes a new project.
-func (m *Manager) CreateProject(opts CreateOptions) (*models.Project, error) {
-	// Check if already a project
+// CreateProject initializes a new project, or imports an existing one if
+// the folder already contains a .watchfire/ directory.
+func (m *Manager) CreateProject(opts CreateOptions) (ProjectWithEntry, error) {
+	// If already a project, register and return it (import)
 	if config.ProjectExists(opts.Path) {
-		return nil, fmt.Errorf("already a Watchfire project: %s", opts.Path)
+		if err := config.EnsureProjectRegistered(opts.Path); err != nil {
+			return ProjectWithEntry{}, fmt.Errorf("failed to import project: %w", err)
+		}
+		return m.getProjectByPath(opts.Path)
 	}
 
 	// Ensure directory exists
 	if err := os.MkdirAll(opts.Path, 0o755); err != nil {
-		return nil, fmt.Errorf("failed to create directory: %w", err)
+		return ProjectWithEntry{}, fmt.Errorf("failed to create directory: %w", err)
 	}
 
 	// Check if git repo, initialize if not
 	if err := ensureGitRepo(opts.Path); err != nil {
-		return nil, err
+		return ProjectWithEntry{}, err
 	}
 
 	// Generate project ID
@@ -124,26 +143,26 @@ func (m *Manager) CreateProject(opts CreateOptions) (*models.Project, error) {
 	}
 
 	// Create project
-	project := models.NewProject(projectID, name, opts.Path)
-	project.Definition = opts.Definition
-	project.DefaultBranch = defaultBranch
-	project.AutoMerge = opts.AutoMerge
-	project.AutoDeleteBranch = opts.AutoDeleteBranch
-	project.AutoStartTasks = opts.AutoStartTasks
+	p := models.NewProject(projectID, name, opts.Path)
+	p.Definition = opts.Definition
+	p.DefaultBranch = defaultBranch
+	p.AutoMerge = opts.AutoMerge
+	p.AutoDeleteBranch = opts.AutoDeleteBranch
+	p.AutoStartTasks = opts.AutoStartTasks
 
 	// Create .watchfire directory structure
 	if err := config.EnsureProjectDir(opts.Path); err != nil {
-		return nil, err
+		return ProjectWithEntry{}, err
 	}
 
 	// Save project file
-	if err := config.SaveProject(opts.Path, project); err != nil {
-		return nil, err
+	if err := config.SaveProject(opts.Path, p); err != nil {
+		return ProjectWithEntry{}, err
 	}
 
 	// Add .watchfire to .gitignore
 	if err := addToGitignore(opts.Path); err != nil {
-		return nil, err
+		return ProjectWithEntry{}, err
 	}
 
 	// Commit .gitignore change (non-fatal, ignore error)
@@ -151,74 +170,120 @@ func (m *Manager) CreateProject(opts CreateOptions) (*models.Project, error) {
 
 	// Register project in global index
 	if err := config.RegisterProject(projectID, name, opts.Path); err != nil {
-		return nil, err
+		return ProjectWithEntry{}, err
 	}
 
-	return project, nil
+	// Reload index to get the assigned position
+	index, err := config.LoadProjectsIndex()
+	if err != nil {
+		return ProjectWithEntry{}, err
+	}
+	entry := index.FindProject(projectID)
+	position := 0
+	if entry != nil {
+		position = entry.Position
+	}
+
+	return ProjectWithEntry{
+		Project:  p,
+		Path:     opts.Path,
+		Position: position,
+	}, nil
 }
 
 // UpdateProject updates a project's settings.
-func (m *Manager) UpdateProject(opts UpdateOptions) (*models.Project, error) {
+func (m *Manager) UpdateProject(opts UpdateOptions) (ProjectWithEntry, error) {
 	index, err := config.LoadProjectsIndex()
 	if err != nil {
-		return nil, err
+		return ProjectWithEntry{}, err
 	}
 
 	entry := index.FindProject(opts.ProjectID)
 	if entry == nil {
-		return nil, fmt.Errorf("project not found: %s", opts.ProjectID)
+		return ProjectWithEntry{}, fmt.Errorf("project not found: %s", opts.ProjectID)
 	}
 
-	project, err := config.LoadProject(entry.Path)
+	p, err := config.LoadProject(entry.Path)
 	if err != nil {
-		return nil, err
+		return ProjectWithEntry{}, err
 	}
-	if project == nil {
-		return nil, fmt.Errorf("project file not found: %s", entry.Path)
+	if p == nil {
+		return ProjectWithEntry{}, fmt.Errorf("project file not found: %s", entry.Path)
 	}
 
 	// Apply updates
 	if opts.Name != nil {
-		project.Name = *opts.Name
+		p.Name = *opts.Name
 		entry.Name = *opts.Name
 	}
 	if opts.Color != nil {
-		project.Color = *opts.Color
+		p.Color = *opts.Color
 	}
 	if opts.DefaultBranch != nil {
-		project.DefaultBranch = *opts.DefaultBranch
+		p.DefaultBranch = *opts.DefaultBranch
 	}
 	if opts.DefaultAgent != nil {
-		project.DefaultAgent = *opts.DefaultAgent
+		p.DefaultAgent = *opts.DefaultAgent
 	}
 	if opts.AutoMerge != nil {
-		project.AutoMerge = *opts.AutoMerge
+		p.AutoMerge = *opts.AutoMerge
 	}
 	if opts.AutoDeleteBranch != nil {
-		project.AutoDeleteBranch = *opts.AutoDeleteBranch
+		p.AutoDeleteBranch = *opts.AutoDeleteBranch
 	}
 	if opts.AutoStartTasks != nil {
-		project.AutoStartTasks = *opts.AutoStartTasks
+		p.AutoStartTasks = *opts.AutoStartTasks
 	}
 	if opts.Definition != nil {
-		project.Definition = *opts.Definition
+		p.Definition = *opts.Definition
 	}
 
-	project.UpdatedAt = time.Now().UTC()
+	p.UpdatedAt = time.Now().UTC()
 
 	// Save project file
-	if err := config.SaveProject(entry.Path, project); err != nil {
-		return nil, err
+	if err := config.SaveProject(entry.Path, p); err != nil {
+		return ProjectWithEntry{}, err
 	}
 
 	// Update global index if name changed
 	if opts.Name != nil {
 		if err := config.SaveProjectsIndex(index); err != nil {
-			return nil, err
+			return ProjectWithEntry{}, err
 		}
 	}
 
-	return project, nil
+	return ProjectWithEntry{
+		Project:  p,
+		Path:     entry.Path,
+		Position: entry.Position,
+	}, nil
+}
+
+// getProjectByPath loads a project and its index entry by filesystem path.
+func (m *Manager) getProjectByPath(projectPath string) (ProjectWithEntry, error) {
+	index, err := config.LoadProjectsIndex()
+	if err != nil {
+		return ProjectWithEntry{}, err
+	}
+
+	entry := index.FindProjectByPath(projectPath)
+	if entry == nil {
+		return ProjectWithEntry{}, fmt.Errorf("project not found at path: %s", projectPath)
+	}
+
+	p, err := config.LoadProject(entry.Path)
+	if err != nil {
+		return ProjectWithEntry{}, err
+	}
+	if p == nil {
+		return ProjectWithEntry{}, fmt.Errorf("project file not found: %s", entry.Path)
+	}
+
+	return ProjectWithEntry{
+		Project:  p,
+		Path:     entry.Path,
+		Position: entry.Position,
+	}, nil
 }
 
 // DeleteProject removes a project from the registry.

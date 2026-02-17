@@ -1,0 +1,85 @@
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+@import "../../../../assets/brand/watchfire-tokens.css" layer(base);
+
+@theme {
+  /* Brand color scale — maps to Tailwind utilities like bg-fire-500, text-fire-400 */
+  --color-fire-50: #fef6f3;
+  --color-fire-100: #fde9e1;
+  --color-fire-200: #fbd3c3;
+  --color-fire-300: #f5b096;
+  --color-fire-400: #e88050;
+  --color-fire-500: #e07040;
+  --color-fire-600: #c45a30;
+  --color-fire-700: #a54828;
+  --color-fire-800: #863b22;
+  --color-fire-900: #6e3220;
+
+  --color-ember: #e29020;
+  --color-ember-light: #f0b050;
+  --color-ember-dark: #b87018;
+  --color-flame: #fff5e6;
+
+  --color-charcoal-50: #2d3140;
+  --color-charcoal-100: #22262f;
+  --color-charcoal-200: #1a1d24;
+  --color-charcoal-300: #16181d;
+
+  --color-success: #28c940;
+  --color-warning: #ffbd2e;
+  --color-error: #ff5f57;
+  --color-info: #007aff;
+
+  --font-heading: 'Outfit', system-ui, sans-serif;
+  --font-body: 'Outfit', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+  --radius-wf: 8px;
+  --radius-wf-lg: 12px;
+  --radius-wf-xl: 16px;
+  --radius-wf-2xl: 24px;
+
+  --shadow-wf: 0 4px 12px rgba(0, 0, 0, 0.4);
+  --shadow-wf-lg: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-wf-glow: 0 0 20px rgba(224, 112, 64, 0.3);
+}
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--wf-font-body);
+  -webkit-app-region: no-drag;
+  user-select: none;
+}
+
+/* macOS title bar drag region */
+.titlebar-drag {
+  -webkit-app-region: drag;
+}
+
+.titlebar-no-drag {
+  -webkit-app-region: no-drag;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--wf-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--wf-border-light);
+}

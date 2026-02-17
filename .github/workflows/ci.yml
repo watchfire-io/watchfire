@@ -1,0 +1,86 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go-lint:
+    name: Go Lint
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v6
+        with:
+          version: latest
+
+  go-test:
+    name: Go Test
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Run tests
+        run: make test
+
+  go-build-arm64:
+    name: Go Build (arm64)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build daemon (arm64)
+        run: make build-daemon-arm64
+      - name: Build CLI (arm64)
+        run: make build-cli-arm64
+
+  go-build-amd64:
+    name: Go Build (amd64)
+    runs-on: macos-13
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build daemon (amd64)
+        run: make build-daemon-amd64
+      - name: Build CLI (amd64)
+        run: make build-cli-amd64
+
+  gui-lint-build:
+    name: GUI Lint & Build
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: gui/package-lock.json
+      - name: Install dependencies
+        working-directory: gui
+        run: npm ci
+      - name: Build GUI
+        working-directory: gui
+        run: npm run build
+
+  proto-lint:
+    name: Proto Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bufbuild/buf-setup-action@v1
+      - name: Lint protobuf
+        run: buf lint proto

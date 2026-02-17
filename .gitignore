@@ -38,3 +38,8 @@ Thumbs.db
 # Local config
 .env
 .env.local
+
+# GUI (Electron)
+gui/node_modules/
+gui/out/
+gui/dist/

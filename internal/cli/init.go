@@ -71,7 +71,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 
 	// Create project using the project manager
 	mgr := project.NewManager()
-	proj, err := mgr.CreateProject(project.CreateOptions{
+	pwe, err := mgr.CreateProject(project.CreateOptions{
 		Path:             cwd,
 		Name:             name,
 		Definition:       definition,
@@ -84,8 +84,8 @@ func runInit(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to create project: %w", err)
 	}
 
-	fmt.Printf("\nProject '%s' initialized successfully!\n", proj.Name)
-	fmt.Printf("  ID: %s\n", proj.ProjectID)
+	fmt.Printf("\nProject '%s' initialized successfully!\n", pwe.Project.Name)
+	fmt.Printf("  ID: %s\n", pwe.Project.ProjectID)
 	fmt.Printf("  Path: %s\n", cwd)
 	fmt.Println("\nNext steps:")
 	fmt.Println("  - Run 'watchfire task add' to create your first task")

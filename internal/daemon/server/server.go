@@ -6,9 +6,14 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"net/http"
 	"os"
+	"strings"
 	"syscall"
 
+	"github.com/improbable-eng/grpc-web/go/grpcweb"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 	"google.golang.org/grpc"
 
 	"github.com/watchfire-io/watchfire/internal/config"
@@ -22,15 +27,18 @@ import (
 	pb "github.com/watchfire-io/watchfire/proto"
 )
 
-// Server is the daemon's gRPC server.
+// Server is the daemon's gRPC server with gRPC-Web support.
 type Server struct {
 	grpcServer     *grpc.Server
+	grpcWebWrapper *grpcweb.WrappedGrpcServer
+	httpServer     *http.Server
 	listener       net.Listener
 	port           int
 	projectManager *project.Manager
 	taskManager    *task.Manager
 	agentManager   *agent.Manager
 	watcher        *watcher.Watcher
+	updateState    UpdateState
 }
 
 // New creates a new server listening on the specified port.
@@ -239,8 +247,16 @@ func New(port int) (*Server, error) {
 		return nil, nil
 	})
 
+	// Wrap gRPC server with gRPC-Web for Electron GUI access
+	grpcWebWrapper := grpcweb.WrapServer(grpcServer,
+		grpcweb.WithOriginFunc(func(origin string) bool { return true }),
+		grpcweb.WithWebsockets(true),
+		grpcweb.WithWebsocketOriginFunc(func(req *http.Request) bool { return true }),
+	)
+
 	srv := &Server{
 		grpcServer:     grpcServer,
+		grpcWebWrapper: grpcWebWrapper,
 		listener:       listener,
 		port:           actualPort,
 		projectManager: projectMgr,
@@ -255,9 +271,14 @@ func New(port int) (*Server, error) {
 	pb.RegisterDaemonServiceServer(grpcServer, &daemonService{server: srv})
 	pb.RegisterAgentServiceServer(grpcServer, &agentService{manager: agentMgr, watcher: w})
 	pb.RegisterLogServiceServer(grpcServer, &logService{})
+	pb.RegisterBranchServiceServer(grpcServer, &branchService{})
+	pb.RegisterSettingsServiceServer(grpcServer, &settingsService{})
 
 	// Start watcher event processing loop
 	go srv.processWatcherEvents()
+
+	// Start background update check
+	srv.startUpdateCheck()
 
 	return srv, nil
 }
@@ -273,8 +294,31 @@ func (s *Server) AgentManager() *agent.Manager {
 }
 
 // Serve starts serving requests. This blocks until Stop is called.
+// It serves both native gRPC (for CLI/TUI) and gRPC-Web (for Electron GUI)
+// on the same port using h2c content-type negotiation.
 func (s *Server) Serve() error {
-	return s.grpcServer.Serve(s.listener)
+	// Handler that routes gRPC-Web requests to the wrapper,
+	// and native gRPC requests to the gRPC server directly.
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.grpcWebWrapper.IsGrpcWebRequest(r) || s.grpcWebWrapper.IsGrpcWebSocketRequest(r) ||
+			s.grpcWebWrapper.IsAcceptableGrpcCorsRequest(r) {
+			s.grpcWebWrapper.ServeHTTP(w, r)
+			return
+		}
+		// Native gRPC (content-type: application/grpc)
+		if r.ProtoMajor == 2 && strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+			s.grpcServer.ServeHTTP(w, r)
+			return
+		}
+		// Fallback: try gRPC-Web wrapper (handles preflight etc.)
+		s.grpcWebWrapper.ServeHTTP(w, r)
+	})
+
+	// h2c allows HTTP/2 cleartext (no TLS) — required for native gRPC
+	h2cHandler := h2c.NewHandler(handler, &http2.Server{})
+
+	s.httpServer = &http.Server{Handler: h2cHandler}
+	return s.httpServer.Serve(s.listener)
 }
 
 // Stop gracefully stops the server.
@@ -285,6 +329,10 @@ func (s *Server) Stop() {
 	}
 	// Stop all running agents
 	s.agentManager.StopAll()
+	// Shut down HTTP server (which serves both native gRPC and gRPC-Web)
+	if s.httpServer != nil {
+		_ = s.httpServer.Shutdown(context.Background())
+	}
 	s.grpcServer.GracefulStop()
 }
 

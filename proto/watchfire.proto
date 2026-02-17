@@ -38,6 +38,7 @@ message Project {
   google.protobuf.Timestamp created_at = 13;
   google.protobuf.Timestamp updated_at = 14;
   int32 next_task_number = 15;
+  int32 position = 16;                          // Display ordering in GUI
 }
 
 message ProjectId {
@@ -172,6 +173,9 @@ message DaemonStatus {
   google.protobuf.Timestamp started_at = 4;
   int32 active_agents = 5;
   repeated string active_projects = 6;          // Project IDs with running agents
+  bool update_available = 7;
+  string update_version = 8;
+  string update_url = 9;
 }
 
 // ============================================================================
@@ -262,6 +266,84 @@ message SubscribeAgentIssuesRequest {
 }
 
 // ============================================================================
+// Branch Messages
+// ============================================================================
+
+message Branch {
+  string name = 1;                                // e.g. "watchfire/0001"
+  string project_id = 2;
+  int32 task_number = 3;                          // 0 if not associated with a task
+  string status = 4;                              // "merged" | "unmerged" | "orphaned"
+  string worktree_path = 5;                       // Empty if worktree removed
+}
+
+message BranchList {
+  repeated Branch branches = 1;
+}
+
+message BranchId {
+  RequestMeta meta = 1;
+  string project_id = 2;
+  string branch_name = 3;
+}
+
+message MergeBranchRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+  string branch_name = 3;
+  bool delete_after_merge = 4;
+}
+
+message BulkBranchRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+  repeated string branch_names = 3;
+}
+
+// ============================================================================
+// Settings Messages
+// ============================================================================
+
+message AgentConfig {
+  string path = 1;                                // Empty = lookup in PATH
+}
+
+message DefaultsConfig {
+  bool auto_merge = 1;
+  bool auto_delete_branch = 2;
+  bool auto_start_tasks = 3;
+  string default_branch = 4;
+  string default_sandbox = 5;
+  string default_agent = 6;
+}
+
+message UpdatesConfig {
+  bool check_on_startup = 1;
+  string check_frequency = 2;                     // "every_launch" | "daily" | "weekly"
+  bool auto_download = 3;
+}
+
+message AppearanceConfig {
+  string theme = 1;                               // "system" | "light" | "dark"
+}
+
+message Settings {
+  int32 version = 1;
+  map<string, AgentConfig> agents = 2;
+  DefaultsConfig defaults = 3;
+  UpdatesConfig updates = 4;
+  AppearanceConfig appearance = 5;
+}
+
+message UpdateSettingsRequest {
+  RequestMeta meta = 1;
+  optional DefaultsConfig defaults = 2;
+  optional UpdatesConfig updates = 3;
+  optional AppearanceConfig appearance = 4;
+  map<string, AgentConfig> agents = 5;            // Merge into existing
+}
+
+// ============================================================================
 // Services
 // ============================================================================
 
@@ -349,4 +431,21 @@ service AgentService {
   rpc SubscribeRawOutput(SubscribeRawOutputRequest) returns (stream RawOutputChunk);
   rpc SubscribeAgentIssues(SubscribeAgentIssuesRequest) returns (stream AgentIssue);
   rpc ResumeAgent(ProjectId) returns (AgentStatus);  // Clear rate limit cooldown
+}
+
+// BranchService handles git worktree branch operations
+service BranchService {
+  rpc ListBranches(ProjectId) returns (BranchList);
+  rpc GetBranch(BranchId) returns (Branch);
+  rpc MergeBranch(MergeBranchRequest) returns (Branch);
+  rpc DeleteBranch(BranchId) returns (google.protobuf.Empty);
+  rpc PruneBranches(ProjectId) returns (BranchList);          // Remove orphaned branches
+  rpc BulkMerge(BulkBranchRequest) returns (BranchList);
+  rpc BulkDelete(BulkBranchRequest) returns (google.protobuf.Empty);
+}
+
+// SettingsService handles global application settings
+service SettingsService {
+  rpc GetSettings(google.protobuf.Empty) returns (Settings);
+  rpc UpdateSettings(UpdateSettingsRequest) returns (Settings);
 }

@@ -1,0 +1,40 @@
+appId: io.watchfire.app
+productName: Watchfire
+directories:
+  buildResources: resources
+  output: dist
+files:
+  - out/**/*
+extraResources:
+  - from: "../build/watchfired"
+    to: "watchfired"
+  - from: "../build/watchfire"
+    to: "watchfire"
+mac:
+  icon: resources/icon.icns
+  category: public.app-category.developer-tools
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: "entitlements.mac.plist"
+  entitlementsInherit: "entitlements.mac.plist"
+  target:
+    - target: dmg
+      arch: [universal]
+    - target: zip
+      arch: [universal]
+  notarize:
+    teamId: ${env.APPLE_TEAM_ID}
+dmg:
+  sign: true
+  contents:
+    - x: 130
+      y: 220
+    - x: 410
+      y: 220
+      type: link
+      path: /Applications
+publish:
+  provider: github
+  owner: watchfire-io
+  repo: watchfire
+  releaseType: draft

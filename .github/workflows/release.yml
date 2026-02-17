@@ -1,0 +1,206 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Read Version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.read.outputs.version }}
+      codename: ${{ steps.read.outputs.codename }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read version.json
+        id: read
+        run: |
+          echo "version=$(python3 -c "import json; print(json.load(open('version.json'))['version'])")" >> "$GITHUB_OUTPUT"
+          echo "codename=$(python3 -c "import json; print(json.load(open('version.json'))['codename'])")" >> "$GITHUB_OUTPUT"
+
+  build-go:
+    name: Build Go (${{ matrix.arch }})
+    needs: version
+    strategy:
+      matrix:
+        include:
+          - runner: macos-14
+            arch: arm64
+          - runner: macos-13
+            arch: amd64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build daemon
+        run: make build-daemon-${{ matrix.arch }}
+
+      - name: Build CLI
+        run: make build-cli-${{ matrix.arch }}
+
+      - name: Code sign binaries
+        if: env.CODESIGN_IDENTITY != ''
+        env:
+          CODESIGN_IDENTITY: ${{ secrets.CODESIGN_IDENTITY }}
+        run: |
+          bash scripts/codesign.sh build/watchfired-${{ matrix.arch }}
+          bash scripts/codesign.sh build/watchfire-${{ matrix.arch }}
+
+      - name: Notarize binaries
+        if: env.APPLE_ID != ''
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          bash scripts/notarize-binary.sh build/watchfired-${{ matrix.arch }}
+          bash scripts/notarize-binary.sh build/watchfire-${{ matrix.arch }}
+
+      - name: Rename for release
+        run: |
+          cp build/watchfired-${{ matrix.arch }} build/watchfired-darwin-${{ matrix.arch }}
+          cp build/watchfire-${{ matrix.arch }} build/watchfire-darwin-${{ matrix.arch }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-binaries-${{ matrix.arch }}
+          path: |
+            build/watchfired-${{ matrix.arch }}
+            build/watchfire-${{ matrix.arch }}
+            build/watchfired-darwin-${{ matrix.arch }}
+            build/watchfire-darwin-${{ matrix.arch }}
+
+  build-gui:
+    name: Build GUI
+    needs: [version, build-go]
+    runs-on: macos-14
+    env:
+      CSC_LINK: ${{ secrets.CSC_LINK }}
+      CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+      APPLE_ID: ${{ secrets.APPLE_ID }}
+      APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: gui/package-lock.json
+
+      - name: Download arm64 binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: go-binaries-arm64
+          path: build/
+
+      - name: Download amd64 binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: go-binaries-amd64
+          path: build/
+
+      - name: Create universal binaries
+        run: |
+          lipo -create -output build/watchfired build/watchfired-arm64 build/watchfired-amd64
+          lipo -create -output build/watchfire build/watchfire-arm64 build/watchfire-amd64
+          chmod +x build/watchfired build/watchfire
+          lipo -info build/watchfired
+          lipo -info build/watchfire
+
+      - name: Sync version
+        run: make sync-version
+
+      - name: Install GUI dependencies
+        working-directory: gui
+        run: npm ci
+
+      - name: Build and package GUI
+        working-directory: gui
+        run: npm run package
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-dmg
+          path: gui/dist/*.dmg
+
+      - name: Upload zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-zip
+          path: gui/dist/*.zip
+
+      - name: Upload latest-mac.yml
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-latest-mac
+          path: gui/dist/latest-mac.yml
+
+  release:
+    name: Create Release
+    needs: [version, build-go, build-gui]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+
+      - name: Extract changelog
+        id: changelog
+        run: |
+          # Extract notes for current version from CHANGELOG.md
+          version="${{ needs.version.outputs.version }}"
+          notes=$(sed -n "/^## \[${version}\]/,/^## \[/p" CHANGELOG.md | head -n -1)
+          if [ -z "$notes" ]; then
+            notes="Release v${version} (${{ needs.version.outputs.codename }})"
+          fi
+          # Write to file for gh release
+          echo "$notes" > release-notes.md
+
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="v${{ needs.version.outputs.version }}"
+          codename="${{ needs.version.outputs.codename }}"
+          title="${version} — ${codename}"
+
+          # Collect all release assets
+          assets=()
+          for f in artifacts/go-binaries-arm64/watchfired-darwin-arm64 \
+                   artifacts/go-binaries-arm64/watchfire-darwin-arm64 \
+                   artifacts/go-binaries-amd64/watchfired-darwin-amd64 \
+                   artifacts/go-binaries-amd64/watchfire-darwin-amd64 \
+                   artifacts/gui-dmg/*.dmg \
+                   artifacts/gui-zip/*.zip \
+                   artifacts/gui-latest-mac/latest-mac.yml; do
+            if [ -f "$f" ]; then
+              assets+=("$f")
+            fi
+          done
+
+          # Delete existing draft release for this tag if it exists
+          gh release delete "$version" --yes 2>/dev/null || true
+
+          # Create draft release
+          gh release create "$version" \
+            --draft \
+            --title "$title" \
+            --notes-file release-notes.md \
+            "${assets[@]}"

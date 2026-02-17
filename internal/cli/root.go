@@ -41,5 +41,6 @@ func init() {
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(settingsCmd)
 	rootCmd.AddCommand(taskCmd)
+	rootCmd.AddCommand(updateCmd)
 	rootCmd.AddCommand(versionCmd)
 }

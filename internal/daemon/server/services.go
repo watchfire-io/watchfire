@@ -4,6 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -33,28 +36,28 @@ type projectService struct {
 }
 
 func (s *projectService) ListProjects(_ context.Context, _ *emptypb.Empty) (*pb.ProjectList, error) {
-	projects, err := s.manager.ListProjects()
+	results, err := s.manager.ListProjects()
 	if err != nil {
 		return nil, err
 	}
 
-	list := &pb.ProjectList{Projects: make([]*pb.Project, 0, len(projects))}
-	for _, p := range projects {
-		list.Projects = append(list.Projects, modelToProtoProject(p))
+	list := &pb.ProjectList{Projects: make([]*pb.Project, 0, len(results))}
+	for _, pwe := range results {
+		list.Projects = append(list.Projects, modelToProtoProject(pwe))
 	}
 	return list, nil
 }
 
 func (s *projectService) GetProject(_ context.Context, req *pb.ProjectId) (*pb.Project, error) {
-	p, err := s.manager.GetProject(req.ProjectId)
+	pwe, err := s.manager.GetProject(req.ProjectId)
 	if err != nil {
 		return nil, err
 	}
-	return modelToProtoProject(p), nil
+	return modelToProtoProject(pwe), nil
 }
 
 func (s *projectService) CreateProject(_ context.Context, req *pb.CreateProjectRequest) (*pb.Project, error) {
-	p, err := s.manager.CreateProject(project.CreateOptions{
+	pwe, err := s.manager.CreateProject(project.CreateOptions{
 		Path:             req.Path,
 		Name:             req.Name,
 		Definition:       req.Definition,
@@ -66,7 +69,7 @@ func (s *projectService) CreateProject(_ context.Context, req *pb.CreateProjectR
 	if err != nil {
 		return nil, err
 	}
-	return modelToProtoProject(p), nil
+	return modelToProtoProject(pwe), nil
 }
 
 func (s *projectService) UpdateProject(_ context.Context, req *pb.UpdateProjectRequest) (*pb.Project, error) {
@@ -96,11 +99,11 @@ func (s *projectService) UpdateProject(_ context.Context, req *pb.UpdateProjectR
 		opts.Definition = req.Definition
 	}
 
-	p, err := s.manager.UpdateProject(opts)
+	pwe, err := s.manager.UpdateProject(opts)
 	if err != nil {
 		return nil, err
 	}
-	return modelToProtoProject(p), nil
+	return modelToProtoProject(pwe), nil
 }
 
 func (s *projectService) DeleteProject(_ context.Context, req *pb.ProjectId) (*emptypb.Empty, error) {
@@ -304,13 +307,18 @@ func (s *daemonService) GetStatus(_ context.Context, _ *emptypb.Empty) (*pb.Daem
 		activeProjects = append(activeProjects, a.ProjectID)
 	}
 
+	updateAvailable, updateVersion, updateURL := s.server.GetUpdateState()
+
 	return &pb.DaemonStatus{
-		Host:           info.Host,
-		Port:           int32(info.Port),
-		Pid:            int32(info.PID),
-		StartedAt:      timestamppb.New(info.StartedAt),
-		ActiveAgents:   int32(len(agents)),
-		ActiveProjects: activeProjects,
+		Host:             info.Host,
+		Port:             int32(info.Port),
+		Pid:              int32(info.PID),
+		StartedAt:        timestamppb.New(info.StartedAt),
+		ActiveAgents:     int32(len(agents)),
+		ActiveProjects:   activeProjects,
+		UpdateAvailable:  updateAvailable,
+		UpdateVersion:    updateVersion,
+		UpdateUrl:        updateURL,
 	}, nil
 }
 
@@ -836,14 +844,331 @@ func (s *logService) GetLog(_ context.Context, req *pb.GetLogRequest) (*pb.LogCo
 	}, nil
 }
 
+// --- SettingsService ---
+
+type settingsService struct {
+	pb.UnimplementedSettingsServiceServer
+}
+
+func (s *settingsService) GetSettings(_ context.Context, _ *emptypb.Empty) (*pb.Settings, error) {
+	settings, err := config.LoadSettings()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load settings: %w", err)
+	}
+	return modelToProtoSettings(settings), nil
+}
+
+func (s *settingsService) UpdateSettings(_ context.Context, req *pb.UpdateSettingsRequest) (*pb.Settings, error) {
+	settings, err := config.LoadSettings()
+	if err != nil {
+		return nil, fmt.Errorf("failed to load settings: %w", err)
+	}
+
+	if req.Defaults != nil {
+		settings.Defaults.AutoMerge = req.Defaults.AutoMerge
+		settings.Defaults.AutoDeleteBranch = req.Defaults.AutoDeleteBranch
+		settings.Defaults.AutoStartTasks = req.Defaults.AutoStartTasks
+		if req.Defaults.DefaultBranch != "" {
+			settings.Defaults.DefaultBranch = req.Defaults.DefaultBranch
+		}
+		if req.Defaults.DefaultSandbox != "" {
+			settings.Defaults.DefaultSandbox = req.Defaults.DefaultSandbox
+		}
+		if req.Defaults.DefaultAgent != "" {
+			settings.Defaults.DefaultAgent = req.Defaults.DefaultAgent
+		}
+	}
+
+	if req.Updates != nil {
+		settings.Updates.CheckOnStartup = req.Updates.CheckOnStartup
+		if req.Updates.CheckFrequency != "" {
+			settings.Updates.CheckFrequency = req.Updates.CheckFrequency
+		}
+		settings.Updates.AutoDownload = req.Updates.AutoDownload
+	}
+
+	if req.Appearance != nil {
+		if req.Appearance.Theme != "" {
+			settings.Appearance.Theme = req.Appearance.Theme
+		}
+	}
+
+	// Merge agent configs
+	for name, agentCfg := range req.Agents {
+		if settings.Agents == nil {
+			settings.Agents = make(map[string]*models.AgentConfig)
+		}
+		settings.Agents[name] = &models.AgentConfig{Path: agentCfg.Path}
+	}
+
+	if err := config.SaveSettings(settings); err != nil {
+		return nil, fmt.Errorf("failed to save settings: %w", err)
+	}
+	return modelToProtoSettings(settings), nil
+}
+
+// --- BranchService ---
+
+type branchService struct {
+	pb.UnimplementedBranchServiceServer
+}
+
+func (s *branchService) ListBranches(_ context.Context, req *pb.ProjectId) (*pb.BranchList, error) {
+	index, err := config.LoadProjectsIndex()
+	if err != nil {
+		return nil, err
+	}
+	entry := index.FindProject(req.ProjectId)
+	if entry == nil {
+		return nil, fmt.Errorf("project not found: %s", req.ProjectId)
+	}
+
+	branches, err := listGitBranches(entry.Path, req.ProjectId)
+	if err != nil {
+		return nil, err
+	}
+	return &pb.BranchList{Branches: branches}, nil
+}
+
+func (s *branchService) GetBranch(_ context.Context, req *pb.BranchId) (*pb.Branch, error) {
+	index, err := config.LoadProjectsIndex()
+	if err != nil {
+		return nil, err
+	}
+	entry := index.FindProject(req.ProjectId)
+	if entry == nil {
+		return nil, fmt.Errorf("project not found: %s", req.ProjectId)
+	}
+
+	branches, err := listGitBranches(entry.Path, req.ProjectId)
+	if err != nil {
+		return nil, err
+	}
+	for _, b := range branches {
+		if b.Name == req.BranchName {
+			return b, nil
+		}
+	}
+	return nil, fmt.Errorf("branch not found: %s", req.BranchName)
+}
+
+func (s *branchService) MergeBranch(_ context.Context, req *pb.MergeBranchRequest) (*pb.Branch, error) {
+	index, err := config.LoadProjectsIndex()
+	if err != nil {
+		return nil, err
+	}
+	entry := index.FindProject(req.ProjectId)
+	if entry == nil {
+		return nil, fmt.Errorf("project not found: %s", req.ProjectId)
+	}
+
+	proj, err := config.LoadProject(entry.Path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load project: %w", err)
+	}
+
+	taskNum := taskNumberFromBranch(req.BranchName)
+	merged, err := agent.MergeWorktree(entry.Path, taskNum, proj.DefaultBranch)
+	if err != nil {
+		return nil, fmt.Errorf("merge failed: %w", err)
+	}
+
+	if req.DeleteAfterMerge && merged {
+		_ = agent.RemoveWorktree(entry.Path, taskNum, true)
+	}
+
+	status := "unmerged"
+	if merged {
+		status = "merged"
+	}
+	return &pb.Branch{
+		Name:      req.BranchName,
+		ProjectId: req.ProjectId,
+		TaskNumber: int32(taskNum),
+		Status:    status,
+	}, nil
+}
+
+func (s *branchService) DeleteBranch(_ context.Context, req *pb.BranchId) (*emptypb.Empty, error) {
+	index, err := config.LoadProjectsIndex()
+	if err != nil {
+		return nil, err
+	}
+	entry := index.FindProject(req.ProjectId)
+	if entry == nil {
+		return nil, fmt.Errorf("project not found: %s", req.ProjectId)
+	}
+
+	taskNum := taskNumberFromBranch(req.BranchName)
+	if err := agent.RemoveWorktree(entry.Path, taskNum, false); err != nil {
+		return nil, fmt.Errorf("failed to delete branch: %w", err)
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func (s *branchService) PruneBranches(_ context.Context, req *pb.ProjectId) (*pb.BranchList, error) {
+	index, err := config.LoadProjectsIndex()
+	if err != nil {
+		return nil, err
+	}
+	entry := index.FindProject(req.ProjectId)
+	if entry == nil {
+		return nil, fmt.Errorf("project not found: %s", req.ProjectId)
+	}
+
+	// Prune git worktrees first
+	pruneCmd := exec.Command("git", "worktree", "prune")
+	pruneCmd.Dir = entry.Path
+	_ = pruneCmd.Run()
+
+	// Return remaining branches
+	branches, err := listGitBranches(entry.Path, req.ProjectId)
+	if err != nil {
+		return nil, err
+	}
+	return &pb.BranchList{Branches: branches}, nil
+}
+
+func (s *branchService) BulkMerge(_ context.Context, req *pb.BulkBranchRequest) (*pb.BranchList, error) {
+	index, err := config.LoadProjectsIndex()
+	if err != nil {
+		return nil, err
+	}
+	entry := index.FindProject(req.ProjectId)
+	if entry == nil {
+		return nil, fmt.Errorf("project not found: %s", req.ProjectId)
+	}
+
+	proj, err := config.LoadProject(entry.Path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load project: %w", err)
+	}
+
+	var results []*pb.Branch
+	for _, branchName := range req.BranchNames {
+		taskNum := taskNumberFromBranch(branchName)
+		merged, err := agent.MergeWorktree(entry.Path, taskNum, proj.DefaultBranch)
+		status := "unmerged"
+		if err == nil && merged {
+			status = "merged"
+		}
+		results = append(results, &pb.Branch{
+			Name:       branchName,
+			ProjectId:  req.ProjectId,
+			TaskNumber: int32(taskNum),
+			Status:     status,
+		})
+	}
+	return &pb.BranchList{Branches: results}, nil
+}
+
+func (s *branchService) BulkDelete(_ context.Context, req *pb.BulkBranchRequest) (*emptypb.Empty, error) {
+	index, err := config.LoadProjectsIndex()
+	if err != nil {
+		return nil, err
+	}
+	entry := index.FindProject(req.ProjectId)
+	if entry == nil {
+		return nil, fmt.Errorf("project not found: %s", req.ProjectId)
+	}
+
+	for _, branchName := range req.BranchNames {
+		taskNum := taskNumberFromBranch(branchName)
+		_ = agent.RemoveWorktree(entry.Path, taskNum, false)
+	}
+	return &emptypb.Empty{}, nil
+}
+
+// listGitBranches lists all watchfire/* branches for a project.
+func listGitBranches(projectPath, projectID string) ([]*pb.Branch, error) {
+	cmd := exec.Command("git", "branch", "--list", "watchfire/*", "--format=%(refname:short)")
+	cmd.Dir = projectPath
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to list branches: %w", err)
+	}
+
+	// Get the default branch for merge status checks
+	proj, _ := config.LoadProject(projectPath)
+	defaultBranch := "main"
+	if proj != nil && proj.DefaultBranch != "" {
+		defaultBranch = proj.DefaultBranch
+	}
+
+	var branches []*pb.Branch
+	for _, line := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+
+		taskNum := taskNumberFromBranch(line)
+		status := branchMergeStatus(projectPath, line, defaultBranch)
+		worktreePath := ""
+		padded := fmt.Sprintf("%04d", taskNum)
+		wtPath := filepath.Join(projectPath, ".watchfire", "worktrees", padded)
+		if info, err := os.Stat(wtPath); err == nil && info.IsDir() {
+			worktreePath = wtPath
+		}
+
+		branches = append(branches, &pb.Branch{
+			Name:         line,
+			ProjectId:    projectID,
+			TaskNumber:   int32(taskNum),
+			Status:       status,
+			WorktreePath: worktreePath,
+		})
+	}
+	return branches, nil
+}
+
+// taskNumberFromBranch extracts the task number from a "watchfire/NNNN" branch name.
+func taskNumberFromBranch(branchName string) int {
+	parts := strings.SplitN(branchName, "/", 2)
+	if len(parts) != 2 {
+		return 0
+	}
+	var num int
+	fmt.Sscanf(parts[1], "%d", &num)
+	return num
+}
+
+// branchMergeStatus checks if a branch has been merged into the target branch.
+func branchMergeStatus(projectPath, branchName, targetBranch string) string {
+	// Check if branch is merged
+	cmd := exec.Command("git", "branch", "--merged", targetBranch, "--list", branchName)
+	cmd.Dir = projectPath
+	output, err := cmd.Output()
+	if err != nil {
+		return "unmerged"
+	}
+	if strings.TrimSpace(string(output)) != "" {
+		return "merged"
+	}
+
+	// Check if worktree exists — if not, it's orphaned
+	taskNum := taskNumberFromBranch(branchName)
+	padded := fmt.Sprintf("%04d", taskNum)
+	wtPath := filepath.Join(projectPath, ".watchfire", "worktrees", padded)
+	if _, err := os.Stat(wtPath); os.IsNotExist(err) {
+		// No worktree and not merged — check if there's a matching task
+		if _, taskErr := config.LoadTask(projectPath, taskNum); taskErr != nil {
+			return "orphaned"
+		}
+	}
+	return "unmerged"
+}
+
 // ============================================================================
 // Conversion Functions
 // ============================================================================
 
-func modelToProtoProject(p *models.Project) *pb.Project {
+func modelToProtoProject(pwe project.ProjectWithEntry) *pb.Project {
+	p := pwe.Project
 	return &pb.Project{
 		ProjectId:        p.ProjectID,
 		Name:             p.Name,
+		Path:             pwe.Path,
 		Status:           p.Status,
 		Color:            p.Color,
 		DefaultBranch:    p.DefaultBranch,
@@ -856,6 +1181,7 @@ func modelToProtoProject(p *models.Project) *pb.Project {
 		CreatedAt:        timestamppb.New(p.CreatedAt),
 		UpdatedAt:        timestamppb.New(p.UpdatedAt),
 		NextTaskNumber:   int32(p.NextTaskNumber),
+		Position:         int32(pwe.Position),
 	}
 }
 
@@ -891,4 +1217,31 @@ func modelToProtoTask(t *models.Task, projectID string) *pb.Task {
 	}
 
 	return protoTask
+}
+
+func modelToProtoSettings(s *models.Settings) *pb.Settings {
+	agents := make(map[string]*pb.AgentConfig, len(s.Agents))
+	for name, cfg := range s.Agents {
+		agents[name] = &pb.AgentConfig{Path: cfg.Path}
+	}
+	return &pb.Settings{
+		Version: int32(s.Version),
+		Agents:  agents,
+		Defaults: &pb.DefaultsConfig{
+			AutoMerge:        s.Defaults.AutoMerge,
+			AutoDeleteBranch: s.Defaults.AutoDeleteBranch,
+			AutoStartTasks:   s.Defaults.AutoStartTasks,
+			DefaultBranch:    s.Defaults.DefaultBranch,
+			DefaultSandbox:   s.Defaults.DefaultSandbox,
+			DefaultAgent:     s.Defaults.DefaultAgent,
+		},
+		Updates: &pb.UpdatesConfig{
+			CheckOnStartup: s.Updates.CheckOnStartup,
+			CheckFrequency: s.Updates.CheckFrequency,
+			AutoDownload:   s.Updates.AutoDownload,
+		},
+		Appearance: &pb.AppearanceConfig{
+			Theme: s.Appearance.Theme,
+		},
+	}
 }
