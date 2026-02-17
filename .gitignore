@@ -32,8 +32,8 @@ go.work.sum
 .DS_Store
 Thumbs.db
 
-# Generated
-*.pb.go
+# Generated (keep proto/*.pb.go committed for CI)
+# *.pb.go
 
 # Local config
 .env

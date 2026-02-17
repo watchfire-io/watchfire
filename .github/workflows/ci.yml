@@ -48,7 +48,7 @@ jobs:
 
   go-build-amd64:
     name: Go Build (amd64)
-    runs-on: macos-13
+    runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
