@@ -17,6 +17,7 @@ mac:
   gatekeeperAssess: false
   entitlements: "entitlements.mac.plist"
   entitlementsInherit: "entitlements.mac.plist"
+  x64ArchFiles: "Contents/Resources/watchfire{,d}"
   target:
     - target: dmg
       arch: [universal]
