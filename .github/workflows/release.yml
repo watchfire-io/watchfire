@@ -10,11 +10,14 @@ concurrency:
 
 jobs:
   version:
-    name: Read Version
+    name: Check Version
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     outputs:
       version: ${{ steps.read.outputs.version }}
       codename: ${{ steps.read.outputs.codename }}
+      should_build: ${{ steps.check.outputs.should_build }}
     steps:
       - uses: actions/checkout@v4
       - name: Read version.json
@@ -23,9 +26,32 @@ jobs:
           echo "version=$(python3 -c "import json; print(json.load(open('version.json'))['version'])")" >> "$GITHUB_OUTPUT"
           echo "codename=$(python3 -c "import json; print(json.load(open('version.json'))['codename'])")" >> "$GITHUB_OUTPUT"
 
+      - name: Check existing release
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="v${{ steps.read.outputs.version }}"
+
+          # Try to get release info for this tag
+          if release_json=$(gh release view "$version" --json isDraft,tagName 2>/dev/null); then
+            is_draft=$(echo "$release_json" | python3 -c "import sys,json; print(json.load(sys.stdin)['isDraft'])")
+            if [ "$is_draft" = "True" ]; then
+              echo "Draft release exists for $version — will rebuild and replace"
+              echo "should_build=true" >> "$GITHUB_OUTPUT"
+            else
+              echo "Published release exists for $version — skipping"
+              echo "should_build=false" >> "$GITHUB_OUTPUT"
+            fi
+          else
+            echo "No release exists for $version — will build and create draft"
+            echo "should_build=true" >> "$GITHUB_OUTPUT"
+          fi
+
   build-go:
     name: Build Go (${{ matrix.arch }})
     needs: version
+    if: needs.version.outputs.should_build == 'true'
     strategy:
       matrix:
         include:
@@ -99,6 +125,7 @@ jobs:
   build-gui:
     name: Build GUI
     needs: [version, build-go]
+    if: needs.version.outputs.should_build == 'true'
     runs-on: macos-14
     env:
       CSC_LINK: ${{ secrets.CSC_LINK }}
@@ -167,6 +194,7 @@ jobs:
   release:
     name: Create Release
     needs: [version, build-go, build-gui]
+    if: needs.version.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -212,7 +240,9 @@ jobs:
             fi
           done
 
-          # Delete existing draft release for this tag if it exists
+          # Delete existing draft release if present (version job already
+          # confirmed it's either draft or non-existent — published releases
+          # cause the workflow to skip before reaching this point)
           gh release delete "$version" --yes 2>/dev/null || true
 
           # Create draft release
