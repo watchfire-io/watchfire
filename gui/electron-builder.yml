@@ -23,8 +23,8 @@ mac:
       arch: [universal]
     - target: zip
       arch: [universal]
-  notarize:
-    teamId: ${env.APPLE_TEAM_ID}
+  # notarize:
+  #   teamId: ${env.APPLE_TEAM_ID}
 dmg:
   sign: true
   contents:
