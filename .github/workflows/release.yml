@@ -144,7 +144,7 @@ jobs:
 
       - name: Build and package GUI
         working-directory: gui
-        run: npm run package
+        run: npx electron-vite build && npx electron-builder --config electron-builder.yml --publish never
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
