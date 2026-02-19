@@ -2,6 +2,7 @@ import { existsSync, copyFileSync, lstatSync, readlinkSync } from 'fs'
 import { join } from 'path'
 import { execSync } from 'child_process'
 import { app, dialog } from 'electron'
+import { stopDaemon } from './daemon'
 
 const CLI_PATH = '/usr/local/bin/watchfire'
 const DAEMON_PATH = '/usr/local/bin/watchfired'
@@ -116,6 +117,8 @@ export async function checkAndInstallCLI(): Promise<void> {
     try {
       const success = await installCLI()
       if (success) {
+        // Stop the old daemon so ensureDaemon() will start the new version
+        await stopDaemon()
         dialog.showMessageBoxSync({
           type: 'info',
           title: 'CLI Installed',

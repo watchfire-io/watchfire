@@ -1,12 +1,16 @@
 import { ipcMain, dialog } from 'electron'
 import { existsSync } from 'fs'
 import { join } from 'path'
-import { getDaemonInfo } from './daemon'
+import { getDaemonInfo, ensureDaemon } from './daemon'
 import { installCLI, needsInstall } from './cli-installer'
 
 export function setupIpc(): void {
   ipcMain.handle('get-daemon-info', () => {
     return getDaemonInfo()
+  })
+
+  ipcMain.handle('ensure-daemon', async () => {
+    return ensureDaemon()
   })
 
   ipcMain.handle('open-folder-dialog', async () => {

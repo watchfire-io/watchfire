@@ -19,6 +19,7 @@ interface UpdateInfo {
 
 interface WatchfireAPI {
   getDaemonInfo(): Promise<DaemonInfo | null>
+  ensureDaemon(): Promise<DaemonInfo>
   openFolderDialog(): Promise<string | null>
   checkProjectExists(folderPath: string): Promise<boolean>
   getVersion(): Promise<string>

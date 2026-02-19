@@ -21,6 +21,9 @@ const api = {
   getDaemonInfo: (): Promise<DaemonInfo | null> =>
     ipcRenderer.invoke('get-daemon-info'),
 
+  ensureDaemon: (): Promise<DaemonInfo> =>
+    ipcRenderer.invoke('ensure-daemon'),
+
   openFolderDialog: (): Promise<string | null> =>
     ipcRenderer.invoke('open-folder-dialog'),
 

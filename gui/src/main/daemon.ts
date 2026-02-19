@@ -89,6 +89,24 @@ function findDaemonBinary(): string | null {
   return null
 }
 
+/** Stop the running daemon by sending SIGTERM and waiting for it to exit */
+export async function stopDaemon(): Promise<void> {
+  const info = getDaemonInfo()
+  if (!info) return
+
+  try {
+    process.kill(info.pid, 'SIGTERM')
+  } catch {
+    return // process already gone
+  }
+
+  // Poll until daemon is gone (max 5s)
+  for (let i = 0; i < 50; i++) {
+    await sleep(100)
+    if (!getDaemonInfo()) return
+  }
+}
+
 function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms))
 }

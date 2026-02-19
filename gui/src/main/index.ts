@@ -7,6 +7,37 @@ import { checkAndInstallCLI } from './cli-installer'
 import { initAutoUpdater } from './auto-updater'
 
 let mainWindow: BrowserWindow | null = null
+let daemonWatcherInterval: ReturnType<typeof setInterval> | null = null
+let watchedDaemonPid: number | null = null
+
+function startDaemonWatcher(): void {
+  // Clean up any existing watcher
+  if (daemonWatcherInterval) clearInterval(daemonWatcherInterval)
+
+  ensureDaemon()
+    .then((info) => {
+      watchedDaemonPid = info.pid
+      mainWindow?.webContents.send('daemon-ready')
+
+      daemonWatcherInterval = setInterval(async () => {
+        try {
+          process.kill(watchedDaemonPid!, 0)
+        } catch {
+          // Daemon died — restart it
+          console.log('Daemon process gone, restarting...')
+          clearInterval(daemonWatcherInterval!)
+          daemonWatcherInterval = null
+          mainWindow?.webContents.send('daemon-shutdown')
+          startDaemonWatcher()
+        }
+      }, 2000)
+    })
+    .catch((err) => {
+      console.error('Failed to start daemon:', err)
+      // Retry after a delay
+      setTimeout(() => startDaemonWatcher(), 5000)
+    })
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -55,30 +86,16 @@ app.whenReady().then(async () => {
   // First-launch CLI installation (only when packaged)
   await checkAndInstallCLI()
 
-  // Ensure daemon is running and watch for shutdown
-  try {
-    const daemonInfo = await ensureDaemon()
-    const daemonPid = daemonInfo.pid
-    const pidCheck = setInterval(() => {
-      try {
-        process.kill(daemonPid, 0)
-      } catch {
-        clearInterval(pidCheck)
-        mainWindow?.webContents.send('daemon-shutdown')
-        setTimeout(() => app.quit(), 3000)
-      }
-    }, 2000)
-  } catch (err) {
-    console.error('Failed to start daemon:', err)
-  }
+  // Ensure daemon is running and auto-restart if it dies
+  startDaemonWatcher()
 
   // Set up IPC handlers
   setupIpc()
 
   createWindow()
 
-  // Initialize auto-updater (only when packaged)
-  if (app.isPackaged && mainWindow) {
+  // Initialize auto-updater
+  if (mainWindow) {
     initAutoUpdater(mainWindow)
   }
 

@@ -91,6 +91,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `LogService` gRPC service with `ListLogs` and `GetLog` RPCs
 - Proto messages: `LogEntry`, `LogList`, `LogContent`, `ListLogsRequest`, `GetLogRequest`
 
+#### GUI — Daemon Lifecycle
+- GUI automatically restarts the daemon if it dies (instead of quitting the app)
+- `stopDaemon()` sends SIGTERM and polls for exit before binary updates
+- CLI binary update stops the old daemon so `ensureDaemon()` starts the new version
+- Renderer reconnect triggers `ensureDaemon()` via IPC to start the daemon if not running
+
 #### Daemon — Resilience Improvements
 - Watcher re-watch on chain: chained agents (wildfire/start-all) re-watch the project to pick up directories created during earlier phases
 - Polling fallback: task-mode agents poll task YAML every 5s as safety net for missed watcher events (kqueue overflow, late directory creation)
