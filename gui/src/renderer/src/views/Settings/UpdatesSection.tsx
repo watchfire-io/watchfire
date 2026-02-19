@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import type { Settings } from '../../generated/watchfire_pb'
 import { useSettingsStore } from '../../stores/settings-store'
 import { Toggle } from '../../components/ui/Toggle'
@@ -11,9 +12,21 @@ interface Props {
 export function UpdatesSection({ settings }: Props) {
   const updateSettings = useSettingsStore((s) => s.updateSettings)
   const updates = settings.updates
+  const [checking, setChecking] = useState(false)
 
   const update = (partial: Record<string, unknown>) => {
     updateSettings({ updates: { ...updates, ...partial } as any })
+  }
+
+  const handleCheckNow = async () => {
+    setChecking(true)
+    try {
+      await window.watchfire.checkForUpdates()
+    } catch {
+      // errors are surfaced via the update-error event → UpdateBanner
+    } finally {
+      setChecking(false)
+    }
   }
 
   return (
@@ -48,9 +61,9 @@ export function UpdatesSection({ settings }: Props) {
           </select>
         </div>
 
-        <Button size="sm" variant="secondary">
-          <RefreshCw size={14} />
-          Check Now
+        <Button size="sm" variant="secondary" onClick={handleCheckNow} disabled={checking}>
+          <RefreshCw size={14} className={checking ? 'animate-spin' : ''} />
+          {checking ? 'Checking...' : 'Check Now'}
         </Button>
       </div>
     </section>

@@ -8,6 +8,7 @@ import (
 	"image/png"
 	"log"
 	"sync"
+	"time"
 
 	"github.com/getlantern/systray"
 )
@@ -25,6 +26,7 @@ var (
 	agentOpenGUI [maxAgentSlots]*systray.MenuItem
 	agentStop    [maxAgentSlots]*systray.MenuItem
 	noAgentsItem *systray.MenuItem
+	updateItem   *systray.MenuItem
 	openGUIItem  *systray.MenuItem
 	quitItem     *systray.MenuItem
 
@@ -80,6 +82,10 @@ func onReady() {
 
 	systray.AddSeparator()
 
+	// Update notice (hidden until update is detected)
+	updateItem = systray.AddMenuItem("Update Available", "A new version is available")
+	updateItem.Hide()
+
 	// Actions
 	openGUIItem = systray.AddMenuItem("Open GUI", "Launch Watchfire GUI")
 	quitItem = systray.AddMenuItem("Quit", "Shut down Watchfire daemon")
@@ -95,6 +101,9 @@ func onReady() {
 		updateTooltip()
 	}
 
+	// Poll for update availability (check every 30s until found)
+	go pollForUpdate()
+
 	// Handle click events
 	go handleClicks()
 }
@@ -105,9 +114,27 @@ func onQuit() {
 	}
 }
 
+func pollForUpdate() {
+	if state == nil {
+		return
+	}
+	for {
+		time.Sleep(30 * time.Second)
+		available, version := state.UpdateAvailable()
+		if available {
+			updateItem.SetTitle(fmt.Sprintf("Update Available — v%s", version))
+			updateItem.Show()
+			return
+		}
+	}
+}
+
 func handleClicks() {
 	for {
 		select {
+		case <-updateItem.ClickedCh:
+			log.Println("Update requested from tray — run 'watchfire update'")
+
 		case <-openGUIItem.ClickedCh:
 			log.Println("Open GUI: not yet implemented")
 

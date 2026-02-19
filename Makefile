@@ -1,5 +1,6 @@
 .PHONY: dev-daemon dev-tui dev-gui build build-daemon build-cli test lint proto clean install-tools \
-       build-daemon-arm64 build-daemon-amd64 build-cli-arm64 build-cli-amd64 build-universal sync-version package-gui
+       build-daemon-arm64 build-daemon-amd64 build-cli-arm64 build-cli-amd64 build-universal sync-version package-gui \
+       install install-all uninstall
 
 # Binary names
 DAEMON_BINARY=watchfired
@@ -132,3 +133,43 @@ run-daemon: build-daemon
 # Run CLI
 run-cli: build-cli
 	./$(BUILD_DIR)/$(CLI_BINARY)
+
+# Install locally — builds native binaries and copies to /usr/local/bin
+# Simulates what the GUI installer does on first launch.
+# Usage:
+#   make install                  — build with version.json and install
+#   make install VERSION=0.0.1   — override version (useful for testing updates)
+install: build
+	@echo "Installing watchfire v$(VERSION) to /usr/local/bin..."
+	@cp $(BUILD_DIR)/$(CLI_BINARY) /usr/local/bin/$(CLI_BINARY) 2>/dev/null || \
+		sudo cp $(BUILD_DIR)/$(CLI_BINARY) /usr/local/bin/$(CLI_BINARY)
+	@cp $(BUILD_DIR)/$(DAEMON_BINARY) /usr/local/bin/$(DAEMON_BINARY) 2>/dev/null || \
+		sudo cp $(BUILD_DIR)/$(DAEMON_BINARY) /usr/local/bin/$(DAEMON_BINARY)
+	@echo "Installed:"
+	@watchfire version
+	@watchfired -version 2>/dev/null || true
+
+# Install everything — CLI, daemon, and GUI app
+# Builds native Go binaries + packages the Electron app, then installs all.
+install-all: install install-gui
+
+# Build and install GUI app to /Applications (native arch only)
+NATIVE_ARCH := $(shell uname -m | sed 's/x86_64/x64/')
+install-gui: sync-version build build-gui
+	@echo "Packaging Watchfire.app ($(NATIVE_ARCH)) for local install..."
+	cd gui && npx electron-builder --config electron-builder.yml --publish never --mac --$(NATIVE_ARCH) -c.mac.notarize=false
+	@echo "Installing Watchfire.app to /Applications..."
+	@APP_DIR=$$(ls -d gui/dist/mac-$(NATIVE_ARCH)/Watchfire.app 2>/dev/null | head -1); \
+	if [ -z "$$APP_DIR" ]; then echo "Error: Watchfire.app not found in gui/dist/"; exit 1; fi; \
+	rm -rf /Applications/Watchfire.app 2>/dev/null || sudo rm -rf /Applications/Watchfire.app; \
+	cp -R "$$APP_DIR" /Applications/Watchfire.app 2>/dev/null || \
+		sudo cp -R "$$APP_DIR" /Applications/Watchfire.app
+	@echo "Watchfire.app installed to /Applications"
+
+# Remove installed binaries and app
+uninstall:
+	@echo "Removing watchfire from /usr/local/bin..."
+	@rm -f /usr/local/bin/$(CLI_BINARY) 2>/dev/null || sudo rm -f /usr/local/bin/$(CLI_BINARY)
+	@rm -f /usr/local/bin/$(DAEMON_BINARY) 2>/dev/null || sudo rm -f /usr/local/bin/$(DAEMON_BINARY)
+	@rm -rf /Applications/Watchfire.app 2>/dev/null || sudo rm -rf /Applications/Watchfire.app
+	@echo "Uninstalled."

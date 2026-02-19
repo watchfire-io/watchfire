@@ -1,18 +1,21 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useSettingsStore } from '../../stores/settings-store'
 import { useAppStore } from '../../stores/app-store'
 import { DefaultsSection } from './DefaultsSection'
 import { AppearanceSection } from './AppearanceSection'
 import { ClaudeCliSection } from './ClaudeCliSection'
 import { UpdatesSection } from './UpdatesSection'
+import { AboutSection } from './AboutSection'
 
 export function GlobalSettings() {
   const settings = useSettingsStore((s) => s.settings)
   const fetchSettings = useSettingsStore((s) => s.fetchSettings)
   const loading = useSettingsStore((s) => s.loading)
+  const [version, setVersion] = useState<string>('')
 
   useEffect(() => {
     fetchSettings()
+    window.watchfire.getVersion().then(setVersion)
   }, [])
 
   if (loading && !settings) {
@@ -35,6 +38,7 @@ export function GlobalSettings() {
             <UpdatesSection settings={settings} />
           </>
         )}
+        <AboutSection version={version} />
       </div>
     </div>
   )

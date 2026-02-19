@@ -9,6 +9,9 @@ import (
 	"os/signal"
 	"syscall"
 
+	"runtime"
+
+	"github.com/watchfire-io/watchfire/internal/buildinfo"
 	"github.com/watchfire-io/watchfire/internal/config"
 	"github.com/watchfire-io/watchfire/internal/daemon/server"
 	"github.com/watchfire-io/watchfire/internal/daemon/tray"
@@ -19,7 +22,17 @@ func main() {
 	// Parse flags
 	foreground := flag.Bool("foreground", false, "Run in foreground (for development)")
 	port := flag.Int("port", 0, "Port to listen on (0 for dynamic allocation)")
+	version := flag.Bool("version", false, "Print version and exit")
 	flag.Parse()
+
+	if *version {
+		fmt.Printf("watchfired %s (%s)\n", buildinfo.Version, buildinfo.Codename)
+		fmt.Printf("  Commit: %s\n", buildinfo.CommitHash)
+		fmt.Printf("  Built:  %s\n", buildinfo.BuildDate)
+		fmt.Printf("  OS/Arch: %s/%s\n", runtime.GOOS, runtime.GOARCH)
+		fmt.Printf("  Go: %s\n", runtime.Version())
+		os.Exit(0)
+	}
 
 	log.SetPrefix("[watchfired] ")
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
@@ -185,6 +198,13 @@ func (l *lazyDaemonState) StopAgent(projectID string) {
 	if srv := l.getSrv(); srv != nil {
 		server.NewTrayState(srv).StopAgent(projectID)
 	}
+}
+
+func (l *lazyDaemonState) UpdateAvailable() (bool, string) {
+	if srv := l.getSrv(); srv != nil {
+		return server.NewTrayState(srv).UpdateAvailable()
+	}
+	return false, ""
 }
 
 func (l *lazyDaemonState) RequestShutdown() {

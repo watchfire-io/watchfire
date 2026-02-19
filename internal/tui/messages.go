@@ -99,3 +99,8 @@ type LogContentMsg struct {
 	Entry   *pb.LogEntry
 	Content string
 }
+
+// UpdateAvailableMsg signals that a daemon update is available.
+type UpdateAvailableMsg struct {
+	Version string
+}

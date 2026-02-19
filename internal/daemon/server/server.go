@@ -533,6 +533,12 @@ func (t *TrayState) StopAgent(projectID string) {
 	}
 }
 
+// UpdateAvailable returns whether an update is available and the version.
+func (t *TrayState) UpdateAvailable() (bool, string) {
+	available, version, _ := t.srv.GetUpdateState()
+	return available, version
+}
+
 // RequestShutdown sends SIGINT to the current process to trigger a graceful shutdown.
 func (t *TrayState) RequestShutdown() {
 	p, err := os.FindProcess(os.Getpid())

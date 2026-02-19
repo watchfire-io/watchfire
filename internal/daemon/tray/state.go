@@ -8,6 +8,7 @@ type DaemonState interface {
 	ActiveAgents() []AgentInfo
 	StopAgent(projectID string)
 	RequestShutdown()
+	UpdateAvailable() (available bool, version string)
 }
 
 // AgentInfo describes a running agent for display in the tray menu.

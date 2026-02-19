@@ -8,7 +8,7 @@ export function initAutoUpdater(window: BrowserWindow): void {
   mainWindow = window
 
   // Configure auto-updater
-  autoUpdater.autoDownload = false
+  autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
 
   // Events → renderer

@@ -50,12 +50,17 @@ func renderStatusBar(m *Model, width int) string {
 	hints := getKeyHints(m)
 	left := " " + hints
 
-	// Connection status
+	// Update notice + connection status
 	right := ""
+	if m.updateVersion != "" {
+		right += lipgloss.NewStyle().Foreground(colorYellow).Render(
+			fmt.Sprintf("⬆ v%s available", m.updateVersion),
+		) + "  "
+	}
 	if m.connected {
-		right = lipgloss.NewStyle().Foreground(colorGreen).Render("Connected") + " "
+		right += lipgloss.NewStyle().Foreground(colorGreen).Render("Connected") + " "
 	} else {
-		right = lipgloss.NewStyle().Foreground(colorYellow).Bold(true).Render("⚠ Disconnected") + " "
+		right += lipgloss.NewStyle().Foreground(colorYellow).Bold(true).Render("⚠ Disconnected") + " "
 	}
 
 	gap := width - lipgloss.Width(left) - lipgloss.Width(right)

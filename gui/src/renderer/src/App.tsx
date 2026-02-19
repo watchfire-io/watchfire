@@ -6,6 +6,7 @@ import { Dashboard } from './views/Dashboard/Dashboard'
 import { AddProjectWizard } from './views/AddProject/AddProjectWizard'
 import { ProjectView } from './views/ProjectView/ProjectView'
 import { GlobalSettings } from './views/Settings/GlobalSettings'
+import { UpdateBanner } from './components/UpdateBanner'
 
 export default function App() {
   const { wasConnected, stopReconnect } = useAutoReconnect()
@@ -47,6 +48,7 @@ export default function App() {
       <main className="flex-1 flex flex-col overflow-hidden relative">
         {/* macOS title bar drag area */}
         <div className="titlebar-drag h-8 shrink-0" />
+        <UpdateBanner />
 
         {daemonShutdown ? (
           <div className="flex-1 flex items-center justify-center">

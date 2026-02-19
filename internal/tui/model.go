@@ -70,6 +70,9 @@ type Model struct {
 
 	// Dragging state
 	dragging bool
+
+	// Update notification
+	updateVersion string
 }
 
 // NewModel creates the initial TUI model.
@@ -150,8 +153,13 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			loadProjectCmd(m.conn, m.projectID),
 			loadTasksCmd(m.conn, m.projectID),
 			getAgentStatusCmd(m.conn, m.projectID),
+			checkDaemonUpdateCmd(m.conn),
 		)
 		return m, tea.Batch(cmds...)
+
+	case UpdateAvailableMsg:
+		m.updateVersion = msg.Version
+		return m, nil
 
 	case DaemonDisconnectedMsg:
 		return m, m.doQuit()
