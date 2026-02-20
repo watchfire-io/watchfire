@@ -187,16 +187,26 @@ jobs:
 
       - name: Build and package GUI
         working-directory: gui
-        env:
-          DEBUG: "electron-builder,@electron/universal"
-          NODE_OPTIONS: "--unhandled-rejections=throw"
         run: |
           npx electron-vite build
-          npx electron-builder --config electron-builder.yml --publish never 2>&1 || true
-          echo "=== dist tree ==="
-          ls -la dist/ || true
-          ls -la dist/mac-universal/ 2>/dev/null || echo "NO dist/mac-universal directory"
-          find dist -maxdepth 3 -type f \( -name "*.dmg" -o -name "*.zip" -o -name "*.yml" -o -name "watchfire*" \) | sort || true
+          npx electron-builder --config electron-builder.yml --publish never --mac dir --arch x64
+          npx electron-builder --config electron-builder.yml --publish never --mac dir --arch arm64
+          echo "=== Attempting manual universal merge ==="
+          node -e "
+            const { makeUniversalApp } = require('@electron/universal');
+            makeUniversalApp({
+              x64AppPath: 'dist/mac-x64/Watchfire.app',
+              arm64AppPath: 'dist/mac-arm64/Watchfire.app',
+              outAppPath: 'dist/mac-universal/Watchfire.app',
+              force: true,
+              singleArchFiles: 'Contents/Resources/watchfire{,d}'
+            }).then(() => console.log('SUCCESS: Universal merge complete'))
+              .catch(err => { console.error('MERGE ERROR:', err.message, err.stack); process.exit(1); });
+          "
+          echo "=== Building DMG and zip ==="
+          npx electron-builder --config electron-builder.yml --publish never --prepackaged dist/mac-universal/Watchfire.app
+          echo "=== dist contents ==="
+          find dist -maxdepth 1 -type f | sort
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
