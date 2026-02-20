@@ -188,8 +188,15 @@ jobs:
       - name: Build and package GUI
         working-directory: gui
         run: |
+          set -o pipefail
           npx electron-vite build
-          npx electron-builder --config electron-builder.yml --publish never
+          npx electron-builder --config electron-builder.yml --publish never 2>&1 | tee /tmp/eb.log || {
+            echo "=== electron-builder FAILED ==="
+            cat /tmp/eb.log
+            exit 1
+          }
+          echo "=== dist contents ==="
+          find dist -type f -name "*.dmg" -o -name "*.zip" -o -name "*.yml" | sort
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
