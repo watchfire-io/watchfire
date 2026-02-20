@@ -189,8 +189,9 @@ jobs:
         working-directory: gui
         run: |
           npx electron-vite build
-          npx electron-builder --config electron-builder.yml --publish never --mac dir --x64
-          npx electron-builder --config electron-builder.yml --publish never --mac dir --arm64
+          # Build arch-specific apps without signing (signing happens after universal merge)
+          CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --config electron-builder.yml --publish never --mac dir --x64 -c.mac.notarize=false
+          CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --config electron-builder.yml --publish never --mac dir --arm64 -c.mac.notarize=false
           echo "=== dist dirs after arch builds ==="
           ls -la dist/
           echo "=== Attempting manual universal merge ==="
