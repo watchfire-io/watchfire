@@ -190,7 +190,9 @@ jobs:
         working-directory: gui
         run: |
           npx electron-vite build
-          npx electron-builder --config electron-builder.yml --publish never
+          DEBUG=electron-builder npx electron-builder --config electron-builder.yml --publish never 2>&1 | tee electron-builder.log
+          echo "=== dist contents ==="
+          find dist -type f | sort || true
 
   release:
     name: Create Release
