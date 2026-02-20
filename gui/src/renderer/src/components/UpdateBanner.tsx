@@ -27,6 +27,9 @@ export function UpdateBanner() {
     })
 
     window.watchfire.onUpdateError((message) => {
+      // Silently ignore "no release found" / 404 errors — this just means
+      // no GUI update assets have been uploaded to the release yet
+      if (message.includes('404') || message.includes('no published release')) return
       setState({ status: 'error', message })
     })
   }, [])
@@ -85,11 +88,9 @@ export function UpdateBanner() {
       {state.status === 'error' && (
         <>
           <div className="flex-1 text-[var(--wf-text-secondary)] truncate">
-            {state.message.includes('404')
-              ? 'Update check failed: no published release found'
-              : state.message.includes('net::')
-                ? 'Update check failed: no internet connection'
-                : 'Update check failed'}
+            {state.message.includes('net::')
+              ? 'Update check failed: no internet connection'
+              : 'Update check failed'}
           </div>
           <button onClick={() => setDismissed(true)} className="text-[var(--wf-text-muted)] hover:text-[var(--wf-text-primary)]">
             <X size={14} />

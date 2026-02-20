@@ -1,10 +1,14 @@
 import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
+import { existsSync } from 'fs'
+import { homedir } from 'os'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { setupIpc } from './ipc'
 import { ensureDaemon, getDaemonInfo } from './daemon'
 import { checkAndInstallCLI } from './cli-installer'
 import { initAutoUpdater } from './auto-updater'
+
+const DAEMON_YAML = join(homedir(), '.watchfire', 'daemon.yaml')
 
 let mainWindow: BrowserWindow | null = null
 let daemonWatcherInterval: ReturnType<typeof setInterval> | null = null
@@ -23,12 +27,19 @@ function startDaemonWatcher(): void {
         try {
           process.kill(watchedDaemonPid!, 0)
         } catch {
-          // Daemon died — restart it
-          console.log('Daemon process gone, restarting...')
           clearInterval(daemonWatcherInterval!)
           daemonWatcherInterval = null
-          mainWindow?.webContents.send('daemon-shutdown')
-          startDaemonWatcher()
+
+          if (!existsSync(DAEMON_YAML)) {
+            // daemon.yaml removed → graceful shutdown, quit the app
+            console.log('Daemon shut down gracefully, quitting GUI...')
+            mainWindow?.webContents.send('daemon-shutdown')
+            setTimeout(() => app.quit(), 3000)
+          } else {
+            // daemon.yaml still exists with stale PID → crash, restart
+            console.log('Daemon process gone, restarting...')
+            startDaemonWatcher()
+          }
         }
       }, 2000)
     })
