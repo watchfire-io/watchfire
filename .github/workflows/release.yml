@@ -194,14 +194,6 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --config electron-builder.yml --publish never --mac dir --arm64 -c.mac.notarize=false
           echo "=== dist dirs after arch builds ==="
           ls -la dist/
-          echo "=== Mach-O files in x64 app ==="
-          find dist/mac/Watchfire.app -type f -exec file {} \; 2>/dev/null | grep "Mach-O" | sed 's|dist/mac/Watchfire.app/||' | sort > /tmp/x64-macho.txt
-          cat /tmp/x64-macho.txt
-          echo "=== Mach-O files in arm64 app ==="
-          find dist/mac-arm64/Watchfire.app -type f -exec file {} \; 2>/dev/null | grep "Mach-O" | sed 's|dist/mac-arm64/Watchfire.app/||' | sort > /tmp/arm64-macho.txt
-          cat /tmp/arm64-macho.txt
-          echo "=== Diff ==="
-          diff /tmp/x64-macho.txt /tmp/arm64-macho.txt || true
           echo "=== Attempting manual universal merge ==="
           node -e "
             const path = require('path');
@@ -211,8 +203,7 @@ jobs:
               x64AppPath: path.join(base, 'dist/mac/Watchfire.app'),
               arm64AppPath: path.join(base, 'dist/mac-arm64/Watchfire.app'),
               outAppPath: path.join(base, 'dist/mac-universal/Watchfire.app'),
-              force: true,
-              singleArchFiles: 'Contents/Resources/watchfire{,d}'
+              force: true
             }).then(() => console.log('SUCCESS: Universal merge complete'))
               .catch(err => { console.error('MERGE ERROR:', err.message, err.stack); process.exit(1); });
           "
