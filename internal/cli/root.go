@@ -24,6 +24,11 @@ var rootCmd = &cobra.Command{
 	Long: `Watchfire orchestrates coding agent sessions based on task files.
 It manages multiple projects in parallel, with one active task per project.`,
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		// Skip update hint for commands that already handle updates
+		name := cmd.Name()
+		if name == "update" || name == "version" {
+			return
+		}
 		checkAndWarnUpdate()
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {

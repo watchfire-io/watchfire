@@ -143,14 +143,20 @@ run-cli: build-cli
 #   make install                  — build with version.json and install
 #   make install VERSION=0.0.1   — override version (useful for testing updates)
 install: build
+	@# Stop daemon if running (replacing binary while daemon runs causes issues on macOS)
+	@if pgrep -x watchfired >/dev/null 2>&1; then \
+		echo "Stopping running daemon..."; \
+		pkill -TERM watchfired 2>/dev/null; \
+		sleep 1; \
+	fi
 	@echo "Installing watchfire v$(VERSION) to /usr/local/bin..."
 	@cp $(BUILD_DIR)/$(CLI_BINARY) /usr/local/bin/$(CLI_BINARY) 2>/dev/null || \
 		sudo cp $(BUILD_DIR)/$(CLI_BINARY) /usr/local/bin/$(CLI_BINARY)
 	@cp $(BUILD_DIR)/$(DAEMON_BINARY) /usr/local/bin/$(DAEMON_BINARY) 2>/dev/null || \
 		sudo cp $(BUILD_DIR)/$(DAEMON_BINARY) /usr/local/bin/$(DAEMON_BINARY)
 	@echo "Installed:"
-	@watchfire version
-	@watchfired version 2>/dev/null || true
+	@$(BUILD_DIR)/$(CLI_BINARY) version
+	@$(BUILD_DIR)/$(DAEMON_BINARY) version
 
 # Install everything — CLI, daemon, and GUI app
 # Builds native Go binaries + packages the Electron app, then installs all.
