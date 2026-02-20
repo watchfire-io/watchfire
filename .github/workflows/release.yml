@@ -192,15 +192,13 @@ jobs:
           # Build arch-specific apps without signing (signing happens after universal merge)
           CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --config electron-builder.yml --publish never --mac dir --x64 -c.mac.notarize=false
           CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --config electron-builder.yml --publish never --mac dir --arm64 -c.mac.notarize=false
-          echo "=== dist dirs after arch builds ==="
-          ls -la dist/
           # Strip ad-hoc signatures so both apps have identical file sets for universal merge
           find dist/mac/Watchfire.app -name "_CodeSignature" -type d -exec rm -rf {} + 2>/dev/null || true
           find dist/mac-arm64/Watchfire.app -name "_CodeSignature" -type d -exec rm -rf {} + 2>/dev/null || true
           # Also strip CodeResources from framework bundles
           find dist/mac/Watchfire.app -name "CodeResources" -delete 2>/dev/null || true
           find dist/mac-arm64/Watchfire.app -name "CodeResources" -delete 2>/dev/null || true
-          echo "=== Attempting manual universal merge ==="
+          # Create universal app by merging x64 and arm64
           node -e "
             const path = require('path');
             const { makeUniversalApp } = require('@electron/universal');
@@ -210,13 +208,11 @@ jobs:
               arm64AppPath: path.join(base, 'dist/mac-arm64/Watchfire.app'),
               outAppPath: path.join(base, 'dist/mac-universal/Watchfire.app'),
               force: true
-            }).then(() => console.log('SUCCESS: Universal merge complete'))
-              .catch(err => { console.error('MERGE ERROR:', err.message, err.stack); process.exit(1); });
+            }).then(() => console.log('Universal merge complete'))
+              .catch(err => { console.error('Universal merge failed:', err.message); process.exit(1); });
           "
-          echo "=== Building DMG and zip ==="
+          # Build DMG and zip from the universal app (this step handles signing + notarization)
           npx electron-builder --config electron-builder.yml --publish never --prepackaged dist/mac-universal/Watchfire.app
-          echo "=== dist contents ==="
-          find dist -maxdepth 1 -type f | sort
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
