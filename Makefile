@@ -154,6 +154,11 @@ install: build
 		sudo cp $(BUILD_DIR)/$(CLI_BINARY) /usr/local/bin/$(CLI_BINARY)
 	@cp $(BUILD_DIR)/$(DAEMON_BINARY) /usr/local/bin/$(DAEMON_BINARY) 2>/dev/null || \
 		sudo cp $(BUILD_DIR)/$(DAEMON_BINARY) /usr/local/bin/$(DAEMON_BINARY)
+	@# Remove quarantine flags that macOS may carry over from previous installs
+	@xattr -dr com.apple.quarantine /usr/local/bin/$(CLI_BINARY) 2>/dev/null || \
+		sudo xattr -dr com.apple.quarantine /usr/local/bin/$(CLI_BINARY) 2>/dev/null || true
+	@xattr -dr com.apple.quarantine /usr/local/bin/$(DAEMON_BINARY) 2>/dev/null || \
+		sudo xattr -dr com.apple.quarantine /usr/local/bin/$(DAEMON_BINARY) 2>/dev/null || true
 	@echo "Installed:"
 	@$(BUILD_DIR)/$(CLI_BINARY) version
 	@$(BUILD_DIR)/$(DAEMON_BINARY) version
