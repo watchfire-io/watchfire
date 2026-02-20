@@ -131,7 +131,7 @@ tidy:
 
 # Run daemon in foreground (no hot reload)
 run-daemon: build-daemon
-	./$(BUILD_DIR)/$(DAEMON_BINARY) -foreground
+	./$(BUILD_DIR)/$(DAEMON_BINARY) --foreground
 
 # Run CLI
 run-cli: build-cli
@@ -150,7 +150,7 @@ install: build
 		sudo cp $(BUILD_DIR)/$(DAEMON_BINARY) /usr/local/bin/$(DAEMON_BINARY)
 	@echo "Installed:"
 	@watchfire version
-	@watchfired -version 2>/dev/null || true
+	@watchfired version 2>/dev/null || true
 
 # Install everything — CLI, daemon, and GUI app
 # Builds native Go binaries + packages the Electron app, then installs all.
