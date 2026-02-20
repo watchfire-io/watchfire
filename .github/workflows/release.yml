@@ -195,11 +195,13 @@ jobs:
           ls -la dist/
           echo "=== Attempting manual universal merge ==="
           node -e "
+            const path = require('path');
             const { makeUniversalApp } = require('@electron/universal');
+            const base = process.cwd();
             makeUniversalApp({
-              x64AppPath: 'dist/mac/Watchfire.app',
-              arm64AppPath: 'dist/mac-arm64/Watchfire.app',
-              outAppPath: 'dist/mac-universal/Watchfire.app',
+              x64AppPath: path.join(base, 'dist/mac/Watchfire.app'),
+              arm64AppPath: path.join(base, 'dist/mac-arm64/Watchfire.app'),
+              outAppPath: path.join(base, 'dist/mac-universal/Watchfire.app'),
               force: true,
               singleArchFiles: 'Contents/Resources/watchfire{,d}'
             }).then(() => console.log('SUCCESS: Universal merge complete'))
