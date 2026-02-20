@@ -6,108 +6,15 @@ import (
 	"io"
 	"os"
 	"os/signal"
-	"strconv"
 	"sync"
 	"syscall"
 	"time"
 
-	"github.com/spf13/cobra"
 	"golang.org/x/term"
 
 	"github.com/watchfire-io/watchfire/internal/config"
-	"github.com/watchfire-io/watchfire/internal/daemon/task"
 	pb "github.com/watchfire-io/watchfire/proto"
 )
-
-var agentCmd = &cobra.Command{
-	Use:   "agent",
-	Short: "Manage coding agents",
-	Long:  `Manage coding agent sessions for the current project.`,
-}
-
-var agentStartCmd = &cobra.Command{
-	Use:   "start [task-number|all]",
-	Short: "Start an agent session",
-	Args:  cobra.MaximumNArgs(1),
-	RunE:  runAgentStart,
-}
-
-var agentGenerateCmd = &cobra.Command{
-	Use:     "generate",
-	Aliases: []string{"gen"},
-	Short:   "Generate project artifacts",
-	Long:    `Generate project definition or tasks using an agent.`,
-}
-
-var agentGenerateDefCmd = &cobra.Command{
-	Use:     "definition",
-	Aliases: []string{"def"},
-	Short:   "Generate project definition",
-	RunE:    runAgentGenerateDef,
-}
-
-var agentGenerateTasksCmd = &cobra.Command{
-	Use:   "tasks",
-	Short: "Generate tasks from project definition",
-	RunE:  runAgentGenerateTasks,
-}
-
-var agentWildfireCmd = &cobra.Command{
-	Use:   "wildfire",
-	Short: "🔥 Run all ready tasks in sequence",
-	RunE:  runAgentWildfire,
-}
-
-func init() {
-	agentGenerateCmd.AddCommand(agentGenerateDefCmd)
-	agentGenerateCmd.AddCommand(agentGenerateTasksCmd)
-
-	agentCmd.AddCommand(agentGenerateCmd)
-	agentCmd.AddCommand(agentStartCmd)
-	agentCmd.AddCommand(agentWildfireCmd)
-}
-
-func runAgentStart(cmd *cobra.Command, args []string) error {
-	projectPath, err := getProjectPath()
-	if err != nil {
-		return err
-	}
-
-	// Determine mode
-	mode := "chat"
-	var taskNumber int32
-	if len(args) > 0 {
-		if args[0] == "all" {
-			mode = "start-all"
-		} else {
-			mode = "task"
-			n, err := strconv.Atoi(args[0])
-			if err != nil {
-				return fmt.Errorf("invalid task number: %s", args[0])
-			}
-			taskNumber = int32(n)
-
-			// Validate task exists
-			mgr := task.NewManager()
-			_, err = mgr.GetTask(projectPath, n)
-			if err != nil {
-				return err
-			}
-			fmt.Printf("Task #%04d validated.\n", n)
-		}
-	}
-
-	return runAgentAttach(projectPath, mode, taskNumber)
-}
-
-func runAgentWildfire(cmd *cobra.Command, args []string) error {
-	projectPath, err := getProjectPath()
-	if err != nil {
-		return err
-	}
-
-	return runAgentAttach(projectPath, "wildfire", 0)
-}
 
 // runAgentAttach connects to the daemon, starts an agent, and attaches
 // the terminal to the agent's PTY stream. In wildfire mode, it re-subscribes
@@ -151,13 +58,13 @@ func runAgentAttach(projectPath, mode string, taskNumber int32) error {
 		fmt.Printf("Agent started for %s (start-all mode — starting with task #%04d)\n", status.ProjectName, status.TaskNumber)
 	case "wildfire":
 		if status.WildfirePhase != "" {
-			fmt.Printf("Agent started for %s (🔥 wildfire mode — %s phase", status.ProjectName, status.WildfirePhase)
+			fmt.Printf("Agent started for %s (wildfire mode — %s phase", status.ProjectName, status.WildfirePhase)
 			if status.TaskNumber > 0 {
 				fmt.Printf(", task #%04d", status.TaskNumber)
 			}
 			fmt.Printf(")\n")
 		} else {
-			fmt.Printf("Agent started for %s (🔥 wildfire mode — starting with task #%04d)\n", status.ProjectName, status.TaskNumber)
+			fmt.Printf("Agent started for %s (wildfire mode — starting with task #%04d)\n", status.ProjectName, status.TaskNumber)
 		}
 	case "task":
 		fmt.Printf("Agent started for %s (task #%04d)\n", status.ProjectName, taskNumber)
@@ -233,8 +140,6 @@ func runAgentAttach(projectPath, mode string, taskNumber int32) error {
 	}()
 
 	// Input goroutine: read from stdin and send to agent.
-	// In wildfire/start-all modes, intercept Ctrl+C (byte 0x03) to trigger a user stop
-	// instead of forwarding it to the agent.
 	go func() {
 		buf := make([]byte, 1024)
 		for {
@@ -289,7 +194,7 @@ func runAgentAttach(projectPath, mode string, taskNumber int32) error {
 			}
 			if stopped {
 				if mode == "wildfire" {
-					os.Stdout.Write([]byte("\r\n--- 🔥 Wildfire stopped by user ---\r\n"))
+					os.Stdout.Write([]byte("\r\n--- Wildfire stopped by user ---\r\n"))
 				} else {
 					os.Stdout.Write([]byte("\r\n--- Start-all stopped by user ---\r\n"))
 				}
@@ -323,17 +228,17 @@ func runAgentAttach(projectPath, mode string, taskNumber int32) error {
 					if mode == "wildfire" {
 						switch agentStatus.WildfirePhase {
 						case "execute":
-							os.Stdout.Write([]byte(fmt.Sprintf("\r\n--- 🔥 Wildfire Execute: task #%04d ---\r\n", agentStatus.TaskNumber)))
+							os.Stdout.Write([]byte(fmt.Sprintf("\r\n--- Wildfire Execute: task #%04d ---\r\n", agentStatus.TaskNumber)))
 						case "refine":
-							os.Stdout.Write([]byte(fmt.Sprintf("\r\n--- 🔥 Wildfire Refine: task #%04d ---\r\n", agentStatus.TaskNumber)))
+							os.Stdout.Write([]byte(fmt.Sprintf("\r\n--- Wildfire Refine: task #%04d ---\r\n", agentStatus.TaskNumber)))
 						case "generate":
-							os.Stdout.Write([]byte("\r\n--- 🔥 Wildfire Generate: analyzing project... ---\r\n"))
+							os.Stdout.Write([]byte("\r\n--- Wildfire Generate: analyzing project... ---\r\n"))
 						default:
-							os.Stdout.Write([]byte(fmt.Sprintf("\r\n--- 🔥 Wildfire: task #%04d ---\r\n", agentStatus.TaskNumber)))
+							os.Stdout.Write([]byte(fmt.Sprintf("\r\n--- Wildfire: task #%04d ---\r\n", agentStatus.TaskNumber)))
 						}
 						// If daemon transitioned to chat mode, wildfire is complete
 						if agentStatus.Mode == "chat" {
-							os.Stdout.Write([]byte("\r\n--- 🔥 Wildfire complete: best version achieved. Entering chat mode. ---\r\n"))
+							os.Stdout.Write([]byte("\r\n--- Wildfire complete: best version achieved. Entering chat mode. ---\r\n"))
 						}
 					} else {
 						os.Stdout.Write([]byte(fmt.Sprintf("\r\n--- Start-all: task #%04d ---\r\n", agentStatus.TaskNumber)))
@@ -345,7 +250,7 @@ func runAgentAttach(projectPath, mode string, taskNumber int32) error {
 
 			if stopped {
 				if mode == "wildfire" {
-					os.Stdout.Write([]byte("\r\n--- 🔥 Wildfire stopped by user ---\r\n"))
+					os.Stdout.Write([]byte("\r\n--- Wildfire stopped by user ---\r\n"))
 				} else {
 					os.Stdout.Write([]byte("\r\n--- Start-all stopped by user ---\r\n"))
 				}
@@ -356,7 +261,7 @@ func runAgentAttach(projectPath, mode string, taskNumber int32) error {
 				if mode == "start-all" {
 					os.Stdout.Write([]byte("\r\n--- Start-all complete: all ready tasks done ---\r\n"))
 				} else {
-					os.Stdout.Write([]byte("\r\n--- 🔥 Wildfire complete: all tasks done ---\r\n"))
+					os.Stdout.Write([]byte("\r\n--- Wildfire complete: all tasks done ---\r\n"))
 				}
 				break
 			}
@@ -375,22 +280,4 @@ func runAgentAttach(projectPath, mode string, taskNumber int32) error {
 	}
 
 	return nil
-}
-
-func runAgentGenerateDef(cmd *cobra.Command, args []string) error {
-	projectPath, err := getProjectPath()
-	if err != nil {
-		return err
-	}
-
-	return runAgentAttach(projectPath, "generate-definition", 0)
-}
-
-func runAgentGenerateTasks(cmd *cobra.Command, args []string) error {
-	projectPath, err := getProjectPath()
-	if err != nil {
-		return err
-	}
-
-	return runAgentAttach(projectPath, "generate-tasks", 0)
 }

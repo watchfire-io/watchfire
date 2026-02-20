@@ -13,9 +13,10 @@ import (
 	"github.com/watchfire-io/watchfire/internal/config"
 )
 
-var settingsCmd = &cobra.Command{
-	Use:   "settings",
-	Short: "Configure project settings",
+var configureCmd = &cobra.Command{
+	Use:     "configure",
+	Aliases: []string{"config"},
+	Short:   "Configure project settings",
 	Long: `Configure project settings interactively.
 
 This allows you to modify:
@@ -25,10 +26,10 @@ This allows you to modify:
   - Automation settings (auto-merge, auto-delete, auto-start)
 
 Press Enter to keep the current value for any setting.`,
-	RunE: runSettings,
+	RunE: runConfigure,
 }
 
-func runSettings(cmd *cobra.Command, args []string) error {
+func runConfigure(cmd *cobra.Command, args []string) error {
 	projectPath, err := getProjectPath()
 	if err != nil {
 		return err

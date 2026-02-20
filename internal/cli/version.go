@@ -14,10 +14,14 @@ var versionCmd = &cobra.Command{
 	Aliases: []string{"v"},
 	Short:   "Show version information",
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Printf("Watchfire %s (%s)\n", buildinfo.Version, buildinfo.Codename)
-		fmt.Printf("  Commit: %s\n", buildinfo.CommitHash)
-		fmt.Printf("  Built:  %s\n", buildinfo.BuildDate)
-		fmt.Printf("  OS/Arch: %s/%s\n", runtime.GOOS, runtime.GOARCH)
-		fmt.Printf("  Go: %s\n", runtime.Version())
+		fmt.Printf("  %s %s %s\n",
+			styleBrand.Render("Watchfire"),
+			styleVersion.Render(buildinfo.Version),
+			styleHint.Render("("+buildinfo.Codename+")"),
+		)
+		fmt.Printf("    %s  %s\n", styleLabel.Render("Commit"), styleValue.Render(buildinfo.CommitHash))
+		fmt.Printf("    %s   %s\n", styleLabel.Render("Built"), styleValue.Render(buildinfo.BuildDate))
+		fmt.Printf("    %s %s\n", styleLabel.Render("OS/Arch"), styleValue.Render(runtime.GOOS+"/"+runtime.GOARCH))
+		fmt.Printf("    %s      %s\n", styleLabel.Render("Go"), styleValue.Render(runtime.Version()))
 	},
 }

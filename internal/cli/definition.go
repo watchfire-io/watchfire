@@ -12,8 +12,8 @@ import (
 	"github.com/watchfire-io/watchfire/internal/config"
 )
 
-var definitionCmd = &cobra.Command{
-	Use:     "definition",
+var defineCmd = &cobra.Command{
+	Use:     "define",
 	Aliases: []string{"def"},
 	Short:   "Edit project definition in external editor",
 	Long: `Edit the project definition using your preferred text editor.
@@ -23,10 +23,10 @@ It provides context to coding agents about the project's purpose,
 architecture, and any special instructions.
 
 The editor is selected in order: $EDITOR, $VISUAL, vim, vi, nano.`,
-	RunE: runDefinition,
+	RunE: runDefine,
 }
 
-func runDefinition(cmd *cobra.Command, args []string) error {
+func runDefine(cmd *cobra.Command, args []string) error {
 	projectPath, err := getProjectPath()
 	if err != nil {
 		return err

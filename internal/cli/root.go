@@ -11,22 +11,19 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
 
+	"github.com/watchfire-io/watchfire/internal/buildinfo"
 	"github.com/watchfire-io/watchfire/internal/config"
 	"github.com/watchfire-io/watchfire/internal/tui"
 	pb "github.com/watchfire-io/watchfire/proto"
 )
 
 var rootCmd = &cobra.Command{
-	Use:   "watchfire",
-	Short: "Orchestrate coding agent sessions based on specs",
+	Use:     "watchfire",
+	Short:   "Orchestrate coding agent sessions based on specs",
+	Version: buildinfo.Version,
 	Long: `Watchfire orchestrates coding agent sessions based on task files.
 It manages multiple projects in parallel, with one active task per project.`,
 	PersistentPostRun: func(cmd *cobra.Command, args []string) {
-		// Skip update warning for these commands
-		name := cmd.Name()
-		if name == "update" || name == "version" {
-			return
-		}
 		checkAndWarnUpdate()
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -69,7 +66,9 @@ func checkAndWarnUpdate() {
 	}
 
 	if status.UpdateAvailable {
-		fmt.Printf("\n\033[33m⚠ Update available: v%s → run 'watchfire update' to upgrade\033[0m\n", status.UpdateVersion)
+		fmt.Printf("\n%s\n", styleUpdate.Render(
+			fmt.Sprintf("⚡ Update available: v%s — run 'watchfire update' to upgrade", status.UpdateVersion),
+		))
 	}
 }
 
@@ -79,13 +78,24 @@ func Execute() error {
 }
 
 func init() {
-	// Add subcommands (alphabetical)
-	rootCmd.AddCommand(agentCmd)
-	rootCmd.AddCommand(daemonCmd)
-	rootCmd.AddCommand(definitionCmd)
+	// Project lifecycle
 	rootCmd.AddCommand(initCmd)
-	rootCmd.AddCommand(settingsCmd)
+	rootCmd.AddCommand(defineCmd)
+	rootCmd.AddCommand(configureCmd)
+
+	// Task management
 	rootCmd.AddCommand(taskCmd)
+
+	// Execution verbs
+	rootCmd.AddCommand(runCmd)
+	rootCmd.AddCommand(planCmd)
+	rootCmd.AddCommand(generateCmd)
+	rootCmd.AddCommand(wildfireCmd)
+
+	// Daemon management
+	rootCmd.AddCommand(daemonCmd)
+
+	// Utility
 	rootCmd.AddCommand(updateCmd)
 	rootCmd.AddCommand(versionCmd)
 }

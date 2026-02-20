@@ -233,28 +233,37 @@ The CLI/TUI is the primary interface for developers. A single binary (`watchfire
 | Command | Alias | Description |
 |---------|-------|-------------|
 | `watchfire` | | Start TUI |
-| `watchfire version` | `-v` | Show version (all components) |
+| `watchfire version` | `--version`, `-v` | Show version (all components) |
 | `watchfire help` | `-h` | Show help |
 | `watchfire update` | | Update all components (daemon, CLI/TUI, GUI) |
 | `watchfire init` | | Initialize project in current directory |
+
+#### Project Lifecycle
+
+| Command | Alias | Description |
+|---------|-------|-------------|
+| `watchfire define` | `def` | Edit project definition in $EDITOR |
+| `watchfire configure` | `config` | Configure project settings (interactive) |
 
 #### Task
 
 | Command | Alias | Description |
 |---------|-------|-------------|
 | `watchfire task list` | `task ls` | List tasks (excludes soft-deleted) |
-| `watchfire task list-deleted` | `task ls-deleted` | List soft-deleted tasks |
+| `watchfire task list --deleted` | | List soft-deleted tasks |
 | `watchfire task add` | | Add new task (interactive prompts) |
-| `watchfire task <taskid>` | | Edit task (interactive TUI) |
+| `watchfire task <taskid>` | | Edit task (interactive) |
 | `watchfire task delete <taskid>` | `task rm <taskid>` | Soft delete task (sets deleted_at) |
 | `watchfire task restore <taskid>` | | Restore soft-deleted task |
 
-#### Project
+#### Execution
 
 | Command | Alias | Description |
 |---------|-------|-------------|
-| `watchfire definition` | `def` | Edit project definition (interactive) |
-| `watchfire settings` | | Configure project settings (interactive) |
+| `watchfire run [taskid\|all]` | | No arg = chat mode. taskid = run task. `all` = run all ready tasks in sequence. |
+| `watchfire plan` | | Generate tasks from project definition |
+| `watchfire generate` | `gen` | Generate project definition using agent |
+| `watchfire wildfire` | `fire` | Autonomous three-phase loop until no new tasks or Ctrl+C |
 
 #### Daemon
 
@@ -263,16 +272,6 @@ The CLI/TUI is the primary interface for developers. A single binary (`watchfire
 | `watchfire daemon start` | | Start the daemon (no-op if already running) |
 | `watchfire daemon status` | | Show daemon host, port, PID, uptime, and active agents |
 | `watchfire daemon stop` | | Stop the daemon via SIGTERM |
-
-#### Agent
-
-| Command | Alias | Description |
-|---------|-------|-------------|
-| `watchfire agent start [taskid]` | | No taskid = chat mode. With taskid = marks ready + starts. Ctrl+C stops. |
-| `watchfire agent start all` | | Run all ready tasks in sequence, exit when none left. |
-| `watchfire agent generate definition` | `agent gen def` | One-shot: generate project definition (JSON output mode) |
-| `watchfire agent generate tasks` | `agent gen tasks` | One-shot: generate tasks (JSON output mode) |
-| `watchfire agent wildfire` | | Autonomous three-phase loop until no new tasks or Ctrl+C |
 
 ### `watchfire init` Flow
 
@@ -758,7 +757,7 @@ Execute (ready tasks) → Refine (draft tasks) → Generate (no tasks left)
 
 | Aspect | Behavior |
 |--------|----------|
-| **Entry** | `watchfire agent wildfire` |
+| **Entry** | `watchfire wildfire` |
 | **Phase selection** | Daemon picks phase based on available tasks: ready → execute, draft → refine, none → generate |
 | **Phase completion** | Agent creates signal file → daemon detects, deletes file, stops agent → next phase |
 | **Stop conditions** | Generate phase creates no new tasks → transitions to chat mode, OR Ctrl+C |

@@ -21,18 +21,13 @@ var taskCmd = &cobra.Command{
 	Long:  `Manage tasks for the current project.`,
 }
 
+var taskListDeleted bool
+
 var taskListCmd = &cobra.Command{
 	Use:     "list",
 	Aliases: []string{"ls"},
 	Short:   "List tasks",
 	RunE:    runTaskList,
-}
-
-var taskListDeletedCmd = &cobra.Command{
-	Use:     "list-deleted",
-	Aliases: []string{"ls-deleted"},
-	Short:   "List soft-deleted tasks",
-	RunE:    runTaskListDeleted,
 }
 
 var taskAddCmd = &cobra.Command{
@@ -64,11 +59,12 @@ var taskRestoreCmd = &cobra.Command{
 }
 
 func init() {
+	taskListCmd.Flags().BoolVar(&taskListDeleted, "deleted", false, "Show soft-deleted tasks")
+
 	taskCmd.AddCommand(taskAddCmd)
 	taskCmd.AddCommand(taskDeleteCmd)
 	taskCmd.AddCommand(taskEditCmd)
 	taskCmd.AddCommand(taskListCmd)
-	taskCmd.AddCommand(taskListDeletedCmd)
 	taskCmd.AddCommand(taskRestoreCmd)
 }
 
@@ -96,6 +92,10 @@ func runTaskList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	if taskListDeleted {
+		return runTaskListDeleted(projectPath)
+	}
+
 	mgr := task.NewManager()
 	tasks, err := mgr.ListTasks(projectPath, task.ListOptions{
 		IncludeDeleted: false,
@@ -105,7 +105,7 @@ func runTaskList(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(tasks) == 0 {
-		fmt.Println("No tasks. Run 'watchfire task add' to create one.")
+		fmt.Println(styleHint.Render("No tasks. Run 'watchfire task add' to create one."))
 		return nil
 	}
 
@@ -128,19 +128,14 @@ func runTaskList(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-func runTaskListDeleted(cmd *cobra.Command, args []string) error {
-	projectPath, err := getProjectPath()
-	if err != nil {
-		return err
-	}
-
+func runTaskListDeleted(projectPath string) error {
 	tasks, err := config.LoadDeletedTasks(projectPath)
 	if err != nil {
 		return err
 	}
 
 	if len(tasks) == 0 {
-		fmt.Println("No deleted tasks.")
+		fmt.Println(styleHint.Render("No deleted tasks."))
 		return nil
 	}
 
@@ -149,9 +144,9 @@ func runTaskListDeleted(cmd *cobra.Command, args []string) error {
 		return tasks[i].TaskNumber < tasks[j].TaskNumber
 	})
 
-	fmt.Println("Deleted Tasks:")
+	fmt.Println(styleLabel.Render("Deleted Tasks:"))
 	for _, t := range tasks {
-		fmt.Printf("  #%04d  %s\n", t.TaskNumber, t.Title)
+		fmt.Printf("  %s  %s\n", styleHint.Render(fmt.Sprintf("#%04d", t.TaskNumber)), t.Title)
 	}
 
 	return nil
