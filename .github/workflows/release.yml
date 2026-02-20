@@ -185,7 +185,11 @@ jobs:
 
       - name: Build and package GUI
         working-directory: gui
-        run: npx electron-vite build && npx electron-builder --config electron-builder.yml --publish never
+        run: |
+          npx electron-vite build
+          npx electron-builder --config electron-builder.yml --publish never 2>&1 | tee electron-builder.log
+          echo "--- dist contents ---"
+          find dist -type f | sort
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
