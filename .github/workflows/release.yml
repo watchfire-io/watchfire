@@ -171,13 +171,12 @@ jobs:
           name: go-binaries-amd64
           path: build/
 
-      - name: Create universal binaries
+      - name: Prepare arch-specific binaries for electron-builder
         run: |
-          lipo -create -output build/watchfired build/watchfired-arm64 build/watchfired-amd64
-          lipo -create -output build/watchfire build/watchfire-arm64 build/watchfire-amd64
-          chmod +x build/watchfired build/watchfire
-          lipo -info build/watchfired
-          lipo -info build/watchfire
+          # electron-builder uses "x64" not "amd64" for the Intel arch
+          cp build/watchfired-amd64 build/watchfired-x64
+          cp build/watchfire-amd64 build/watchfire-x64
+          chmod +x build/watchfired-x64 build/watchfire-x64 build/watchfired-arm64 build/watchfire-arm64
 
       - name: Sync version
         run: make sync-version
@@ -190,9 +189,25 @@ jobs:
         working-directory: gui
         run: |
           npx electron-vite build
-          DEBUG=electron-builder npx electron-builder --config electron-builder.yml --publish never 2>&1 | tee electron-builder.log
-          echo "=== dist contents ==="
-          find dist -type f | sort || true
+          npx electron-builder --config electron-builder.yml --publish never
+
+      - name: Upload DMG
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-dmg
+          path: gui/dist/*.dmg
+
+      - name: Upload zip
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-zip
+          path: gui/dist/*.zip
+
+      - name: Upload latest-mac.yml
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-latest-mac
+          path: gui/dist/latest-mac.yml
 
   release:
     name: Create Release

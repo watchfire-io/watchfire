@@ -6,9 +6,9 @@ directories:
 files:
   - out/**/*
 extraResources:
-  - from: "../build/watchfired"
+  - from: "../build/watchfired-${arch}"
     to: "watchfired"
-  - from: "../build/watchfire"
+  - from: "../build/watchfire-${arch}"
     to: "watchfire"
 mac:
   icon: resources/icon.icns

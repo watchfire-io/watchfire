@@ -78,6 +78,9 @@ build-universal: build-daemon-arm64 build-daemon-amd64 build-cli-arm64 build-cli
 	@echo "Universal binaries created."
 	lipo -info $(BUILD_DIR)/$(DAEMON_BINARY)
 	lipo -info $(BUILD_DIR)/$(CLI_BINARY)
+	@# Create x64 aliases for electron-builder ${arch} substitution
+	cp $(BUILD_DIR)/$(DAEMON_BINARY)-amd64 $(BUILD_DIR)/$(DAEMON_BINARY)-x64
+	cp $(BUILD_DIR)/$(CLI_BINARY)-amd64 $(BUILD_DIR)/$(CLI_BINARY)-x64
 
 # Sync version.json → gui/package.json
 sync-version:
