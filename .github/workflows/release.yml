@@ -194,41 +194,24 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --config electron-builder.yml --publish never --mac dir --arm64 -c.mac.notarize=false
           echo "=== dist dirs after arch builds ==="
           ls -la dist/
-          echo "=== Files unique to each arch ==="
-          find dist/mac/Watchfire.app -type f | sed 's|dist/mac/Watchfire.app/||' | sort > /tmp/x64-files.txt
-          find dist/mac-arm64/Watchfire.app -type f | sed 's|dist/mac-arm64/Watchfire.app/||' | sort > /tmp/arm64-files.txt
-          echo "Only in x64:"
-          comm -23 /tmp/x64-files.txt /tmp/arm64-files.txt
-          echo "Only in arm64:"
-          comm -13 /tmp/x64-files.txt /tmp/arm64-files.txt
+          # Strip ad-hoc signatures so both apps have identical file sets for universal merge
+          find dist/mac/Watchfire.app -name "_CodeSignature" -type d -exec rm -rf {} + 2>/dev/null || true
+          find dist/mac-arm64/Watchfire.app -name "_CodeSignature" -type d -exec rm -rf {} + 2>/dev/null || true
+          # Also strip CodeResources from framework bundles
+          find dist/mac/Watchfire.app -name "CodeResources" -delete 2>/dev/null || true
+          find dist/mac-arm64/Watchfire.app -name "CodeResources" -delete 2>/dev/null || true
           echo "=== Attempting manual universal merge ==="
           node -e "
             const path = require('path');
-            const fu = require('@electron/universal/dist/cjs/file-utils');
+            const { makeUniversalApp } = require('@electron/universal');
             const base = process.cwd();
-            (async () => {
-              const x64 = path.join(base, 'dist/mac/Watchfire.app');
-              const arm64 = path.join(base, 'dist/mac-arm64/Watchfire.app');
-              const x64Files = await fu.getAllAppFiles(x64);
-              const arm64Files = await fu.getAllAppFiles(arm64);
-              // Log all types to understand enum values
-              const types = new Set(x64Files.map(f => f.type));
-              console.log('File types found:', [...types]);
-              // Files unique to each (all types)
-              const uniqueX64 = x64Files.filter(f => !arm64Files.some(af => af.relativePath === f.relativePath));
-              const uniqueArm64 = arm64Files.filter(f => !x64Files.some(xf => xf.relativePath === f.relativePath));
-              console.log('ALL uniqueToX64:', JSON.stringify(uniqueX64.map(f => ({path: f.relativePath, type: f.type})), null, 2));
-              console.log('ALL uniqueToArm64:', JSON.stringify(uniqueArm64.map(f => ({path: f.relativePath, type: f.type})), null, 2));
-
-              const { makeUniversalApp } = require('@electron/universal');
-              await makeUniversalApp({
-                x64AppPath: x64,
-                arm64AppPath: arm64,
-                outAppPath: path.join(base, 'dist/mac-universal/Watchfire.app'),
-                force: true
-              });
-              console.log('SUCCESS: Universal merge complete');
-            })().catch(err => { console.error('MERGE ERROR:', err.message); process.exit(1); });
+            makeUniversalApp({
+              x64AppPath: path.join(base, 'dist/mac/Watchfire.app'),
+              arm64AppPath: path.join(base, 'dist/mac-arm64/Watchfire.app'),
+              outAppPath: path.join(base, 'dist/mac-universal/Watchfire.app'),
+              force: true
+            }).then(() => console.log('SUCCESS: Universal merge complete'))
+              .catch(err => { console.error('MERGE ERROR:', err.message, err.stack); process.exit(1); });
           "
           echo "=== Building DMG and zip ==="
           npx electron-builder --config electron-builder.yml --publish never --prepackaged dist/mac-universal/Watchfire.app
