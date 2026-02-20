@@ -189,13 +189,15 @@ jobs:
         working-directory: gui
         run: |
           npx electron-vite build
-          npx electron-builder --config electron-builder.yml --publish never --mac dir --arch x64
-          npx electron-builder --config electron-builder.yml --publish never --mac dir --arch arm64
+          npx electron-builder --config electron-builder.yml --publish never --mac dir --x64
+          npx electron-builder --config electron-builder.yml --publish never --mac dir --arm64
+          echo "=== dist dirs after arch builds ==="
+          ls -la dist/
           echo "=== Attempting manual universal merge ==="
           node -e "
             const { makeUniversalApp } = require('@electron/universal');
             makeUniversalApp({
-              x64AppPath: 'dist/mac-x64/Watchfire.app',
+              x64AppPath: 'dist/mac/Watchfire.app',
               arm64AppPath: 'dist/mac-arm64/Watchfire.app',
               outAppPath: 'dist/mac-universal/Watchfire.app',
               force: true,
