@@ -194,6 +194,13 @@ jobs:
           CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --config electron-builder.yml --publish never --mac dir --arm64 -c.mac.notarize=false
           echo "=== dist dirs after arch builds ==="
           ls -la dist/
+          echo "=== Files unique to each arch ==="
+          find dist/mac/Watchfire.app -type f | sed 's|dist/mac/Watchfire.app/||' | sort > /tmp/x64-files.txt
+          find dist/mac-arm64/Watchfire.app -type f | sed 's|dist/mac-arm64/Watchfire.app/||' | sort > /tmp/arm64-files.txt
+          echo "Only in x64:"
+          comm -23 /tmp/x64-files.txt /tmp/arm64-files.txt
+          echo "Only in arm64:"
+          comm -13 /tmp/x64-files.txt /tmp/arm64-files.txt
           echo "=== Attempting manual universal merge ==="
           node -e "
             const path = require('path');
