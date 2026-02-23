@@ -212,9 +212,51 @@ jobs:
             }).then(() => console.log('Universal merge complete'))
               .catch(err => { console.error('Universal merge failed:', err.message); process.exit(1); });
           "
-          # Build DMG and zip from the universal app — electron-builder handles signing + notarization
-          # (CSC_IDENTITY_AUTO_DISCOVERY is NOT set here so electron-builder picks up the certificate)
-          npx electron-builder --config electron-builder.yml --publish never --prepackaged dist/mac-universal/Watchfire.app
+          # Sign the universal app using @electron/osx-sign (handles nested frameworks/helpers properly)
+          # and notarize using @electron/notarize, then package into DMG/zip without re-signing
+          node -e "
+            const path = require('path');
+            const appPath = path.join(process.cwd(), 'dist/mac-universal/Watchfire.app');
+
+            async function run() {
+              // Sign with @electron/osx-sign (signs all nested components with correct entitlements)
+              const identity = process.env.CODESIGN_IDENTITY;
+              if (identity) {
+                const { signApp } = require('@electron/osx-sign');
+                console.log('Signing universal app with Developer ID...');
+                await signApp({
+                  app: appPath,
+                  identity: identity,
+                  optionsForFile: (filePath) => ({
+                    hardenedRuntime: true,
+                    entitlements: path.join(process.cwd(), 'entitlements.mac.plist'),
+                    'entitlements-inherit': path.join(process.cwd(), 'entitlements.mac.plist'),
+                    timestamp: true,
+                  }),
+                });
+                console.log('Code signing complete.');
+              } else {
+                console.log('No CODESIGN_IDENTITY — skipping signing.');
+              }
+
+              // Notarize
+              const appleId = process.env.APPLE_ID;
+              if (appleId && identity) {
+                const { notarize } = require('@electron/notarize');
+                console.log('Submitting for notarization...');
+                await notarize({
+                  appPath: appPath,
+                  appleId: appleId,
+                  appleIdPassword: process.env.APPLE_APP_SPECIFIC_PASSWORD,
+                  teamId: process.env.APPLE_TEAM_ID,
+                });
+                console.log('Notarization complete.');
+              }
+            }
+            run().catch(err => { console.error(err); process.exit(1); });
+          "
+          # Build DMG and zip from the already-signed universal app (skip signing + notarization)
+          CSC_IDENTITY_AUTO_DISCOVERY=false npx electron-builder --config electron-builder.yml --publish never --prepackaged dist/mac-universal/Watchfire.app -c.mac.notarize=false
 
       - name: Upload DMG
         uses: actions/upload-artifact@v4
