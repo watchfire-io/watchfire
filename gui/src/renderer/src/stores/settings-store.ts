@@ -24,6 +24,7 @@ interface SettingsState {
     appearance?: {
       theme?: string
     }
+    agents?: { [key: string]: { path: string } }
   }) => Promise<void>
 }
 
@@ -47,7 +48,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     const settings = await client.updateSettings({
       defaults: updates.defaults,
       updates: updates.updates,
-      appearance: updates.appearance
+      appearance: updates.appearance,
+      agents: updates.agents
     })
     set({ settings })
   }

@@ -58,7 +58,7 @@ func NewSettings() *Settings {
 		Updates: UpdatesConfig{
 			CheckOnStartup: true,
 			CheckFrequency: "every_launch",
-			AutoDownload:   false,
+			AutoDownload:   true,
 			LastChecked:    nil,
 		},
 		Appearance: AppearanceConfig{
