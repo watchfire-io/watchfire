@@ -6,22 +6,23 @@ import { useAgentStore } from '../stores/agent-store'
 interface UseAgentTerminalOptions {
   projectId: string
   containerRef: React.RefObject<HTMLDivElement | null>
-  enabled?: boolean
+  /** Whether to subscribe to screen updates (agent is running) */
+  active?: boolean
 }
 
-export function useAgentTerminal({ projectId, containerRef, enabled = true }: UseAgentTerminalOptions) {
+export function useAgentTerminal({ projectId, containerRef, active = false }: UseAgentTerminalOptions) {
   const termRef = useRef<Terminal | null>(null)
   const fitRef = useRef<FitAddon | null>(null)
   const resizeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
-  const subscribeScreen = useAgentStore((s) => s.subscribeScreen)
+  const subscribeRawOutput = useAgentStore((s) => s.subscribeRawOutput)
   const sendInput = useAgentStore((s) => s.sendInput)
   const resize = useAgentStore((s) => s.resize)
-  const cleanupSubscriptions = useAgentStore((s) => s.cleanupSubscriptions)
 
-  // Initialize terminal
+  // Initialize terminal (always mounted for measurement)
   useEffect(() => {
-    if (!containerRef.current || !enabled) return
+    if (!containerRef.current) return
 
     const term = new Terminal({
       fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
@@ -55,7 +56,7 @@ export function useAgentTerminal({ projectId, containerRef, enabled = true }: Us
     const fit = new FitAddon()
     term.loadAddon(fit)
     term.open(containerRef.current)
-    fit.fit()
+    requestAnimationFrame(() => fit.fit())
 
     termRef.current = term
     fitRef.current = fit
@@ -65,17 +66,6 @@ export function useAgentTerminal({ projectId, containerRef, enabled = true }: Us
       const encoder = new TextEncoder()
       sendInput(projectId, encoder.encode(data))
     })
-
-    // Subscribe to screen updates
-    const abort = subscribeScreen(
-      projectId,
-      (ansiContent) => {
-        term.write('\x1b[2J\x1b[H' + ansiContent)
-      },
-      () => {
-        term.write('\r\n\x1b[90m[Agent stopped]\x1b[0m\r\n')
-      }
-    )
 
     // Handle resize
     const observer = new ResizeObserver(() => {
@@ -91,18 +81,59 @@ export function useAgentTerminal({ projectId, containerRef, enabled = true }: Us
     observer.observe(containerRef.current)
 
     return () => {
-      abort.abort()
+      abortRef.current?.abort()
+      abortRef.current = null
       observer.disconnect()
       if (resizeTimerRef.current) clearTimeout(resizeTimerRef.current)
       term.dispose()
       termRef.current = null
       fitRef.current = null
     }
-  }, [projectId, enabled])
+  }, [projectId])
 
-  const fitTerminal = useCallback(() => {
-    fitRef.current?.fit()
+  // Subscribe/unsubscribe to raw output based on active state
+  useEffect(() => {
+    const term = termRef.current
+    if (!term || !active) {
+      abortRef.current?.abort()
+      abortRef.current = null
+      return
+    }
+
+    // Send resize immediately so daemon knows our dimensions
+    const fit = fitRef.current
+    if (fit) {
+      fit.fit()
+      const dims = fit.proposeDimensions()
+      if (dims) {
+        resize(projectId, dims.rows, dims.cols)
+      }
+    }
+
+    const abort = subscribeRawOutput(
+      projectId,
+      (data) => {
+        term.write(data)
+      },
+      () => {
+        term.write('\r\n\x1b[90m[Agent stopped]\x1b[0m\r\n')
+      }
+    )
+    abortRef.current = abort
+
+    return () => {
+      abort.abort()
+      abortRef.current = null
+    }
+  }, [projectId, active])
+
+  /** Get current terminal dimensions (for passing to startAgent) */
+  const getDimensions = useCallback(() => {
+    const fit = fitRef.current
+    if (!fit) return { rows: 24, cols: 80 }
+    const dims = fit.proposeDimensions()
+    return dims ? { rows: dims.rows, cols: dims.cols } : { rows: 24, cols: 80 }
   }, [])
 
-  return { terminal: termRef, fitTerminal }
+  return { terminal: termRef, getDimensions }
 }

@@ -21,7 +21,12 @@ interface AgentState {
 
   subscribeScreen: (
     projectId: string,
-    onUpdate: (ansiContent: string) => void,
+    onUpdate: (ansiContent: string, cols: number, rows: number) => void,
+    onEnd?: () => void
+  ) => AbortController
+  subscribeRawOutput: (
+    projectId: string,
+    onData: (data: Uint8Array) => void,
     onEnd?: () => void
   ) => AbortController
   subscribeIssues: (
@@ -106,11 +111,39 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           { projectId },
           { signal: abort.signal }
         )) {
-          onUpdate(buf.ansiContent)
+          onUpdate(buf.ansiContent, buf.cols, buf.rows)
         }
       } catch (err: unknown) {
         if (err instanceof Error && err.name !== 'AbortError') {
           console.error('Screen subscription error:', err)
+        }
+      } finally {
+        onEnd?.()
+      }
+    })()
+
+    return abort
+  },
+
+  subscribeRawOutput: (projectId, onData, onEnd) => {
+    // Cancel existing subscription
+    get().screenAborts[projectId]?.abort()
+
+    const abort = new AbortController()
+    set((s) => ({ screenAborts: { ...s.screenAborts, [projectId]: abort } }))
+
+    const client = getAgentClient()
+    ;(async () => {
+      try {
+        for await (const chunk of client.subscribeRawOutput(
+          { projectId },
+          { signal: abort.signal }
+        )) {
+          onData(chunk.data)
+        }
+      } catch (err: unknown) {
+        if (err instanceof Error && err.name !== 'AbortError') {
+          console.error('Raw output subscription error:', err)
         }
       } finally {
         onEnd?.()

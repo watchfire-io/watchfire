@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { ListTodo, FileText, Trash2, Settings, MessageSquare, GitBranch, ScrollText, PanelRightClose, PanelRight } from 'lucide-react'
 import { useAppStore } from '../../stores/app-store'
 import { useProjectsStore } from '../../stores/projects-store'
@@ -29,6 +29,41 @@ export function ProjectView() {
 
   const [centerTab, setCenterTab] = useState<CenterTab>('tasks')
   const [rightPanelOpen, setRightPanelOpen] = useState(true)
+  const [rightPanelWidth, setRightPanelWidth] = useState(() => {
+    const saved = localStorage.getItem('wf-right-panel-width')
+    return saved ? Number(saved) : 520
+  })
+  const isDragging = useRef(false)
+
+  const handleDragStart = useCallback((e: React.MouseEvent) => {
+    e.preventDefault()
+    isDragging.current = true
+    const startX = e.clientX
+    const startWidth = rightPanelWidth
+
+    const onMouseMove = (ev: MouseEvent) => {
+      const delta = startX - ev.clientX
+      const newWidth = Math.min(800, Math.max(350, startWidth + delta))
+      setRightPanelWidth(newWidth)
+    }
+
+    const onMouseUp = () => {
+      isDragging.current = false
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }, [rightPanelWidth])
+
+  useEffect(() => {
+    localStorage.setItem('wf-right-panel-width', String(rightPanelWidth))
+  }, [rightPanelWidth])
 
   const project = projects.find((p) => p.projectId === projectId)
 
@@ -98,9 +133,17 @@ export function ProjectView() {
 
         {/* Right panel */}
         {rightPanelOpen && (
-          <div className="w-[400px] shrink-0 border-l border-[var(--wf-border)]">
-            <RightPanel projectId={projectId} />
-          </div>
+          <>
+            <div
+              onMouseDown={handleDragStart}
+              className="shrink-0 w-1 cursor-col-resize group relative"
+            >
+              <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 opacity-0 group-hover:opacity-100 bg-[var(--wf-accent)] transition-opacity" />
+            </div>
+            <div className="shrink-0 overflow-hidden border-l border-[var(--wf-border)]" style={{ width: rightPanelWidth }}>
+              <RightPanel projectId={projectId} />
+            </div>
+          </>
         )}
       </div>
     </div>

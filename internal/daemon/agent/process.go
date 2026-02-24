@@ -56,6 +56,9 @@ type Process struct {
 	scrollback []string
 	startedAt  time.Time
 
+	rawBufMu sync.RWMutex
+	rawBuf   []byte // Accumulated raw PTY output for late-join catch-up
+
 	// Issue detection
 	issueMu        sync.RWMutex
 	issue          *AgentIssue
@@ -199,7 +202,7 @@ func (p *Process) renderScreenANSI(rows, cols int) string {
 
 	for row := 0; row < rows; row++ {
 		if row > 0 {
-			sb.WriteByte('\n')
+			sb.WriteString("\r\n")
 		}
 
 		// Find last significant column (non-space or non-default attributes)
@@ -437,7 +440,18 @@ func (p *Process) UnsubscribeScreen(id string) {
 }
 
 // broadcastRaw sends raw data to all raw subscribers. Non-blocking: drops if channel full.
+// Also buffers data for late-join catch-up (capped at 1MB).
 func (p *Process) broadcastRaw(data []byte) {
+	// Buffer raw output for late-join subscribers
+	p.rawBufMu.Lock()
+	p.rawBuf = append(p.rawBuf, data...)
+	// Cap at 1MB — keep the tail
+	const maxRawBuf = 1 << 20
+	if len(p.rawBuf) > maxRawBuf {
+		p.rawBuf = p.rawBuf[len(p.rawBuf)-maxRawBuf:]
+	}
+	p.rawBufMu.Unlock()
+
 	p.subMu.RLock()
 	defer p.subMu.RUnlock()
 
@@ -448,6 +462,18 @@ func (p *Process) broadcastRaw(data []byte) {
 			// Drop if subscriber can't keep up
 		}
 	}
+}
+
+// GetRawBuffer returns a copy of the accumulated raw PTY output.
+func (p *Process) GetRawBuffer() []byte {
+	p.rawBufMu.RLock()
+	defer p.rawBufMu.RUnlock()
+	if len(p.rawBuf) == 0 {
+		return nil
+	}
+	buf := make([]byte, len(p.rawBuf))
+	copy(buf, p.rawBuf)
+	return buf
 }
 
 // broadcastScreen sends a screen update to all screen subscribers. Non-blocking.

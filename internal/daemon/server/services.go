@@ -638,6 +638,16 @@ func (s *agentService) SubscribeRawOutput(req *pb.SubscribeRawOutputRequest, str
 	ch := running.Process.SubscribeRaw(subID)
 	defer running.Process.UnsubscribeRaw(subID)
 
+	// Send buffered output for late-join catch-up
+	if buf := running.Process.GetRawBuffer(); len(buf) > 0 {
+		if err := stream.Send(&pb.RawOutputChunk{
+			ProjectId: req.ProjectId,
+			Data:      buf,
+		}); err != nil {
+			return err
+		}
+	}
+
 	for {
 		select {
 		case data, ok := <-ch:

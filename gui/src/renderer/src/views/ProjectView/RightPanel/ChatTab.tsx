@@ -23,10 +23,10 @@ export function ChatTab({ projectId }: Props) {
 
   const isRunning = agentStatus?.isRunning
 
-  useAgentTerminal({
+  const { getDimensions } = useAgentTerminal({
     projectId,
     containerRef,
-    enabled: !!isRunning
+    active: !!isRunning
   })
 
   useEffect(() => {
@@ -38,13 +38,18 @@ export function ChatTab({ projectId }: Props) {
   useEffect(() => {
     if (!autoStarted.current && agentStatus !== undefined && !agentStatus?.isRunning) {
       autoStarted.current = true
-      startAgent(projectId, 'chat').catch(() => {})
+      // Small delay to ensure terminal is mounted and fitted before getting dimensions
+      setTimeout(() => {
+        const dims = getDimensions()
+        startAgent(projectId, 'chat', { rows: dims.rows, cols: dims.cols }).catch(() => {})
+      }, 150)
     }
   }, [projectId, agentStatus])
 
   const handleStart = async () => {
     try {
-      await startAgent(projectId, 'chat')
+      const dims = getDimensions()
+      await startAgent(projectId, 'chat', { rows: dims.rows, cols: dims.cols })
     } catch (err) {
       toast(String(err), 'error')
     }
@@ -58,28 +63,18 @@ export function ChatTab({ projectId }: Props) {
     }
   }
 
-  if (!isRunning) {
-    return (
-      <div className="flex flex-col items-center justify-center h-full gap-4 text-[var(--wf-text-muted)]">
-        <p className="text-sm">No agent running</p>
-        <Button size="sm" onClick={handleStart}>
-          <Play size={14} />
-          Start Chat
-        </Button>
-      </div>
-    )
-  }
-
   return (
     <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--wf-border)]">
-        <AgentBadge status={agentStatus} />
-        <Button size="sm" variant="danger" onClick={handleStop}>
-          <Square size={12} />
-          Stop
-        </Button>
-      </div>
+      {/* Header — only when running */}
+      {isRunning && (
+        <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--wf-border)]">
+          <AgentBadge status={agentStatus} />
+          <Button size="sm" variant="danger" onClick={handleStop}>
+            <Square size={12} />
+            Stop
+          </Button>
+        </div>
+      )}
 
       {/* Issue banner */}
       {issue && (
@@ -89,8 +84,21 @@ export function ChatTab({ projectId }: Props) {
         />
       )}
 
-      {/* Terminal */}
-      <div ref={containerRef} className="flex-1 bg-charcoal-300 p-1" />
+      {/* Terminal — always mounted for dimension measurement */}
+      <div className="flex-1 min-w-0 min-h-0 relative">
+        <div ref={containerRef} className="absolute inset-0 overflow-hidden bg-charcoal-300 p-1" />
+
+        {/* Overlay when not running */}
+        {!isRunning && (
+          <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-[var(--wf-text-muted)] bg-charcoal-300/90 z-10">
+            <p className="text-sm">No agent running</p>
+            <Button size="sm" onClick={handleStart}>
+              <Play size={14} />
+              Start Chat
+            </Button>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
