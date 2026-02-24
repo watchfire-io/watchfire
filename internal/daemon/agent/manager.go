@@ -605,6 +605,7 @@ func resolveAgentPath() (string, error) {
 	homeDir, _ := os.UserHomeDir()
 	fallbacks := []string{
 		homeDir + "/.claude/local/claude",
+		homeDir + "/.local/bin/claude",
 	}
 
 	if runtime.GOOS == "darwin" {

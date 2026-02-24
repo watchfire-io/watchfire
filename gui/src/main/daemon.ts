@@ -45,19 +45,10 @@ export async function ensureDaemon(): Promise<DaemonInfo> {
     throw new Error('watchfired binary not found')
   }
 
-  // Start daemon in background with a usable PATH.
-  // Packaged Electron apps inherit a minimal environment, so we augment PATH
-  // with common locations where claude and other tools are installed.
-  const shellPath = process.env.PATH || ''
-  const extraPaths = ['/opt/homebrew/bin', '/usr/local/bin', '/usr/bin', join(homedir(), '.local', 'bin')]
-  const fullPath = [...extraPaths.filter((p) => !shellPath.includes(p)), shellPath]
-    .filter(Boolean)
-    .join(':')
-
+  // Start daemon in background
   const child = execFile(daemonPath, [], {
     detached: true,
-    stdio: 'ignore',
-    env: { ...process.env, PATH: fullPath }
+    stdio: 'ignore'
   })
   child.unref()
 
