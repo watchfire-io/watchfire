@@ -5,6 +5,11 @@ import { Input } from '../../components/ui/Input'
 import { Toggle } from '../../components/ui/Toggle'
 import { useToast } from '../../components/ui/Toast'
 
+const PROJECT_COLORS = [
+  '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6',
+  '#06b6d4', '#3b82f6', '#8b5cf6', '#a855f7', '#ec4899',
+]
+
 interface Props {
   projectId: string
   project: Project
@@ -57,14 +62,19 @@ export function SettingsTab({ projectId, project }: Props) {
 
       <div className="flex flex-col gap-1.5">
         <label className="text-sm font-medium text-[var(--wf-text-secondary)]">Color</label>
-        <div className="flex items-center gap-3">
-          <input
-            type="color"
-            value={color}
-            onChange={(e) => { setColor(e.target.value); debouncedSave({ color: e.target.value }) }}
-            className="w-8 h-8 rounded-[var(--wf-radius-md)] border border-[var(--wf-border)] cursor-pointer bg-transparent"
-          />
-          <span className="text-sm font-mono text-[var(--wf-text-muted)]">{color}</span>
+        <div className="flex items-center gap-2 flex-wrap">
+          {PROJECT_COLORS.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => { setColor(c); save({ color: c }) }}
+              className="w-7 h-7 rounded-full cursor-pointer transition-transform hover:scale-110 focus:outline-none"
+              style={{
+                backgroundColor: c,
+                boxShadow: color === c ? `0 0 0 2px var(--wf-bg), 0 0 0 4px ${c}` : 'none',
+              }}
+            />
+          ))}
         </div>
       </div>
 

@@ -1,7 +1,29 @@
 // Package models contains shared data structures used across the application.
 package models
 
-import "time"
+import (
+	"math/rand/v2"
+	"time"
+)
+
+// ProjectColors is the fixed palette of colors assigned randomly to new projects.
+var ProjectColors = []string{
+	"#ef4444", // red
+	"#f97316", // orange
+	"#eab308", // yellow
+	"#22c55e", // green
+	"#14b8a6", // teal
+	"#06b6d4", // cyan
+	"#3b82f6", // blue
+	"#8b5cf6", // violet
+	"#a855f7", // purple
+	"#ec4899", // pink
+}
+
+// RandomColor returns a random color from the project palette.
+func RandomColor() string {
+	return ProjectColors[rand.IntN(len(ProjectColors))]
+}
 
 // Project represents a Watchfire project configuration.
 // This corresponds to the project.yaml file in .watchfire/ directory.
@@ -45,7 +67,7 @@ func NewProject(id, name, path string) *Project {
 		ProjectID:        id,
 		Name:             name,
 		Status:           "active",
-		Color:            "#22c55e",
+		Color:            RandomColor(),
 		DefaultBranch:    "main",
 		DefaultAgent:     "claude-code",
 		Sandbox:          "sandbox-exec",
