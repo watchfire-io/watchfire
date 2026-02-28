@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { AgentStatus, AgentIssue } from '../generated/watchfire_pb'
 import { getAgentClient } from '../lib/grpc-client'
+import { agentStatusEqual } from '../lib/agent-utils'
 
 interface AgentState {
   statuses: Record<string, AgentStatus>
@@ -48,14 +49,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       const client = getAgentClient()
       const status = await client.getAgentStatus({ projectId })
       const existing = get().statuses[projectId]
-      if (
-        existing &&
-        existing.isRunning === status.isRunning &&
-        existing.mode === status.mode &&
-        existing.taskNumber === status.taskNumber &&
-        existing.taskTitle === status.taskTitle &&
-        existing.wildfirePhase === status.wildfirePhase
-      ) return
+      if (agentStatusEqual(existing, status)) return
       set((s) => ({ statuses: { ...s.statuses, [projectId]: status } }))
     } catch {
       // not running — set explicit idle status so consumers know the fetch completed

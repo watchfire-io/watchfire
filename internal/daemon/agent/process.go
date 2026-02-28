@@ -15,6 +15,16 @@ import (
 	"github.com/hinshun/vt10x"
 )
 
+// Process-level constants.
+const (
+	scrollbackCapacity      = 1024
+	readBufferSize          = 32 * 1024
+	rawSubsChannelSize      = 256
+	screenSubsChannelSize   = 64
+	maxRawBufferSize        = 1 << 20
+	issueAutoClearThreshold = 3
+)
+
 // ScreenUpdate represents a parsed terminal screen state.
 type ScreenUpdate struct {
 	ProjectID   string
@@ -102,7 +112,7 @@ func NewProcess(opts ProcessOptions) (*Process, error) {
 		sandboxTmp: opts.SandboxTmp,
 		rawSubs:    make(map[string]chan []byte),
 		screenSubs: make(map[string]chan *ScreenUpdate),
-		scrollback: make([]string, 0, 1024),
+		scrollback: make([]string, 0, scrollbackCapacity),
 		startedAt:  time.Now().UTC(),
 		issueSubs:  make(map[string]chan *AgentIssue),
 	}
@@ -114,7 +124,7 @@ func NewProcess(opts ProcessOptions) (*Process, error) {
 
 // readLoop reads from the PTY and distributes data to subscribers.
 func (p *Process) readLoop() {
-	buf := make([]byte, 32*1024)
+	buf := make([]byte, readBufferSize)
 	for {
 		n, err := p.ptyFile.Read(buf)
 		if n > 0 {
@@ -402,7 +412,7 @@ func (p *Process) SubscribeRaw(id string) chan []byte {
 	p.subMu.Lock()
 	defer p.subMu.Unlock()
 
-	ch := make(chan []byte, 256)
+	ch := make(chan []byte, rawSubsChannelSize)
 	p.rawSubs[id] = ch
 	return ch
 }
@@ -423,7 +433,7 @@ func (p *Process) SubscribeScreen(id string) chan *ScreenUpdate {
 	p.subMu.Lock()
 	defer p.subMu.Unlock()
 
-	ch := make(chan *ScreenUpdate, 64)
+	ch := make(chan *ScreenUpdate, screenSubsChannelSize)
 	p.screenSubs[id] = ch
 	return ch
 }
@@ -446,9 +456,8 @@ func (p *Process) broadcastRaw(data []byte) {
 	p.rawBufMu.Lock()
 	p.rawBuf = append(p.rawBuf, data...)
 	// Cap at 1MB — keep the tail
-	const maxRawBuf = 1 << 20
-	if len(p.rawBuf) > maxRawBuf {
-		p.rawBuf = p.rawBuf[len(p.rawBuf)-maxRawBuf:]
+	if len(p.rawBuf) > maxRawBufferSize {
+		p.rawBuf = p.rawBuf[len(p.rawBuf)-maxRawBufferSize:]
 	}
 	p.rawBufMu.Unlock()
 
@@ -603,7 +612,7 @@ func (p *Process) detectIssues(data []byte) {
 	// the agent has resumed working — clear the issue banner.
 	if hasNonEmpty && p.issue != nil {
 		p.cleanLineCount++
-		if p.cleanLineCount >= 3 {
+		if p.cleanLineCount >= issueAutoClearThreshold {
 			p.logf("Issue auto-cleared after %d clean line batches", p.cleanLineCount)
 			p.cleanLineCount = 0
 			p.issue = nil

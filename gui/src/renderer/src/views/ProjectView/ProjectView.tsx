@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { ListTodo, FileText, Trash2, Settings, GitBranch, Globe, Circle, PanelRightClose, PanelRight, Square, Flame, Play, Sparkles, KeyRound } from 'lucide-react'
 import { useAppStore } from '../../stores/app-store'
 import { useProjectsStore } from '../../stores/projects-store'
@@ -10,6 +10,7 @@ import { AgentBadge } from '../../components/AgentBadge'
 import { Button } from '../../components/ui/Button'
 import { useToast } from '../../components/ui/Toast'
 import { cn } from '../../lib/utils'
+import { usePanelResize } from '../../hooks/usePanelResize'
 import { TasksTab } from './TasksTab/TasksTab'
 import { DefinitionTab } from './DefinitionTab'
 import { SecretsTab } from './SecretsTab'
@@ -41,41 +42,12 @@ export function ProjectView() {
 
   const [centerTab, setCenterTab] = useState<CenterTab>('tasks')
   const [rightPanelOpen, setRightPanelOpen] = useState(true)
-  const [rightPanelWidth, setRightPanelWidth] = useState(() => {
-    const saved = localStorage.getItem('wf-right-panel-width')
-    return saved ? Number(saved) : 520
+  const { width: rightPanelWidth, handleDragStart } = usePanelResize({
+    storageKey: 'wf-right-panel-width',
+    defaultWidth: 520,
+    minWidth: 350,
+    maxWidth: 800
   })
-  const isDragging = useRef(false)
-
-  const handleDragStart = useCallback((e: React.MouseEvent) => {
-    e.preventDefault()
-    isDragging.current = true
-    const startX = e.clientX
-    const startWidth = rightPanelWidth
-
-    const onMouseMove = (ev: MouseEvent) => {
-      const delta = startX - ev.clientX
-      const newWidth = Math.min(800, Math.max(350, startWidth + delta))
-      setRightPanelWidth(newWidth)
-    }
-
-    const onMouseUp = () => {
-      isDragging.current = false
-      document.removeEventListener('mousemove', onMouseMove)
-      document.removeEventListener('mouseup', onMouseUp)
-      document.body.style.cursor = ''
-      document.body.style.userSelect = ''
-    }
-
-    document.body.style.cursor = 'col-resize'
-    document.body.style.userSelect = 'none'
-    document.addEventListener('mousemove', onMouseMove)
-    document.addEventListener('mouseup', onMouseUp)
-  }, [rightPanelWidth])
-
-  useEffect(() => {
-    localStorage.setItem('wf-right-panel-width', String(rightPanelWidth))
-  }, [rightPanelWidth])
 
   const project = projects.find((p) => p.projectId === projectId)
   const isAgentRunning = agentStatus?.isRunning

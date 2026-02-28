@@ -52,7 +52,54 @@ func runAgentAttach(projectPath, mode string, taskNumber int32) error {
 		return fmt.Errorf("failed to start agent: %w", err)
 	}
 
-	// Print startup message
+	printStartupMessage(mode, status, taskNumber)
+
+	// Get terminal size and send resize
+	cols, rows, err := term.GetSize(int(os.Stdin.Fd()))
+	if err == nil {
+		_, _ = client.Resize(ctx, &pb.ResizeRequest{
+			ProjectId: project.ProjectID,
+			Rows:      int32(rows),
+			Cols:      int32(cols),
+		})
+	}
+
+	// Subscribe to raw output stream
+	stream, err := client.SubscribeRawOutput(ctx, &pb.SubscribeRawOutputRequest{
+		ProjectId: project.ProjectID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to subscribe to output: %w", err)
+	}
+
+	// Put terminal into raw mode
+	oldState, err := setupRawTerminal()
+	if err != nil {
+		return err
+	}
+	defer term.Restore(int(os.Stdin.Fd()), oldState)
+
+	// Handle SIGWINCH (window resize)
+	go watchWindowResize(ctx, client, project.ProjectID)
+
+	// userStopped tracks whether the user explicitly stopped the agent (Ctrl+C / SIGINT)
+	// in wildfire/start-all modes, so the CLI can break out of the re-subscribe loop.
+	isChaining := mode == "wildfire" || mode == "start-all"
+	userStopped := make(chan struct{})
+	var userStoppedOnce sync.Once
+
+	// Handle SIGINT
+	go handleSIGINT(ctx, client, project.ProjectID, isChaining, userStopped, &userStoppedOnce)
+
+	// Input goroutine: read from stdin and send to agent.
+	go streamInput(ctx, client, project.ProjectID, isChaining, userStopped, &userStoppedOnce)
+
+	// Main loop: receive raw output and write to stdout
+	return streamOutput(ctx, stream, client, project.ProjectID, mode, isChaining, userStopped, oldState)
+}
+
+// printStartupMessage prints the agent startup message based on mode.
+func printStartupMessage(mode string, status *pb.AgentStatus, taskNumber int32) {
 	switch mode {
 	case "start-all":
 		fmt.Printf("Agent started for %s (start-all mode — starting with task #%04d)\n", status.ProjectName, status.TaskNumber)
@@ -75,101 +122,82 @@ func runAgentAttach(projectPath, mode string, taskNumber int32) error {
 	default:
 		fmt.Printf("Agent started for %s (chat mode)\n", status.ProjectName)
 	}
+}
 
-	// Get terminal size and send resize
-	cols, rows, err := term.GetSize(int(os.Stdin.Fd()))
-	if err == nil {
-		_, _ = client.Resize(ctx, &pb.ResizeRequest{
-			ProjectId: project.ProjectID,
-			Rows:      int32(rows),
-			Cols:      int32(cols),
-		})
-	}
-
-	// Subscribe to raw output stream
-	stream, err := client.SubscribeRawOutput(ctx, &pb.SubscribeRawOutputRequest{
-		ProjectId: project.ProjectID,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to subscribe to output: %w", err)
-	}
-
-	// Put terminal into raw mode
+// setupRawTerminal puts the terminal into raw mode and returns the previous state.
+func setupRawTerminal() (*term.State, error) {
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
-		return fmt.Errorf("failed to set raw terminal: %w", err)
+		return nil, fmt.Errorf("failed to set raw terminal: %w", err)
 	}
-	defer term.Restore(int(os.Stdin.Fd()), oldState)
+	return oldState, nil
+}
 
-	// Handle SIGWINCH (window resize)
+// watchWindowResize handles SIGWINCH signals and sends resize requests.
+func watchWindowResize(ctx context.Context, client pb.AgentServiceClient, projectID string) {
 	sigwinchCh := make(chan os.Signal, 1)
 	signal.Notify(sigwinchCh, syscall.SIGWINCH)
-	go func() {
-		for range sigwinchCh {
-			cols, rows, err := term.GetSize(int(os.Stdin.Fd()))
-			if err == nil {
-				_, _ = client.Resize(ctx, &pb.ResizeRequest{
-					ProjectId: project.ProjectID,
-					Rows:      int32(rows),
-					Cols:      int32(cols),
-				})
-			}
-		}
-	}()
-
-	// userStopped tracks whether the user explicitly stopped the agent (Ctrl+C / SIGINT)
-	// in wildfire/start-all modes, so the CLI can break out of the re-subscribe loop.
-	isChaining := mode == "wildfire" || mode == "start-all"
-	userStopped := make(chan struct{})
-	var userStoppedOnce sync.Once
-
-	// Handle SIGINT
-	sigintCh := make(chan os.Signal, 1)
-	signal.Notify(sigintCh, syscall.SIGINT)
-	go func() {
-		<-sigintCh
-		if isChaining {
-			userStoppedOnce.Do(func() { close(userStopped) })
-			_, _ = client.StopAgent(ctx, &pb.ProjectId{ProjectId: project.ProjectID})
-		} else {
-			_, _ = client.SendInput(ctx, &pb.SendInputRequest{
-				ProjectId: project.ProjectID,
-				Data:      []byte{3}, // Ctrl+C
+	for range sigwinchCh {
+		cols, rows, err := term.GetSize(int(os.Stdin.Fd()))
+		if err == nil {
+			_, _ = client.Resize(ctx, &pb.ResizeRequest{
+				ProjectId: projectID,
+				Rows:      int32(rows),
+				Cols:      int32(cols),
 			})
 		}
-	}()
+	}
+}
 
-	// Input goroutine: read from stdin and send to agent.
-	go func() {
-		buf := make([]byte, 1024)
-		for {
-			n, err := os.Stdin.Read(buf)
-			if n > 0 {
-				data := make([]byte, n)
-				copy(data, buf[:n])
+// handleSIGINT handles SIGINT in chaining and non-chaining modes.
+func handleSIGINT(ctx context.Context, client pb.AgentServiceClient, projectID string, isChaining bool, userStopped chan struct{}, userStoppedOnce *sync.Once) {
+	sigintCh := make(chan os.Signal, 1)
+	signal.Notify(sigintCh, syscall.SIGINT)
+	<-sigintCh
+	if isChaining {
+		userStoppedOnce.Do(func() { close(userStopped) })
+		_, _ = client.StopAgent(ctx, &pb.ProjectId{ProjectId: projectID})
+	} else {
+		_, _ = client.SendInput(ctx, &pb.SendInputRequest{
+			ProjectId: projectID,
+			Data:      []byte{3}, // Ctrl+C
+		})
+	}
+}
 
-				// In chaining modes, intercept lone Ctrl+C byte
-				if isChaining && n == 1 && data[0] == 3 {
-					userStoppedOnce.Do(func() { close(userStopped) })
-					_, _ = client.StopAgent(ctx, &pb.ProjectId{ProjectId: project.ProjectID})
-					return
-				}
+// streamInput reads from stdin and sends to the agent.
+func streamInput(ctx context.Context, client pb.AgentServiceClient, projectID string, isChaining bool, userStopped chan struct{}, userStoppedOnce *sync.Once) {
+	buf := make([]byte, 1024)
+	for {
+		n, err := os.Stdin.Read(buf)
+		if n > 0 {
+			data := make([]byte, n)
+			copy(data, buf[:n])
 
-				_, sendErr := client.SendInput(ctx, &pb.SendInputRequest{
-					ProjectId: project.ProjectID,
-					Data:      data,
-				})
-				if sendErr != nil {
-					return
-				}
+			// In chaining modes, intercept lone Ctrl+C byte
+			if isChaining && n == 1 && data[0] == 3 {
+				userStoppedOnce.Do(func() { close(userStopped) })
+				_, _ = client.StopAgent(ctx, &pb.ProjectId{ProjectId: projectID})
+				return
 			}
-			if err != nil {
+
+			_, sendErr := client.SendInput(ctx, &pb.SendInputRequest{
+				ProjectId: projectID,
+				Data:      data,
+			})
+			if sendErr != nil {
 				return
 			}
 		}
-	}()
+		if err != nil {
+			return
+		}
+	}
+}
 
-	// Main loop: receive raw output and write to stdout
+// streamOutput reads raw output from the stream and writes to stdout.
+// Handles chaining (re-subscription) for wildfire/start-all modes.
+func streamOutput(ctx context.Context, stream pb.AgentService_SubscribeRawOutputClient, client pb.AgentServiceClient, projectID, mode string, isChaining bool, userStopped chan struct{}, oldState *term.State) error {
 	for {
 		chunk, err := stream.Recv()
 		if err != nil {
@@ -185,99 +213,106 @@ func runAgentAttach(projectPath, mode string, taskNumber int32) error {
 				break
 			}
 
-			// If user explicitly stopped, don't wait for next task
-			stopped := false
-			select {
-			case <-userStopped:
-				stopped = true
-			default:
-			}
-			if stopped {
-				if mode == "wildfire" {
-					os.Stdout.Write([]byte("\r\n--- Wildfire stopped by user ---\r\n"))
-				} else {
-					os.Stdout.Write([]byte("\r\n--- Start-all stopped by user ---\r\n"))
-				}
+			cmd, newStream := handleChaining(ctx, client, projectID, mode, userStopped, oldState)
+			if cmd == "break" {
 				break
 			}
-
-			// Chaining modes: poll for next task starting, then re-subscribe
-			os.Stdout.Write([]byte("\r\n--- Task complete. Starting next task... ---\r\n"))
-
-			nextRunning := false
-			for i := 0; i < 25; i++ { // up to 5s at 200ms intervals
-				time.Sleep(200 * time.Millisecond)
-
-				// Check if user stopped during polling
-				select {
-				case <-userStopped:
-					stopped = true
-				default:
-				}
-				if stopped {
-					break
-				}
-
-				agentStatus, err := client.GetAgentStatus(ctx, &pb.ProjectId{
-					ProjectId: project.ProjectID,
-				})
-				if err != nil {
-					break
-				}
-				if agentStatus.IsRunning {
-					if mode == "wildfire" {
-						switch agentStatus.WildfirePhase {
-						case "execute":
-							os.Stdout.Write([]byte(fmt.Sprintf("\r\n--- Wildfire Execute: task #%04d ---\r\n", agentStatus.TaskNumber)))
-						case "refine":
-							os.Stdout.Write([]byte(fmt.Sprintf("\r\n--- Wildfire Refine: task #%04d ---\r\n", agentStatus.TaskNumber)))
-						case "generate":
-							os.Stdout.Write([]byte("\r\n--- Wildfire Generate: analyzing project... ---\r\n"))
-						default:
-							os.Stdout.Write([]byte(fmt.Sprintf("\r\n--- Wildfire: task #%04d ---\r\n", agentStatus.TaskNumber)))
-						}
-						// If daemon transitioned to chat mode, wildfire is complete
-						if agentStatus.Mode == "chat" {
-							os.Stdout.Write([]byte("\r\n--- Wildfire complete: best version achieved. Entering chat mode. ---\r\n"))
-						}
-					} else {
-						os.Stdout.Write([]byte(fmt.Sprintf("\r\n--- Start-all: task #%04d ---\r\n", agentStatus.TaskNumber)))
-					}
-					nextRunning = true
-					break
-				}
+			if cmd == "continue" {
+				stream = newStream
+				continue
 			}
-
-			if stopped {
-				if mode == "wildfire" {
-					os.Stdout.Write([]byte("\r\n--- Wildfire stopped by user ---\r\n"))
-				} else {
-					os.Stdout.Write([]byte("\r\n--- Start-all stopped by user ---\r\n"))
-				}
-				break
-			}
-
-			if !nextRunning {
-				if mode == "start-all" {
-					os.Stdout.Write([]byte("\r\n--- Start-all complete: all ready tasks done ---\r\n"))
-				} else {
-					os.Stdout.Write([]byte("\r\n--- Wildfire complete: all tasks done ---\r\n"))
-				}
-				break
-			}
-
-			// Re-subscribe to the new agent's raw output
-			stream, err = client.SubscribeRawOutput(ctx, &pb.SubscribeRawOutputRequest{
-				ProjectId: project.ProjectID,
-			})
-			if err != nil {
-				term.Restore(int(os.Stdin.Fd()), oldState)
-				return fmt.Errorf("failed to re-subscribe to output: %w", err)
-			}
-			continue
+			break
 		}
 		os.Stdout.Write(chunk.Data)
 	}
 
 	return nil
+}
+
+// handleChaining handles the re-subscription logic for wildfire/start-all modes.
+// Returns "break" to exit, "continue" with a new stream to re-subscribe, or "break" on error.
+func handleChaining(ctx context.Context, client pb.AgentServiceClient, projectID, mode string, userStopped chan struct{}, oldState *term.State) (string, pb.AgentService_SubscribeRawOutputClient) {
+	// If user explicitly stopped, don't wait for next task
+	select {
+	case <-userStopped:
+		printStoppedMessage(mode)
+		return "break", nil
+	default:
+	}
+
+	// Chaining modes: poll for next task starting, then re-subscribe
+	os.Stdout.Write([]byte("\r\n--- Task complete. Starting next task... ---\r\n"))
+
+	nextRunning := false
+	for i := 0; i < 25; i++ { // up to 5s at 200ms intervals
+		time.Sleep(200 * time.Millisecond)
+
+		// Check if user stopped during polling
+		select {
+		case <-userStopped:
+			printStoppedMessage(mode)
+			return "break", nil
+		default:
+		}
+
+		agentStatus, err := client.GetAgentStatus(ctx, &pb.ProjectId{
+			ProjectId: projectID,
+		})
+		if err != nil {
+			break
+		}
+		if agentStatus.IsRunning {
+			printChainingStatus(mode, agentStatus)
+			nextRunning = true
+			break
+		}
+	}
+
+	if !nextRunning {
+		if mode == "start-all" {
+			os.Stdout.Write([]byte("\r\n--- Start-all complete: all ready tasks done ---\r\n"))
+		} else {
+			os.Stdout.Write([]byte("\r\n--- Wildfire complete: all tasks done ---\r\n"))
+		}
+		return "break", nil
+	}
+
+	// Re-subscribe to the new agent's raw output
+	stream, err := client.SubscribeRawOutput(ctx, &pb.SubscribeRawOutputRequest{
+		ProjectId: projectID,
+	})
+	if err != nil {
+		term.Restore(int(os.Stdin.Fd()), oldState)
+		return "break", nil
+	}
+	return "continue", stream
+}
+
+func printStoppedMessage(mode string) {
+	if mode == "wildfire" {
+		os.Stdout.Write([]byte("\r\n--- Wildfire stopped by user ---\r\n"))
+	} else {
+		os.Stdout.Write([]byte("\r\n--- Start-all stopped by user ---\r\n"))
+	}
+}
+
+func printChainingStatus(mode string, agentStatus *pb.AgentStatus) {
+	if mode == "wildfire" {
+		switch agentStatus.WildfirePhase {
+		case "execute":
+			os.Stdout.Write([]byte(fmt.Sprintf("\r\n--- Wildfire Execute: task #%04d ---\r\n", agentStatus.TaskNumber)))
+		case "refine":
+			os.Stdout.Write([]byte(fmt.Sprintf("\r\n--- Wildfire Refine: task #%04d ---\r\n", agentStatus.TaskNumber)))
+		case "generate":
+			os.Stdout.Write([]byte("\r\n--- Wildfire Generate: analyzing project... ---\r\n"))
+		default:
+			os.Stdout.Write([]byte(fmt.Sprintf("\r\n--- Wildfire: task #%04d ---\r\n", agentStatus.TaskNumber)))
+		}
+		// If daemon transitioned to chat mode, wildfire is complete
+		if agentStatus.Mode == "chat" {
+			os.Stdout.Write([]byte("\r\n--- Wildfire complete: best version achieved. Entering chat mode. ---\r\n"))
+		}
+	} else {
+		os.Stdout.Write([]byte(fmt.Sprintf("\r\n--- Start-all: task #%04d ---\r\n", agentStatus.TaskNumber)))
+	}
 }

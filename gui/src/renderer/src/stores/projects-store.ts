@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { Project, AgentStatus } from '../generated/watchfire_pb'
 import { getProjectClient, getAgentClient } from '../lib/grpc-client'
+import { agentStatusEqual } from '../lib/agent-utils'
 
 interface ProjectsState {
   projects: Project[]
@@ -38,14 +39,7 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
       const client = getAgentClient()
       const status = await client.getAgentStatus({ projectId })
       const existing = get().agentStatuses[projectId]
-      if (
-        existing &&
-        existing.isRunning === status.isRunning &&
-        existing.mode === status.mode &&
-        existing.taskNumber === status.taskNumber &&
-        existing.taskTitle === status.taskTitle &&
-        existing.wildfirePhase === status.wildfirePhase
-      ) return
+      if (agentStatusEqual(existing, status)) return
       set((s) => ({
         agentStatuses: { ...s.agentStatuses, [projectId]: status }
       }))

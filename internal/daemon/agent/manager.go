@@ -17,6 +17,12 @@ import (
 	"github.com/watchfire-io/watchfire/internal/models"
 )
 
+// Manager-level constants.
+const (
+	pollTaskStatusInterval  = 5 * time.Second
+	pollSignalFileInterval  = 3 * time.Second
+)
+
 // Mode defines the mode an agent runs in.
 type Mode string
 
@@ -380,7 +386,7 @@ func (m *Manager) monitorProcess(projectID string, proc *Process) {
 // This is a safety net for cases where the file watcher misses an event
 // (e.g., tasks directory not watched yet, kqueue buffer overflow).
 func (m *Manager) pollTaskStatus(projectID, projectPath string, taskNumber int, proc *Process) {
-	ticker := time.NewTicker(5 * time.Second)
+	ticker := time.NewTicker(pollTaskStatusInterval)
 	defer ticker.Stop()
 	for {
 		select {
@@ -414,7 +420,7 @@ func (m *Manager) pollSignalFile(projectID, projectPath string, phase WildfirePh
 	}
 
 	signalPath := filepath.Join(config.ProjectDir(projectPath), signalFile)
-	ticker := time.NewTicker(3 * time.Second)
+	ticker := time.NewTicker(pollSignalFileInterval)
 	defer ticker.Stop()
 	for {
 		select {

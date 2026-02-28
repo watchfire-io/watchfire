@@ -187,171 +187,62 @@ func openGUI() {
 }
 
 func handleClicks() {
+	// Watch agent slot clicks via goroutines
+	for i := 0; i < maxAgentSlots; i++ {
+		i := i
+		go func() {
+			for range agentOpenGUI[i].ClickedCh {
+				openGUI()
+			}
+		}()
+		go func() {
+			for range agentStop[i].ClickedCh {
+				stopAgentAtSlot(i)
+			}
+		}()
+	}
+
+	// Watch project slot clicks via goroutines
+	for i := 0; i < maxProjectSlots; i++ {
+		i := i
+		go func() {
+			for range projectGenDef[i].ClickedCh {
+				startProjectAtSlot(i, "generate-definition")
+			}
+		}()
+		go func() {
+			for range projectGenTasks[i].ClickedCh {
+				startProjectAtSlot(i, "generate-tasks")
+			}
+		}()
+		go func() {
+			for range projectStartAll[i].ClickedCh {
+				startProjectAtSlot(i, "start-all")
+			}
+		}()
+		go func() {
+			for range projectWildfire[i].ClickedCh {
+				startProjectAtSlot(i, "wildfire")
+			}
+		}()
+		go func() {
+			for range projectOpenGUIItem[i].ClickedCh {
+				openGUI()
+			}
+		}()
+	}
+
+	// Global menu items — block on these in the main goroutine
 	for {
 		select {
 		case <-updateItem.ClickedCh:
 			log.Println("Update requested from tray — run 'watchfire update'")
-
 		case <-openGUIItem.ClickedCh:
 			openGUI()
-
 		case <-quitItem.ClickedCh:
 			if state != nil {
 				state.RequestShutdown()
 			}
-
-		// Agent slot clicks
-		case <-agentOpenGUI[0].ClickedCh:
-			openGUI()
-		case <-agentStop[0].ClickedCh:
-			stopAgentAtSlot(0)
-		case <-agentOpenGUI[1].ClickedCh:
-			openGUI()
-		case <-agentStop[1].ClickedCh:
-			stopAgentAtSlot(1)
-		case <-agentOpenGUI[2].ClickedCh:
-			openGUI()
-		case <-agentStop[2].ClickedCh:
-			stopAgentAtSlot(2)
-		case <-agentOpenGUI[3].ClickedCh:
-			openGUI()
-		case <-agentStop[3].ClickedCh:
-			stopAgentAtSlot(3)
-		case <-agentOpenGUI[4].ClickedCh:
-			openGUI()
-		case <-agentStop[4].ClickedCh:
-			stopAgentAtSlot(4)
-		case <-agentOpenGUI[5].ClickedCh:
-			openGUI()
-		case <-agentStop[5].ClickedCh:
-			stopAgentAtSlot(5)
-		case <-agentOpenGUI[6].ClickedCh:
-			openGUI()
-		case <-agentStop[6].ClickedCh:
-			stopAgentAtSlot(6)
-		case <-agentOpenGUI[7].ClickedCh:
-			openGUI()
-		case <-agentStop[7].ClickedCh:
-			stopAgentAtSlot(7)
-		case <-agentOpenGUI[8].ClickedCh:
-			openGUI()
-		case <-agentStop[8].ClickedCh:
-			stopAgentAtSlot(8)
-		case <-agentOpenGUI[9].ClickedCh:
-			openGUI()
-		case <-agentStop[9].ClickedCh:
-			stopAgentAtSlot(9)
-
-		// Project slot clicks
-		case <-projectGenDef[0].ClickedCh:
-			startProjectAtSlot(0, "generate-definition")
-		case <-projectGenTasks[0].ClickedCh:
-			startProjectAtSlot(0, "generate-tasks")
-		case <-projectStartAll[0].ClickedCh:
-			startProjectAtSlot(0, "start-all")
-		case <-projectWildfire[0].ClickedCh:
-			startProjectAtSlot(0, "wildfire")
-		case <-projectOpenGUIItem[0].ClickedCh:
-			openGUI()
-
-		case <-projectGenDef[1].ClickedCh:
-			startProjectAtSlot(1, "generate-definition")
-		case <-projectGenTasks[1].ClickedCh:
-			startProjectAtSlot(1, "generate-tasks")
-		case <-projectStartAll[1].ClickedCh:
-			startProjectAtSlot(1, "start-all")
-		case <-projectWildfire[1].ClickedCh:
-			startProjectAtSlot(1, "wildfire")
-		case <-projectOpenGUIItem[1].ClickedCh:
-			openGUI()
-
-		case <-projectGenDef[2].ClickedCh:
-			startProjectAtSlot(2, "generate-definition")
-		case <-projectGenTasks[2].ClickedCh:
-			startProjectAtSlot(2, "generate-tasks")
-		case <-projectStartAll[2].ClickedCh:
-			startProjectAtSlot(2, "start-all")
-		case <-projectWildfire[2].ClickedCh:
-			startProjectAtSlot(2, "wildfire")
-		case <-projectOpenGUIItem[2].ClickedCh:
-			openGUI()
-
-		case <-projectGenDef[3].ClickedCh:
-			startProjectAtSlot(3, "generate-definition")
-		case <-projectGenTasks[3].ClickedCh:
-			startProjectAtSlot(3, "generate-tasks")
-		case <-projectStartAll[3].ClickedCh:
-			startProjectAtSlot(3, "start-all")
-		case <-projectWildfire[3].ClickedCh:
-			startProjectAtSlot(3, "wildfire")
-		case <-projectOpenGUIItem[3].ClickedCh:
-			openGUI()
-
-		case <-projectGenDef[4].ClickedCh:
-			startProjectAtSlot(4, "generate-definition")
-		case <-projectGenTasks[4].ClickedCh:
-			startProjectAtSlot(4, "generate-tasks")
-		case <-projectStartAll[4].ClickedCh:
-			startProjectAtSlot(4, "start-all")
-		case <-projectWildfire[4].ClickedCh:
-			startProjectAtSlot(4, "wildfire")
-		case <-projectOpenGUIItem[4].ClickedCh:
-			openGUI()
-
-		case <-projectGenDef[5].ClickedCh:
-			startProjectAtSlot(5, "generate-definition")
-		case <-projectGenTasks[5].ClickedCh:
-			startProjectAtSlot(5, "generate-tasks")
-		case <-projectStartAll[5].ClickedCh:
-			startProjectAtSlot(5, "start-all")
-		case <-projectWildfire[5].ClickedCh:
-			startProjectAtSlot(5, "wildfire")
-		case <-projectOpenGUIItem[5].ClickedCh:
-			openGUI()
-
-		case <-projectGenDef[6].ClickedCh:
-			startProjectAtSlot(6, "generate-definition")
-		case <-projectGenTasks[6].ClickedCh:
-			startProjectAtSlot(6, "generate-tasks")
-		case <-projectStartAll[6].ClickedCh:
-			startProjectAtSlot(6, "start-all")
-		case <-projectWildfire[6].ClickedCh:
-			startProjectAtSlot(6, "wildfire")
-		case <-projectOpenGUIItem[6].ClickedCh:
-			openGUI()
-
-		case <-projectGenDef[7].ClickedCh:
-			startProjectAtSlot(7, "generate-definition")
-		case <-projectGenTasks[7].ClickedCh:
-			startProjectAtSlot(7, "generate-tasks")
-		case <-projectStartAll[7].ClickedCh:
-			startProjectAtSlot(7, "start-all")
-		case <-projectWildfire[7].ClickedCh:
-			startProjectAtSlot(7, "wildfire")
-		case <-projectOpenGUIItem[7].ClickedCh:
-			openGUI()
-
-		case <-projectGenDef[8].ClickedCh:
-			startProjectAtSlot(8, "generate-definition")
-		case <-projectGenTasks[8].ClickedCh:
-			startProjectAtSlot(8, "generate-tasks")
-		case <-projectStartAll[8].ClickedCh:
-			startProjectAtSlot(8, "start-all")
-		case <-projectWildfire[8].ClickedCh:
-			startProjectAtSlot(8, "wildfire")
-		case <-projectOpenGUIItem[8].ClickedCh:
-			openGUI()
-
-		case <-projectGenDef[9].ClickedCh:
-			startProjectAtSlot(9, "generate-definition")
-		case <-projectGenTasks[9].ClickedCh:
-			startProjectAtSlot(9, "generate-tasks")
-		case <-projectStartAll[9].ClickedCh:
-			startProjectAtSlot(9, "start-all")
-		case <-projectWildfire[9].ClickedCh:
-			startProjectAtSlot(9, "wildfire")
-		case <-projectOpenGUIItem[9].ClickedCh:
-			openGUI()
 		}
 	}
 }
