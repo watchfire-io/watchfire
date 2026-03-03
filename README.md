@@ -10,6 +10,34 @@ AI coding agents work best when they have the right context. Watchfire lets you 
 
 ---
 
+## Install
+
+### Download (macOS)
+
+<p align="center">
+  <a href="https://github.com/watchfire-io/watchfire/releases/latest">
+    <img src="https://img.shields.io/badge/Download-Latest%20Release-blue?style=for-the-badge" alt="Download Latest Release" />
+  </a>
+</p>
+
+### Homebrew
+
+**Desktop app** (GUI + CLI):
+
+```bash
+brew tap watchfire-io/tap
+brew install --cask watchfire-io/tap/watchfire
+```
+
+**CLI & daemon only**:
+
+```bash
+brew tap watchfire-io/tap
+brew install watchfire-io/tap/watchfire
+```
+
+---
+
 ## How It Works
 
 <p align="center">
@@ -51,7 +79,7 @@ Run agents across multiple projects in parallel. Monitor live terminal output, r
 
 ---
 
-## Quick Start
+## Build from Source
 
 ```bash
 # Build & install

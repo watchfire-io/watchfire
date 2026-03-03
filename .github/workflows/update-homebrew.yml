@@ -1,0 +1,42 @@
+name: Update Homebrew Tap
+on:
+  release:
+    types: [published]
+
+jobs:
+  update-tap:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract version
+        id: version
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout tap repo
+        uses: actions/checkout@v4
+        with:
+          repository: watchfire-io/homebrew-tap
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+
+      - name: Update Cask
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          DMG_URL="https://github.com/watchfire-io/watchfire/releases/download/v${VERSION}/Watchfire-${VERSION}.dmg"
+          DMG_SHA=$(curl -sL "$DMG_URL" | shasum -a 256 | awk '{print $1}')
+          sed -i "s/version \".*\"/version \"${VERSION}\"/" Casks/watchfire.rb
+          sed -i "s/sha256 \".*\"/sha256 \"${DMG_SHA}\"/" Casks/watchfire.rb
+
+      - name: Update Formula
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          TAR_URL="https://github.com/watchfire-io/watchfire/archive/refs/tags/v${VERSION}.tar.gz"
+          TAR_SHA=$(curl -sL "$TAR_URL" | shasum -a 256 | awk '{print $1}')
+          sed -i "s|url \"https://github.com/watchfire-io/watchfire/archive/.*\"|url \"${TAR_URL}\"|" Formula/watchfire.rb
+          sed -i "s/sha256 \".*\"/sha256 \"${TAR_SHA}\"/" Formula/watchfire.rb
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git diff --staged --quiet || git commit -m "Update to v${{ steps.version.outputs.version }}"
+          git push
