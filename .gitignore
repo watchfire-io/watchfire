@@ -44,3 +44,4 @@ gui/node_modules/
 gui/out/
 gui/dist/
 gui/electron-builder.local.yml
+.watchfire/
