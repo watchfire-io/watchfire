@@ -32,6 +32,9 @@ type Model struct {
 	agentStatus  *pb.AgentStatus
 	currentIssue *pb.AgentIssue
 
+	// Git info
+	gitInfo *pb.GitInfo
+
 	// UI state
 	leftTab       int     // 0=Tasks, 1=Definition, 2=Settings
 	rightTab      int     // 0=Chat, 1=Logs
@@ -251,7 +254,7 @@ func (m Model) View() string {
 	layout := computeLayout(m.width, m.height, m.splitRatio)
 
 	// Header
-	header := renderHeader(m.project, m.leftTab, m.rightTab, m.agentStatus, m.width)
+	header := renderHeader(m.project, m.leftTab, m.rightTab, m.agentStatus, m.gitInfo, m.width)
 
 	// Left panel content
 	leftContent := m.renderLeftPanel(layout.leftWidth - 2)

@@ -15,7 +15,7 @@ func init() {
 	if err != nil {
 		return
 	}
-	if _, err := f.Write(iconData); err != nil {
+	if _, err := f.Write(iconNotifyData); err != nil {
 		f.Close()
 		return
 	}

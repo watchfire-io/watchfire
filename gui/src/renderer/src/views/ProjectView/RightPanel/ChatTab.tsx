@@ -22,6 +22,21 @@ export function ChatTab({ projectId }: Props) {
   const { toast } = useToast()
 
   const isRunning = agentStatus?.isRunning
+  const autoStarted = useRef(false)
+  const wasRunning = useRef(false)
+
+  // Reset auto-start flag when switching projects
+  useEffect(() => {
+    autoStarted.current = false
+  }, [projectId])
+
+  // Reset auto-start when agent stops (so chat restarts after wildfire/task ends)
+  useEffect(() => {
+    if (wasRunning.current && !isRunning) {
+      autoStarted.current = false
+    }
+    wasRunning.current = !!isRunning
+  }, [isRunning])
 
   const { getDimensions } = useAgentTerminal({
     projectId,
@@ -32,6 +47,14 @@ export function ChatTab({ projectId }: Props) {
   useEffect(() => {
     fetchStatus(projectId)
   }, [projectId])
+
+  // Auto-start chat agent on first status fetch (mirrors TUI behavior)
+  useEffect(() => {
+    if (agentStatus && !isRunning && !autoStarted.current) {
+      autoStarted.current = true
+      handleStart()
+    }
+  }, [agentStatus])
 
   // Poll agent status so ChatTab reacts to agents started externally (e.g. header buttons)
   useEffect(() => {

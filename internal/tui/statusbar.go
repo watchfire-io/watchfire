@@ -158,26 +158,15 @@ func renderHintsProgressive(hints []hint, width int) string {
 		return abbr
 	}
 
-	// Level 2 (<100 cols): Drop descriptions, keys only
-	var keysOnly []string
-	for _, h := range abbreviated {
-		if h.key != "" {
-			keysOnly = append(keysOnly, keyStyle.Render(h.key))
-		}
-	}
-	joined := strings.Join(keysOnly, " ")
-	if lipgloss.Width(joined) <= available {
-		return joined
-	}
-
-	// Level 3: Render from left, stop when width exceeded
+	// Level 2: Abbreviated with descriptions, truncated from the right
 	var result string
-	for _, k := range keysOnly {
+	for _, h := range abbreviated {
+		part := keyHint(h.key, h.desc)
 		candidate := result
 		if candidate != "" {
-			candidate += " "
+			candidate += "  "
 		}
-		candidate += k
+		candidate += part
 		if lipgloss.Width(candidate) > available {
 			break
 		}

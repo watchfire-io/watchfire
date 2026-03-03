@@ -26,6 +26,7 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 			loadTasksCmd(m.conn, m.projectID),
 			getAgentStatusCmd(m.conn, m.projectID),
 			checkDaemonUpdateCmd(m.conn),
+			fetchGitInfoCmd(m.conn, m.projectID),
 		)
 		return true, tea.Batch(cmds...)
 
@@ -53,6 +54,10 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 		return true, tea.Batch(cmds...)
 
 	// ── Project data ───────────────────────────────────────────────
+	case GitInfoMsg:
+		m.gitInfo = msg.Info
+		return true, nil
+
 	case ProjectLoadedMsg:
 		m.project = msg.Project
 		m.definitionView.SetContent(msg.Project.Definition)
@@ -103,6 +108,7 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 		m.subscribed = false
 		m.agentPolling = false
 		m.spinnerRunning = false
+		m.autoStartDone = false // allow chat to auto-start again after wildfire/task ends
 		m.terminal.SetAgentStatus(nil)
 		m.taskList.SetAgentStatus(nil)
 		cmds = append(cmds, loadTasksCmd(m.conn, m.projectID))

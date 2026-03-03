@@ -275,7 +275,7 @@ func New(port int) (*Server, error) {
 	}
 
 	// Register services with generated proto descriptors
-	pb.RegisterProjectServiceServer(grpcServer, &projectService{manager: projectMgr})
+	pb.RegisterProjectServiceServer(grpcServer, &projectService{manager: projectMgr, agentMgr: agentMgr})
 	pb.RegisterTaskServiceServer(grpcServer, &taskService{manager: taskMgr})
 	pb.RegisterDaemonServiceServer(grpcServer, &daemonService{server: srv})
 	pb.RegisterAgentServiceServer(grpcServer, &agentService{manager: agentMgr, watcher: w})

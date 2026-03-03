@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.1.0] Ember — Initial Release
+## [0.1.0] Ember
 
 Watchfire orchestrates coding agent sessions (starting with Claude Code) based on project specs and tasks. Define what you want built, break it into tasks (or have agents do it), and let agents work through them autonomously — with full visibility into what's happening. Or just turn on wildfire mdoe and let you agents do it all for you.
 
@@ -58,6 +58,7 @@ Multi-project desktop application:
 - **Project view** — Tasks, Definition, Secrets, Trash, Settings tabs with collapsible right panel (Chat, Branches, Logs)
 - **Add Project wizard** — Three-step flow: project info → git config → definition
 - **Branch management** — View, merge, delete, and bulk-manage worktree branches
+- **Remove project** — Unregister projects from sidebar context menu, dashboard card, or settings tab (stops agents, no files deleted)
 - **Agent terminal** — Live streaming via gRPC-Web with input support
 - **Global settings** — Defaults, appearance (system/light/dark theme), agent path config, update preferences
 - **Daemon lifecycle** — Auto-restarts daemon if it dies, handles binary updates gracefully

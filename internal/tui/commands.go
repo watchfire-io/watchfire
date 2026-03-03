@@ -406,6 +406,20 @@ func reconnectTick() tea.Cmd {
 	})
 }
 
+func fetchGitInfoCmd(conn *grpc.ClientConn, projectID string) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewProjectServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		info, err := client.GetGitInfo(ctx, &pb.ProjectId{ProjectId: projectID})
+		if err != nil {
+			return nil // Non-critical
+		}
+		return GitInfoMsg{Info: info}
+	}
+}
+
 func checkDaemonUpdateCmd(conn *grpc.ClientConn) tea.Cmd {
 	return func() tea.Msg {
 		client := pb.NewDaemonServiceClient(conn)

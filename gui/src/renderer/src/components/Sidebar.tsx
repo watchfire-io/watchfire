@@ -1,4 +1,5 @@
-import { LayoutDashboard, Plus, Settings, PanelLeftClose, PanelLeft, Wifi, WifiOff } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { LayoutDashboard, Plus, Settings, PanelLeftClose, PanelLeft, Wifi, WifiOff, Trash2 } from 'lucide-react'
 import { DndContext, closestCenter, type DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -6,6 +7,7 @@ import { useAppStore } from '../stores/app-store'
 import { useProjectsStore } from '../stores/projects-store'
 import { StatusDot } from './StatusDot'
 import { cn } from '../lib/utils'
+import { Modal } from './ui/Modal'
 import watchfireIcon from '../assets/watchfire-icon.svg'
 
 export function Sidebar() {
@@ -20,6 +22,23 @@ export function Sidebar() {
   const projects = useProjectsStore((s) => s.projects)
   const agentStatuses = useProjectsStore((s) => s.agentStatuses)
   const reorderProjects = useProjectsStore((s) => s.reorderProjects)
+  const removeProject = useProjectsStore((s) => s.removeProject)
+
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number; projectId: string; projectName: string } | null>(null)
+  const [confirmRemove, setConfirmRemove] = useState<{ projectId: string; projectName: string } | null>(null)
+  const contextMenuRef = useRef<HTMLDivElement>(null)
+
+  // Close context menu on outside click
+  useEffect(() => {
+    if (!contextMenu) return
+    const handler = (e: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu(null)
+      }
+    }
+    window.addEventListener('mousedown', handler)
+    return () => window.removeEventListener('mousedown', handler)
+  }, [contextMenu])
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -98,6 +117,10 @@ export function Sidebar() {
                   active={view === 'project' && selectedProjectId === p.projectId}
                   collapsed={collapsed}
                   onClick={() => selectProject(p.projectId)}
+                  onContextMenu={(e) => {
+                    e.preventDefault()
+                    setContextMenu({ x: e.clientX, y: e.clientY, projectId: p.projectId, projectName: p.name })
+                  }}
                 />
               )
             })}
@@ -147,6 +170,58 @@ export function Sidebar() {
           </button>
         </div>
       </div>
+      {/* Context menu */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          className="fixed z-[300] min-w-[160px] bg-[var(--wf-bg-elevated)] border border-[var(--wf-border)] rounded-[var(--wf-radius-md)] shadow-wf-lg py-1"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+        >
+          <button
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-[var(--wf-error)] hover:bg-[var(--wf-bg-secondary)] transition-colors"
+            onClick={() => {
+              setConfirmRemove({ projectId: contextMenu.projectId, projectName: contextMenu.projectName })
+              setContextMenu(null)
+            }}
+          >
+            <Trash2 size={14} />
+            Remove Project
+          </button>
+        </div>
+      )}
+
+      {/* Remove confirmation modal */}
+      <Modal
+        open={!!confirmRemove}
+        onClose={() => setConfirmRemove(null)}
+        title="Remove Project"
+        footer={
+          <>
+            <button
+              className="px-3 py-1.5 text-sm rounded-[var(--wf-radius-md)] text-[var(--wf-text-secondary)] hover:bg-[var(--wf-bg-elevated)] transition-colors"
+              onClick={() => setConfirmRemove(null)}
+            >
+              Cancel
+            </button>
+            <button
+              className="px-3 py-1.5 text-sm rounded-[var(--wf-radius-md)] bg-[var(--wf-error)] text-white hover:opacity-90 transition-colors"
+              onClick={async () => {
+                if (confirmRemove) {
+                  await removeProject(confirmRemove.projectId)
+                  setConfirmRemove(null)
+                  setView('dashboard')
+                }
+              }}
+            >
+              Remove
+            </button>
+          </>
+        }
+      >
+        <p className="text-sm text-[var(--wf-text-secondary)]">
+          This will remove <strong>{confirmRemove?.projectName}</strong> from Watchfire. No files will be deleted — you can re-add the project folder later.
+        </p>
+      </Modal>
     </aside>
   )
 }
@@ -180,9 +255,10 @@ function SidebarItem({ icon, label, active, collapsed, onClick }: SidebarItemPro
 
 interface SortableProjectItemProps extends SidebarItemProps {
   id: string
+  onContextMenu?: (e: React.MouseEvent) => void
 }
 
-function SortableProjectItem({ id, icon, label, active, collapsed, onClick }: SortableProjectItemProps) {
+function SortableProjectItem({ id, icon, label, active, collapsed, onClick, onContextMenu }: SortableProjectItemProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id })
 
   const style = {
@@ -192,7 +268,7 @@ function SortableProjectItem({ id, icon, label, active, collapsed, onClick }: So
   }
 
   return (
-    <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
+    <div ref={setNodeRef} style={style} {...attributes} {...listeners} onContextMenu={onContextMenu}>
       <SidebarItem
         icon={icon}
         label={label}

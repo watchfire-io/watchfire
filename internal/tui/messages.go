@@ -104,3 +104,8 @@ type LogContentMsg struct {
 type UpdateAvailableMsg struct {
 	Version string
 }
+
+// GitInfoMsg carries git info from GetGitInfo RPC.
+type GitInfoMsg struct {
+	Info *pb.GitInfo
+}

@@ -1970,9 +1970,31 @@ watchfire/
 │   ├── updater/          # GitHub Releases update checker + binary replacer
 │   ├── cli/              # CLI commands
 │   ├── config/           # YAML loading/saving, path helpers
-│   ├── daemon/           # Daemon packages (agent, server, watcher, etc.)
+│   ├── daemon/           # Daemon packages
+│   │   ├── agent/        # Manager, Process (PTY+vt10x), worktree, sandbox, prompts
+│   │   ├── server/       # gRPC server + per-service files:
+│   │   │   ├── server.go           # Server setup, listener, registration
+│   │   │   ├── helpers.go          # Shared helpers (getProjectPath)
+│   │   │   ├── project_service.go  # ProjectService RPCs
+│   │   │   ├── task_service.go     # TaskService RPCs
+│   │   │   ├── agent_service.go    # AgentService RPCs + mode helpers
+│   │   │   ├── branch_service.go   # BranchService RPCs
+│   │   │   ├── log_service.go      # LogService RPCs
+│   │   │   ├── settings_service.go # SettingsService RPCs
+│   │   │   ├── daemon_service.go   # DaemonService RPCs
+│   │   │   └── converters.go       # Model-to-proto converters
+│   │   ├── tray/         # System tray integration
+│   │   ├── watcher/      # fsnotify watcher with debouncing
+│   │   ├── task/         # Task manager
+│   │   └── project/      # Project manager
 │   ├── models/           # Data structures
-│   └── tui/              # TUI components
+│   └── tui/              # TUI (Bubbletea Elm architecture):
+│       ├── model.go      # Model struct, Init, Update dispatch, View
+│       ├── keyhandler.go # Key event routing
+│       ├── mousehandler.go # Mouse event handling
+│       ├── msghandler.go # Message processing (gRPC responses, etc.)
+│       ├── actions.go    # Task action methods
+│       └── ...           # Components: tasklist, terminal, panels, styles, etc.
 ├── proto/                # Protobuf definitions
 ├── gui/                  # Electron app
 ├── assets/               # Icons, images

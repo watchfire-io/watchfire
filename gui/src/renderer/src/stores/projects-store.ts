@@ -13,6 +13,7 @@ interface ProjectsState {
   fetchAgentStatus: (projectId: string) => Promise<void>
   fetchAllAgentStatuses: () => Promise<void>
   reorderProjects: (projectIds: string[]) => Promise<void>
+  removeProject: (projectId: string) => Promise<void>
 }
 
 export const useProjectsStore = create<ProjectsState>((set, get) => ({
@@ -75,6 +76,16 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
     } catch {
       // Revert on error
       set({ projects })
+    }
+  },
+
+  removeProject: async (projectId) => {
+    try {
+      const client = getProjectClient()
+      await client.deleteProject({ projectId })
+      await get().fetchProjects()
+    } catch (err) {
+      set({ error: String(err) })
     }
   }
 }))

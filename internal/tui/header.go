@@ -9,7 +9,7 @@ import (
 	pb "github.com/watchfire-io/watchfire/proto"
 )
 
-func renderHeader(project *pb.Project, leftTab, rightTab int, agentStatus *pb.AgentStatus, width int) string {
+func renderHeader(project *pb.Project, leftTab, rightTab int, agentStatus *pb.AgentStatus, gitInfo *pb.GitInfo, width int) string {
 	// Project dot and name
 	projectName := "Watchfire"
 	projectColor := "#888888"
@@ -23,6 +23,16 @@ func renderHeader(project *pb.Project, leftTab, rightTab int, agentStatus *pb.Ag
 	dot := lipgloss.NewStyle().Foreground(lipgloss.Color(projectColor)).Render("●")
 	name := lipgloss.NewStyle().Bold(true).Render(projectName)
 
+	// Git info
+	gitStr := ""
+	if gitInfo != nil && gitInfo.CurrentBranch != "" {
+		branch := lipgloss.NewStyle().Foreground(colorDim).Render(gitInfo.CurrentBranch)
+		if gitInfo.IsDirty {
+			branch += lipgloss.NewStyle().Foreground(colorYellow).Render(" ✱")
+		}
+		gitStr = "  " + branch
+	}
+
 	// Left tabs
 	leftTabs := renderTabs([]string{"Tasks", "Definition", "Settings"}, leftTab)
 
@@ -33,7 +43,7 @@ func renderHeader(project *pb.Project, leftTab, rightTab int, agentStatus *pb.Ag
 	badge := renderAgentBadge(agentStatus)
 
 	// Layout: dot name  leftTabs    rightTabs  badge
-	left := fmt.Sprintf(" %s %s  %s", dot, name, leftTabs)
+	left := fmt.Sprintf(" %s %s%s  %s", dot, name, gitStr, leftTabs)
 	right := fmt.Sprintf("%s  %s ", rightTabs, badge)
 
 	gap := width - lipgloss.Width(left) - lipgloss.Width(right)

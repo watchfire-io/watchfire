@@ -14,6 +14,7 @@ interface Props {
 export function LogsTab({ projectId }: Props) {
   const logs = useLogsStore((s) => s.logs[projectId] ?? EMPTY)
   const loading = useLogsStore((s) => s.loading)
+  const error = useLogsStore((s) => s.error[projectId] ?? null)
   const fetchLogs = useLogsStore((s) => s.fetchLogs)
   const getLogContent = useLogsStore((s) => s.getLogContent)
 
@@ -70,7 +71,17 @@ export function LogsTab({ projectId }: Props) {
     return (
       <div className="flex flex-col items-center justify-center h-full text-[var(--wf-text-muted)]">
         <ScrollText size={32} className="mb-3 opacity-30" />
-        <p className="text-sm">No session logs</p>
+        {error ? (
+          <>
+            <p className="text-sm text-[var(--wf-text-danger)]">Failed to load logs</p>
+            <p className="text-[10px] mt-1 max-w-[240px] text-center break-words">{error}</p>
+            <Button size="sm" variant="ghost" className="mt-2" onClick={() => fetchLogs(projectId)}>
+              <RefreshCw size={12} className="mr-1" /> Retry
+            </Button>
+          </>
+        ) : (
+          <p className="text-sm">No session logs</p>
+        )}
       </div>
     )
   }

@@ -4,7 +4,7 @@
 
 **Watchfire** is a command center for AI coding agents. It enables developers to monitor, control, and manage Claude Code sessions remotely—from desktop and mobile.
 
-**Tagline:** "Remote control for AI coding agents"
+**Tagline:** "Better context. Better code."
 
 ---
 

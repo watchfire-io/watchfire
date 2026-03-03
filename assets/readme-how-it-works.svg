@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 840 160" fill="none">
+  <style>
+    text { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
+    .label { font-size: 14px; font-weight: 600; }
+    .icon { font-size: 22px; }
+    .arrow { stroke: #888; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+    .box { rx: 12; ry: 12; stroke-width: 2; }
+  </style>
+  <defs>
+    <marker id="arrowhead" markerWidth="8" markerHeight="6" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L8,3 L0,6" fill="#888"/>
+    </marker>
+  </defs>
+
+  <!-- Box 1: Define Project -->
+  <rect class="box" x="20" y="30" width="170" height="100" fill="#e0704018" stroke="#e07040"/>
+  <text class="icon" x="105" y="72" text-anchor="middle" fill="#e07040">📝</text>
+  <text class="label" x="105" y="105" text-anchor="middle" fill="#ccc">Define Project</text>
+
+  <!-- Arrow 1 -->
+  <line class="arrow" x1="200" y1="80" x2="230" y2="80"/>
+
+  <!-- Box 2: Create Tasks -->
+  <rect class="box" x="240" y="30" width="170" height="100" fill="#e0704018" stroke="#e07040"/>
+  <text class="icon" x="325" y="72" text-anchor="middle" fill="#e07040">📋</text>
+  <text class="label" x="325" y="105" text-anchor="middle" fill="#ccc">Create Tasks</text>
+
+  <!-- Arrow 2 -->
+  <line class="arrow" x1="420" y1="80" x2="450" y2="80"/>
+
+  <!-- Box 3: Agents Execute -->
+  <rect class="box" x="460" y="30" width="170" height="100" fill="#e0704018" stroke="#e07040"/>
+  <text class="icon" x="545" y="72" text-anchor="middle" fill="#e07040">🔥</text>
+  <text class="label" x="545" y="105" text-anchor="middle" fill="#ccc">Agents Execute</text>
+
+  <!-- Arrow 3 -->
+  <line class="arrow" x1="640" y1="80" x2="670" y2="80"/>
+
+  <!-- Box 4: Review & Merge -->
+  <rect class="box" x="680" y="30" width="140" height="100" fill="#e0704018" stroke="#e07040"/>
+  <text class="icon" x="750" y="72" text-anchor="middle" fill="#e07040">✅</text>
+  <text class="label" x="750" y="105" text-anchor="middle" fill="#ccc">Review &amp; Merge</text>
+</svg>

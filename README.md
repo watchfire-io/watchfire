@@ -2,13 +2,71 @@
   <img src="assets/watchfire_banner-black.png" alt="Watchfire" width="600" />
 </p>
 
+<h3 align="center"><strong>Better context. Better code.</strong></h3>
+
 <p align="center">
-  <strong>Remote control for AI coding agents</strong>
+AI coding agents work best when they have the right context. Watchfire lets you define your project structure, break work into well-scoped tasks, and orchestrate agents that execute with full awareness of your codebase, constraints, and goals. It manages context automatically — so agents stay on track and produce code you'd actually ship.
 </p>
 
 ---
 
-Watchfire orchestrates coding agent sessions (starting with Claude Code) based on task files. It manages multiple projects in parallel, spawning agents in sandboxed PTYs with git worktree isolation. A daemon handles all orchestration while thin clients (CLI/TUI and GUI) connect over gRPC.
+## How It Works
+
+<p align="center">
+  <img src="assets/readme-how-it-works.svg" alt="How It Works" width="700" />
+</p>
+
+---
+
+## Key Features
+
+### 🎯 Context Management
+
+Define your project once. Watchfire feeds agents the right specs, constraints, and codebase context — no copy-pasting prompts.
+
+### 📋 Structured Workflow
+
+Break big projects into tasks with clear specs. Agents tackle them in order, each in an isolated git worktree branch.
+
+### 🚀 Scale with Confidence
+
+Run agents across multiple projects in parallel. Monitor live terminal output, review results, and merge — from TUI or GUI.
+
+<p align="center">
+  <img src="assets/readme-context-flow.svg" alt="Context flows into agents" width="650" />
+</p>
+
+---
+
+## Agent Modes
+
+| Mode | Description |
+|------|-------------|
+| **Chat** | Interactive session with the coding agent |
+| **Task** | Execute a specific task from the task list |
+| **Start All** | Run all ready tasks sequentially |
+| **Wildfire** | Autonomous loop: execute tasks, refine drafts, generate new tasks |
+| **Generate Definition** | Auto-generate a project definition from your codebase |
+| **Generate Tasks** | Auto-generate tasks from the project definition |
+
+---
+
+## Quick Start
+
+```bash
+# Build & install
+make install-tools   # Dev tools (golangci-lint, air, protoc plugins)
+make build           # Build daemon + CLI
+make install         # Install to /usr/local/bin
+
+# Use it
+cd your-project
+watchfire init       # Initialize a project
+watchfire task add   # Add tasks
+watchfire            # Launch the TUI
+```
+
+---
 
 ## Components
 
@@ -18,116 +76,16 @@ Watchfire orchestrates coding agent sessions (starting with Claude Code) based o
 | **CLI/TUI** | `watchfire` | Project-scoped CLI commands + interactive TUI mode |
 | **GUI** | `Watchfire.app` | Electron multi-project client |
 
-## Quick Start
-
-### Prerequisites
-
-- Go 1.23+
-- Node.js 20+ (for GUI)
-- macOS (sandbox support uses `sandbox-exec`)
-
-### Build
+## Development
 
 ```bash
-# Install dev tools (golangci-lint, air, protoc plugins)
-make install-tools
-
-# Build daemon + CLI
-make build
-
-# Install to /usr/local/bin
-make install
+make dev-daemon   # Daemon with hot reload
+make dev-tui      # Build and run TUI
+make dev-gui      # Electron GUI dev mode
+make test         # Tests with race detector
+make lint         # Linting
+make proto        # Regenerate protobuf code
 ```
-
-### Run
-
-```bash
-# Initialize a project
-cd your-project
-watchfire init
-
-# Add tasks
-watchfire task add
-
-# Launch the TUI
-watchfire
-
-# Or start the GUI
-make dev-gui
-```
-
-### Development
-
-```bash
-# Daemon with hot reload
-make dev-daemon
-
-# TUI (build + run)
-make dev-tui
-
-# GUI dev mode
-make dev-gui
-```
-
-## Agent Modes
-
-| Mode | Description |
-|------|-------------|
-| **Chat** | Interactive session with the coding agent |
-| **Task** | Execute a specific task from the task list |
-| **Start All** | Run all ready tasks sequentially |
-| **Wildfire** | Autonomous loop: execute ready tasks, refine drafts, generate new tasks |
-| **Generate Definition** | Auto-generate a project definition |
-| **Generate Tasks** | Auto-generate tasks from the project definition |
-
-## How It Works
-
-1. **Define** your project with `watchfire init` and a project definition
-2. **Create tasks** describing what you want built
-3. **Start agents** that work in isolated git worktrees (one branch per task)
-4. **Monitor** progress through the TUI or GUI with live terminal output
-5. **Review and merge** completed work back to your default branch
-
-The daemon watches task files for changes. When an agent marks a task as done, Watchfire automatically stops the agent, merges the worktree (if auto-merge is enabled), and chains to the next task.
-
-## Project Structure
-
-```
-watchfire/
-├── cmd/                    # Entry points
-│   ├── watchfire/          # CLI/TUI binary
-│   └── watchfired/         # Daemon binary
-├── internal/               # Go packages
-│   ├── cli/                # CLI commands
-│   ├── config/             # Config loading, paths, logging
-│   ├── daemon/             # Daemon internals
-│   │   ├── agent/          # Agent manager, process, worktree, sandbox
-│   │   ├── server/         # gRPC server + services
-│   │   ├── task/           # Task manager
-│   │   ├── project/        # Project manager
-│   │   └── watcher/        # File watcher
-│   ├── models/             # Data structures
-│   └── tui/                # Bubbletea TUI
-├── proto/                  # Protobuf definitions
-├── gui/                    # Electron GUI
-└── assets/                 # Icons, logos, brand assets
-```
-
-## Make Targets
-
-| Target | Description |
-|--------|-------------|
-| `make build` | Build daemon + CLI (native arch) |
-| `make build-universal` | Build universal (fat) binaries for macOS |
-| `make install` | Build and install to `/usr/local/bin` |
-| `make install-all` | Install CLI, daemon, and GUI app |
-| `make test` | Run tests with race detector |
-| `make lint` | Run golangci-lint |
-| `make proto` | Regenerate protobuf code |
-| `make clean` | Remove build artifacts |
-| `make dev-daemon` | Run daemon with hot reload (air) |
-| `make dev-tui` | Build and run TUI |
-| `make dev-gui` | Run Electron GUI in dev mode |
 
 ## Architecture
 

@@ -3,7 +3,10 @@ import type { Project } from '../../generated/watchfire_pb'
 import { getProjectClient } from '../../lib/grpc-client'
 import { Input } from '../../components/ui/Input'
 import { Toggle } from '../../components/ui/Toggle'
+import { Modal } from '../../components/ui/Modal'
 import { useToast } from '../../components/ui/Toast'
+import { useProjectsStore } from '../../stores/projects-store'
+import { useAppStore } from '../../stores/app-store'
 
 const PROJECT_COLORS = [
   '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6',
@@ -17,6 +20,9 @@ interface Props {
 
 export function SettingsTab({ projectId, project }: Props) {
   const { toast } = useToast()
+  const removeProject = useProjectsStore((s) => s.removeProject)
+  const setView = useAppStore((s) => s.setView)
+  const [showRemoveConfirm, setShowRemoveConfirm] = useState(false)
   const [name, setName] = useState(project.name)
   const [color, setColor] = useState(project.color || '#e07040')
   const [defaultBranch, setDefaultBranch] = useState(project.defaultBranch)
@@ -110,6 +116,50 @@ export function SettingsTab({ projectId, project }: Props) {
           Project path: <span className="font-mono">{project.path}</span>
         </p>
       </div>
+
+      {/* Danger zone */}
+      <div className="pt-4 border-t border-[var(--wf-error)]/30">
+        <h4 className="text-sm font-semibold text-[var(--wf-error)] mb-2">Danger Zone</h4>
+        <p className="text-xs text-[var(--wf-text-muted)] mb-3">
+          Removing a project unregisters it from Watchfire. No files are deleted.
+        </p>
+        <button
+          className="px-3 py-1.5 text-sm rounded-[var(--wf-radius-md)] border border-[var(--wf-error)] text-[var(--wf-error)] hover:bg-[var(--wf-error)] hover:text-white transition-colors"
+          onClick={() => setShowRemoveConfirm(true)}
+        >
+          Remove Project
+        </button>
+      </div>
+
+      <Modal
+        open={showRemoveConfirm}
+        onClose={() => setShowRemoveConfirm(false)}
+        title="Remove Project"
+        footer={
+          <>
+            <button
+              className="px-3 py-1.5 text-sm rounded-[var(--wf-radius-md)] text-[var(--wf-text-secondary)] hover:bg-[var(--wf-bg-elevated)] transition-colors"
+              onClick={() => setShowRemoveConfirm(false)}
+            >
+              Cancel
+            </button>
+            <button
+              className="px-3 py-1.5 text-sm rounded-[var(--wf-radius-md)] bg-[var(--wf-error)] text-white hover:opacity-90 transition-colors"
+              onClick={async () => {
+                await removeProject(projectId)
+                setShowRemoveConfirm(false)
+                setView('dashboard')
+              }}
+            >
+              Remove
+            </button>
+          </>
+        }
+      >
+        <p className="text-sm text-[var(--wf-text-secondary)]">
+          This will remove <strong>{project.name}</strong> from Watchfire. No files will be deleted — you can re-add the project folder later.
+        </p>
+      </Modal>
     </div>
   )
 }

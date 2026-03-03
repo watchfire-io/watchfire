@@ -11,13 +11,15 @@ import (
 
 	"github.com/watchfire-io/watchfire/internal/analytics"
 	"github.com/watchfire-io/watchfire/internal/config"
+	"github.com/watchfire-io/watchfire/internal/daemon/agent"
 	"github.com/watchfire-io/watchfire/internal/daemon/project"
 	pb "github.com/watchfire-io/watchfire/proto"
 )
 
 type projectService struct {
 	pb.UnimplementedProjectServiceServer
-	manager *project.Manager
+	manager  *project.Manager
+	agentMgr *agent.Manager
 }
 
 func (s *projectService) ListProjects(_ context.Context, _ *emptypb.Empty) (*pb.ProjectList, error) {
@@ -96,6 +98,9 @@ func (s *projectService) UpdateProject(_ context.Context, req *pb.UpdateProjectR
 }
 
 func (s *projectService) DeleteProject(_ context.Context, req *pb.ProjectId) (*emptypb.Empty, error) {
+	// Stop any running agent before unregistering
+	_ = s.agentMgr.StopAgent(req.ProjectId)
+
 	err := s.manager.DeleteProject(req.ProjectId)
 	if err != nil {
 		return nil, err

@@ -330,19 +330,25 @@ func (m *Manager) monitorProcess(projectID string, proc *Process) {
 	// Run post-task cleanup (merge + worktree removal) for any mode with a task
 	taskDoneOK := true
 	if ag.TaskNumber > 0 && m.onTaskDoneFn != nil {
+		log.Printf("[chain] Running onTaskDoneFn for task #%04d (mode=%s)", ag.TaskNumber, ag.Mode)
 		taskDoneFn := m.onTaskDoneFn
 		taskNum := ag.TaskNumber
 		projPath := ag.ProjectPath
 		wtPath := ag.WorktreePath
 		m.mu.Unlock()
 		taskDoneOK = taskDoneFn(projPath, taskNum, wtPath)
+		log.Printf("[chain] onTaskDoneFn returned taskDoneOK=%v for task #%04d", taskDoneOK, taskNum)
 		m.mu.Lock()
 		// Re-check agent is still ours after releasing lock
 		if curr, ok := m.agents[projectID]; !ok || curr.Process != proc {
+			log.Printf("[chain] Agent replaced or removed during onTaskDoneFn — aborting chain")
 			m.mu.Unlock()
 			return
 		}
 	}
+
+	log.Printf("[chain] Decision: taskDoneOK=%v userStopped=%v mode=%s nextTaskFn=%v",
+		taskDoneOK, ag.userStopped, ag.Mode, m.nextTaskFn != nil)
 
 	if taskDoneOK && !ag.userStopped && (ag.Mode == ModeStartAll || ag.Mode == ModeWildfire) && m.nextTaskFn != nil {
 		agentMode := ag.Mode

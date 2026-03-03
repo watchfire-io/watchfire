@@ -5,7 +5,7 @@
 ## Identity
 
 **Name:** Watchfire
-**Tagline:** Remote control for AI coding agents
+**Tagline:** Better context. Better code.
 **What it does:** Desktop + mobile app to monitor, control, and manage Claude Code sessions remotely
 
 ## Colors
