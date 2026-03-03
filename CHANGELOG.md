@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.1] Ember
+
+### Fixed
+
+- GUI now detects Homebrew-installed binaries in `/opt/homebrew/bin/` on Apple Silicon Macs
+- CLI installer checks both `/opt/homebrew/bin` and `/usr/local/bin` before prompting to install
+- Daemon discovery finds `watchfired` in Homebrew prefix when Electron's PATH is limited
+
 ## [0.1.0] Ember
 
 Watchfire orchestrates coding agent sessions (starting with Claude Code) based on project specs and tasks. Define what you want built, break it into tasks (or have agents do it), and let agents work through them autonomously — with full visibility into what's happening. Or just turn on wildfire mdoe and let you agents do it all for you.
