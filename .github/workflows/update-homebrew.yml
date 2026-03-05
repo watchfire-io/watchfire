@@ -20,7 +20,7 @@ jobs:
       - name: Update Cask
         run: |
           VERSION="${{ steps.version.outputs.version }}"
-          DMG_URL="https://github.com/watchfire-io/watchfire/releases/download/v${VERSION}/Watchfire-${VERSION}.dmg"
+          DMG_URL="https://github.com/watchfire-io/watchfire/releases/download/v${VERSION}/Watchfire-${VERSION}-universal.dmg"
           DMG_SHA=$(curl -sL "$DMG_URL" | shasum -a 256 | awk '{print $1}')
           sed -i "s/version \".*\"/version \"${VERSION}\"/" Casks/watchfire.rb
           sed -i "s/sha256 \".*\"/sha256 \"${DMG_SHA}\"/" Casks/watchfire.rb

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.3] Ember
+
+### Fixed
+
+- Homebrew Cask download URL now includes `-universal` suffix to match the actual DMG release asset name, fixing `brew install --cask watchfire`
+- GUI now polls tasks and agent status continuously so the interface updates when task files change
+- GUI project settings color changes now apply immediately without needing a restart
+
 ## [0.1.2] Ember
 
 ### Fixed
