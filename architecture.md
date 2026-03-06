@@ -197,6 +197,18 @@ The daemon detects phase completion via signal files created by the agent. The d
 
 **Tooltip**: "Watchfire — {n} projects, {m} active agents"
 
+### Desktop Notifications
+
+The daemon sends desktop notifications on agent completion/error via the `internal/daemon/notify` package. Platform-abstracted:
+
+| Platform | Backend |
+|----------|---------|
+| **macOS** | Native `UNUserNotificationCenter` via CGo (shows Watchfire icon via attachment) |
+| **Linux** | `github.com/gen2brain/beeep` |
+| **Other** | No-op (logs to stderr) |
+
+The `tray` package calls `notify.Send(title, message)` — the icon is embedded in the `notify` package.
+
 ### Crash Recovery
 
 | Scenario | Behavior |
@@ -566,7 +578,6 @@ The Settings tab shows an inline form for project configuration.
 |-------|------|---------|
 | **Name** | Text input | `project.name` |
 | **Color** | Text input (hex) | `project.color` |
-| **Default branch** | Text input | `project.default_branch` |
 | **Auto-merge** | Toggle (on/off) | `project.auto_merge` |
 | **Auto-delete branch** | Toggle (on/off) | `project.auto_delete_branch` |
 | **Auto-start tasks** | Toggle (on/off) | `project.auto_start_tasks` |
@@ -1006,7 +1017,6 @@ project_id: "53760635-1694-4cd1-8c30-5e705350f577"
 name: "my-project"
 status: "active"                      # active | archived (future)
 color: "#22c55e"                      # Project color for GUI (hex)
-default_branch: "main"
 default_agent: "claude-code"
 sandbox: "sandbox-exec"               # Internal: sandbox-exec, future: docker, etc.
 auto_merge: true
@@ -1046,7 +1056,6 @@ defaults:
   auto_merge: true
   auto_delete_branch: true
   auto_start_tasks: true
-  default_branch: "main"
   default_sandbox: "sandbox-exec"
   default_agent: "claude-code"
 
@@ -1984,6 +1993,7 @@ watchfire/
 │   │   │   ├── daemon_service.go   # DaemonService RPCs
 │   │   │   └── converters.go       # Model-to-proto converters
 │   │   ├── tray/         # System tray integration
+│   │   ├── notify/       # Desktop notifications (platform-abstracted)
 │   │   ├── watcher/      # fsnotify watcher with debouncing
 │   │   ├── task/         # Task manager
 │   │   └── project/      # Project manager
