@@ -91,7 +91,6 @@ type Project struct {
 	Path                string                 `protobuf:"bytes,3,opt,name=path,proto3" json:"path,omitempty"`
 	Status              string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"` // "active" | "archived"
 	Color               string                 `protobuf:"bytes,5,opt,name=color,proto3" json:"color,omitempty"`   // Hex color for GUI
-	DefaultBranch       string                 `protobuf:"bytes,6,opt,name=default_branch,json=defaultBranch,proto3" json:"default_branch,omitempty"`
 	DefaultAgent        string                 `protobuf:"bytes,7,opt,name=default_agent,json=defaultAgent,proto3" json:"default_agent,omitempty"`
 	Sandbox             string                 `protobuf:"bytes,8,opt,name=sandbox,proto3" json:"sandbox,omitempty"`
 	AutoMerge           bool                   `protobuf:"varint,9,opt,name=auto_merge,json=autoMerge,proto3" json:"auto_merge,omitempty"`
@@ -168,13 +167,6 @@ func (x *Project) GetStatus() string {
 func (x *Project) GetColor() string {
 	if x != nil {
 		return x.Color
-	}
-	return ""
-}
-
-func (x *Project) GetDefaultBranch() string {
-	if x != nil {
-		return x.DefaultBranch
 	}
 	return ""
 }
@@ -355,10 +347,9 @@ func (x *ProjectList) GetProjects() []*Project {
 type CreateProjectRequest struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	Meta             *RequestMeta           `protobuf:"bytes,1,opt,name=meta,proto3" json:"meta,omitempty"`
-	Path             string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`                                        // Directory path
-	Name             string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`                                        // Project name (defaults to folder name)
-	Definition       string                 `protobuf:"bytes,4,opt,name=definition,proto3" json:"definition,omitempty"`                            // Optional project definition
-	DefaultBranch    string                 `protobuf:"bytes,5,opt,name=default_branch,json=defaultBranch,proto3" json:"default_branch,omitempty"` // Default: "main"
+	Path             string                 `protobuf:"bytes,2,opt,name=path,proto3" json:"path,omitempty"`             // Directory path
+	Name             string                 `protobuf:"bytes,3,opt,name=name,proto3" json:"name,omitempty"`             // Project name (defaults to folder name)
+	Definition       string                 `protobuf:"bytes,4,opt,name=definition,proto3" json:"definition,omitempty"` // Optional project definition
 	AutoMerge        bool                   `protobuf:"varint,6,opt,name=auto_merge,json=autoMerge,proto3" json:"auto_merge,omitempty"`
 	AutoDeleteBranch bool                   `protobuf:"varint,7,opt,name=auto_delete_branch,json=autoDeleteBranch,proto3" json:"auto_delete_branch,omitempty"`
 	AutoStartTasks   bool                   `protobuf:"varint,8,opt,name=auto_start_tasks,json=autoStartTasks,proto3" json:"auto_start_tasks,omitempty"`
@@ -424,13 +415,6 @@ func (x *CreateProjectRequest) GetDefinition() string {
 	return ""
 }
 
-func (x *CreateProjectRequest) GetDefaultBranch() string {
-	if x != nil {
-		return x.DefaultBranch
-	}
-	return ""
-}
-
 func (x *CreateProjectRequest) GetAutoMerge() bool {
 	if x != nil {
 		return x.AutoMerge
@@ -458,7 +442,6 @@ type UpdateProjectRequest struct {
 	ProjectId           string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	Name                *string                `protobuf:"bytes,3,opt,name=name,proto3,oneof" json:"name,omitempty"`
 	Color               *string                `protobuf:"bytes,4,opt,name=color,proto3,oneof" json:"color,omitempty"`
-	DefaultBranch       *string                `protobuf:"bytes,5,opt,name=default_branch,json=defaultBranch,proto3,oneof" json:"default_branch,omitempty"`
 	DefaultAgent        *string                `protobuf:"bytes,6,opt,name=default_agent,json=defaultAgent,proto3,oneof" json:"default_agent,omitempty"`
 	AutoMerge           *bool                  `protobuf:"varint,7,opt,name=auto_merge,json=autoMerge,proto3,oneof" json:"auto_merge,omitempty"`
 	AutoDeleteBranch    *bool                  `protobuf:"varint,8,opt,name=auto_delete_branch,json=autoDeleteBranch,proto3,oneof" json:"auto_delete_branch,omitempty"`
@@ -523,13 +506,6 @@ func (x *UpdateProjectRequest) GetName() string {
 func (x *UpdateProjectRequest) GetColor() string {
 	if x != nil && x.Color != nil {
 		return *x.Color
-	}
-	return ""
-}
-
-func (x *UpdateProjectRequest) GetDefaultBranch() string {
-	if x != nil && x.DefaultBranch != nil {
-		return *x.DefaultBranch
 	}
 	return ""
 }
@@ -2777,7 +2753,6 @@ type DefaultsConfig struct {
 	AutoMerge        bool                   `protobuf:"varint,1,opt,name=auto_merge,json=autoMerge,proto3" json:"auto_merge,omitempty"`
 	AutoDeleteBranch bool                   `protobuf:"varint,2,opt,name=auto_delete_branch,json=autoDeleteBranch,proto3" json:"auto_delete_branch,omitempty"`
 	AutoStartTasks   bool                   `protobuf:"varint,3,opt,name=auto_start_tasks,json=autoStartTasks,proto3" json:"auto_start_tasks,omitempty"`
-	DefaultBranch    string                 `protobuf:"bytes,4,opt,name=default_branch,json=defaultBranch,proto3" json:"default_branch,omitempty"`
 	DefaultSandbox   string                 `protobuf:"bytes,5,opt,name=default_sandbox,json=defaultSandbox,proto3" json:"default_sandbox,omitempty"`
 	DefaultAgent     string                 `protobuf:"bytes,6,opt,name=default_agent,json=defaultAgent,proto3" json:"default_agent,omitempty"`
 	unknownFields    protoimpl.UnknownFields
@@ -2833,13 +2808,6 @@ func (x *DefaultsConfig) GetAutoStartTasks() bool {
 		return x.AutoStartTasks
 	}
 	return false
-}
-
-func (x *DefaultsConfig) GetDefaultBranch() string {
-	if x != nil {
-		return x.DefaultBranch
-	}
-	return ""
 }
 
 func (x *DefaultsConfig) GetDefaultSandbox() string {
@@ -3444,15 +3412,14 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\vRequestMeta\x12\x16\n" +
 	"\x06origin\x18\x01 \x01(\tR\x06origin\x12\x1b\n" +
 	"\tclient_id\x18\x02 \x01(\tR\bclientId\x12\x18\n" +
-	"\aversion\x18\x03 \x01(\tR\aversion\"\xea\x04\n" +
+	"\aversion\x18\x03 \x01(\tR\aversion\"\xc9\x04\n" +
 	"\aProject\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x12\x12\n" +
 	"\x04path\x18\x03 \x01(\tR\x04path\x12\x16\n" +
 	"\x06status\x18\x04 \x01(\tR\x06status\x12\x14\n" +
-	"\x05color\x18\x05 \x01(\tR\x05color\x12%\n" +
-	"\x0edefault_branch\x18\x06 \x01(\tR\rdefaultBranch\x12#\n" +
+	"\x05color\x18\x05 \x01(\tR\x05color\x12#\n" +
 	"\rdefault_agent\x18\a \x01(\tR\fdefaultAgent\x12\x18\n" +
 	"\asandbox\x18\b \x01(\tR\asandbox\x12\x1d\n" +
 	"\n" +
@@ -3469,51 +3436,48 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"updated_at\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12(\n" +
 	"\x10next_task_number\x18\x0f \x01(\x05R\x0enextTaskNumber\x12\x1a\n" +
 	"\bposition\x18\x10 \x01(\x05R\bposition\x121\n" +
-	"\x14secrets_instructions\x18\x11 \x01(\tR\x13secretsInstructions\"V\n" +
+	"\x14secrets_instructions\x18\x11 \x01(\tR\x13secretsInstructionsJ\x04\b\x06\x10\a\"V\n" +
 	"\tProjectId\x12*\n" +
 	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x02 \x01(\tR\tprojectId\"=\n" +
 	"\vProjectList\x12.\n" +
-	"\bprojects\x18\x01 \x03(\v2\x12.watchfire.ProjectR\bprojects\"\xa8\x02\n" +
+	"\bprojects\x18\x01 \x03(\v2\x12.watchfire.ProjectR\bprojects\"\x87\x02\n" +
 	"\x14CreateProjectRequest\x12*\n" +
 	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x12\n" +
 	"\x04name\x18\x03 \x01(\tR\x04name\x12\x1e\n" +
 	"\n" +
 	"definition\x18\x04 \x01(\tR\n" +
-	"definition\x12%\n" +
-	"\x0edefault_branch\x18\x05 \x01(\tR\rdefaultBranch\x12\x1d\n" +
+	"definition\x12\x1d\n" +
 	"\n" +
 	"auto_merge\x18\x06 \x01(\bR\tautoMerge\x12,\n" +
 	"\x12auto_delete_branch\x18\a \x01(\bR\x10autoDeleteBranch\x12(\n" +
-	"\x10auto_start_tasks\x18\b \x01(\bR\x0eautoStartTasks\"\xe9\x04\n" +
+	"\x10auto_start_tasks\x18\b \x01(\bR\x0eautoStartTasksJ\x04\b\x05\x10\x06\"\xb0\x04\n" +
 	"\x14UpdateProjectRequest\x12*\n" +
 	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x17\n" +
 	"\x04name\x18\x03 \x01(\tH\x00R\x04name\x88\x01\x01\x12\x19\n" +
-	"\x05color\x18\x04 \x01(\tH\x01R\x05color\x88\x01\x01\x12*\n" +
-	"\x0edefault_branch\x18\x05 \x01(\tH\x02R\rdefaultBranch\x88\x01\x01\x12(\n" +
-	"\rdefault_agent\x18\x06 \x01(\tH\x03R\fdefaultAgent\x88\x01\x01\x12\"\n" +
+	"\x05color\x18\x04 \x01(\tH\x01R\x05color\x88\x01\x01\x12(\n" +
+	"\rdefault_agent\x18\x06 \x01(\tH\x02R\fdefaultAgent\x88\x01\x01\x12\"\n" +
 	"\n" +
-	"auto_merge\x18\a \x01(\bH\x04R\tautoMerge\x88\x01\x01\x121\n" +
-	"\x12auto_delete_branch\x18\b \x01(\bH\x05R\x10autoDeleteBranch\x88\x01\x01\x12-\n" +
-	"\x10auto_start_tasks\x18\t \x01(\bH\x06R\x0eautoStartTasks\x88\x01\x01\x12#\n" +
+	"auto_merge\x18\a \x01(\bH\x03R\tautoMerge\x88\x01\x01\x121\n" +
+	"\x12auto_delete_branch\x18\b \x01(\bH\x04R\x10autoDeleteBranch\x88\x01\x01\x12-\n" +
+	"\x10auto_start_tasks\x18\t \x01(\bH\x05R\x0eautoStartTasks\x88\x01\x01\x12#\n" +
 	"\n" +
 	"definition\x18\n" +
-	" \x01(\tH\aR\n" +
+	" \x01(\tH\x06R\n" +
 	"definition\x88\x01\x01\x126\n" +
-	"\x14secrets_instructions\x18\v \x01(\tH\bR\x13secretsInstructions\x88\x01\x01B\a\n" +
+	"\x14secrets_instructions\x18\v \x01(\tH\aR\x13secretsInstructions\x88\x01\x01B\a\n" +
 	"\x05_nameB\b\n" +
-	"\x06_colorB\x11\n" +
-	"\x0f_default_branchB\x10\n" +
+	"\x06_colorB\x10\n" +
 	"\x0e_default_agentB\r\n" +
 	"\v_auto_mergeB\x15\n" +
 	"\x13_auto_delete_branchB\x13\n" +
 	"\x11_auto_start_tasksB\r\n" +
 	"\v_definitionB\x17\n" +
-	"\x15_secrets_instructions\"e\n" +
+	"\x15_secrets_instructionsJ\x04\b\x05\x10\x06\"e\n" +
 	"\x16ReorderProjectsRequest\x12*\n" +
 	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\x12\x1f\n" +
 	"\vproject_ids\x18\x02 \x03(\tR\n" +
@@ -3750,15 +3714,14 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"project_id\x18\x02 \x01(\tR\tprojectId\x12!\n" +
 	"\fbranch_names\x18\x03 \x03(\tR\vbranchNames\"!\n" +
 	"\vAgentConfig\x12\x12\n" +
-	"\x04path\x18\x01 \x01(\tR\x04path\"\xfc\x01\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\"\xdb\x01\n" +
 	"\x0eDefaultsConfig\x12\x1d\n" +
 	"\n" +
 	"auto_merge\x18\x01 \x01(\bR\tautoMerge\x12,\n" +
 	"\x12auto_delete_branch\x18\x02 \x01(\bR\x10autoDeleteBranch\x12(\n" +
-	"\x10auto_start_tasks\x18\x03 \x01(\bR\x0eautoStartTasks\x12%\n" +
-	"\x0edefault_branch\x18\x04 \x01(\tR\rdefaultBranch\x12'\n" +
+	"\x10auto_start_tasks\x18\x03 \x01(\bR\x0eautoStartTasks\x12'\n" +
 	"\x0fdefault_sandbox\x18\x05 \x01(\tR\x0edefaultSandbox\x12#\n" +
-	"\rdefault_agent\x18\x06 \x01(\tR\fdefaultAgent\"\x87\x01\n" +
+	"\rdefault_agent\x18\x06 \x01(\tR\fdefaultAgentJ\x04\b\x04\x10\x05\"\x87\x01\n" +
 	"\rUpdatesConfig\x12(\n" +
 	"\x10check_on_startup\x18\x01 \x01(\bR\x0echeckOnStartup\x12'\n" +
 	"\x0fcheck_frequency\x18\x02 \x01(\tR\x0echeckFrequency\x12#\n" +

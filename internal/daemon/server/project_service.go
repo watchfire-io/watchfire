@@ -48,7 +48,6 @@ func (s *projectService) CreateProject(_ context.Context, req *pb.CreateProjectR
 		Path:             req.Path,
 		Name:             req.Name,
 		Definition:       req.Definition,
-		DefaultBranch:    req.DefaultBranch,
 		AutoMerge:        req.AutoMerge,
 		AutoDeleteBranch: req.AutoDeleteBranch,
 		AutoStartTasks:   req.AutoStartTasks,
@@ -67,9 +66,6 @@ func (s *projectService) UpdateProject(_ context.Context, req *pb.UpdateProjectR
 	}
 	if req.Color != nil {
 		opts.Color = req.Color
-	}
-	if req.DefaultBranch != nil {
-		opts.DefaultBranch = req.DefaultBranch
 	}
 	if req.DefaultAgent != nil {
 		opts.DefaultAgent = req.DefaultAgent

@@ -16,6 +16,7 @@ Watchfire delegates coding tasks to AI agents, running them in sandboxed environ
 │   │   ├── 0001.yaml
 │   │   ├── 0002.yaml
 │   │   └── ...
+│   ├── memory.md                 # Persistent project knowledge (you can read & update)
 │   ├── secrets/                  # Secrets and setup instructions
 │   │   └── instructions.md       # Agent-readable instructions for external services
 │   └── worktrees/                # Task worktrees
@@ -131,6 +132,24 @@ You can create new tasks by writing YAML files to `.watchfire/tasks/`:
 - **Update task.yaml when done** - This signals completion
 - **Report blockers clearly** - Set success: false with reason
 - **Read existing tasks** - Check `.watchfire/tasks/` for context
+
+## Project Memory
+
+Location: `.watchfire/memory.md`
+
+This file persists important project knowledge across agent sessions. Use it to store and retrieve conventions, user preferences, recurring patterns, and workflow notes so future sessions don't start from scratch.
+
+**What to store:**
+- User preferences (commit style, PR workflow, code formatting, naming conventions)
+- Project patterns and architectural decisions
+- Import conventions, build quirks, common gotchas
+- Workflow notes (e.g., "always run lint before committing")
+
+**How to use it:**
+- Read it at the start of your session to pick up existing knowledge
+- Update it when you learn something new and reusable about the project
+- Keep entries concise — this is a reference, not a journal
+- In task mode, the file lives at the project root (`<project>/.watchfire/memory.md`), not inside your worktree
 
 ## Sandbox Restrictions
 

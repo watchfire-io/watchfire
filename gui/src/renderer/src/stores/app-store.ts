@@ -23,7 +23,7 @@ export const useAppStore = create<AppState>((set) => ({
   connected: false,
   daemonPort: null,
   theme: 'system',
-  sidebarCollapsed: false,
+  sidebarCollapsed: localStorage.getItem('wf-sidebar-collapsed') === 'true',
 
   setView: (view) => set({ view }),
 
@@ -44,5 +44,9 @@ export const useAppStore = create<AppState>((set) => ({
   },
 
   toggleSidebar: () =>
-    set((s) => ({ sidebarCollapsed: !s.sidebarCollapsed }))
+    set((s) => {
+      const next = !s.sidebarCollapsed
+      localStorage.setItem('wf-sidebar-collapsed', String(next))
+      return { sidebarCollapsed: next }
+    })
 }))

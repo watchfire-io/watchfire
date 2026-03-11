@@ -28,7 +28,7 @@ message Project {
   string path = 3;
   string status = 4;                            // "active" | "archived"
   string color = 5;                             // Hex color for GUI
-  string default_branch = 6;
+  reserved 6;                                    // was default_branch
   string default_agent = 7;
   string sandbox = 8;
   bool auto_merge = 9;
@@ -56,7 +56,7 @@ message CreateProjectRequest {
   string path = 2;                              // Directory path
   string name = 3;                              // Project name (defaults to folder name)
   string definition = 4;                        // Optional project definition
-  string default_branch = 5;                    // Default: "main"
+  reserved 5;                                   // was default_branch
   bool auto_merge = 6;
   bool auto_delete_branch = 7;
   bool auto_start_tasks = 8;
@@ -67,7 +67,7 @@ message UpdateProjectRequest {
   string project_id = 2;
   optional string name = 3;
   optional string color = 4;
-  optional string default_branch = 5;
+  reserved 5;                                   // was default_branch
   optional string default_agent = 6;
   optional bool auto_merge = 7;
   optional bool auto_delete_branch = 8;
@@ -328,7 +328,7 @@ message DefaultsConfig {
   bool auto_merge = 1;
   bool auto_delete_branch = 2;
   bool auto_start_tasks = 3;
-  string default_branch = 4;
+  reserved 4;                                     // was default_branch
   string default_sandbox = 5;
   string default_agent = 6;
 }

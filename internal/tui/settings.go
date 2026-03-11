@@ -51,7 +51,6 @@ func (s *SettingsForm) LoadFromProject(project *pb.Project) {
 	s.fields = []SettingsField{
 		{Label: "Name", Key: "name", Value: project.Name, Type: fieldText},
 		{Label: "Color", Key: "color", Value: project.Color, Type: fieldText},
-		{Label: "Default Branch", Key: "default_branch", Value: project.DefaultBranch, Type: fieldText},
 		{Label: "Auto-merge", Key: "auto_merge", BoolValue: project.AutoMerge, Type: fieldToggle},
 		{Label: "Auto-delete Branch", Key: "auto_delete_branch", BoolValue: project.AutoDeleteBranch, Type: fieldToggle},
 		{Label: "Auto-start Tasks", Key: "auto_start_tasks", BoolValue: project.AutoStartTasks, Type: fieldToggle},

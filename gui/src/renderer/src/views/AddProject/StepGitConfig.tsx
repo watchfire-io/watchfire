@@ -1,4 +1,3 @@
-import { Input } from '../../components/ui/Input'
 import { Toggle } from '../../components/ui/Toggle'
 import type { WizardData } from './AddProjectWizard'
 
@@ -10,14 +9,7 @@ interface Props {
 export function StepGitConfig({ data, onChange }: Props) {
   return (
     <div className="max-w-md space-y-5">
-      <Input
-        label="Default Branch"
-        value={data.defaultBranch}
-        onChange={(e) => onChange({ defaultBranch: e.target.value })}
-        placeholder="main"
-      />
-
-      <div className="space-y-4 pt-2">
+      <div className="space-y-4">
         <Toggle
           checked={data.autoMerge}
           onChange={(v) => onChange({ autoMerge: v })}

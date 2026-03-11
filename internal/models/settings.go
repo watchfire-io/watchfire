@@ -12,7 +12,6 @@ type DefaultsConfig struct {
 	AutoMerge        bool   `yaml:"auto_merge"`
 	AutoDeleteBranch bool   `yaml:"auto_delete_branch"`
 	AutoStartTasks   bool   `yaml:"auto_start_tasks"`
-	DefaultBranch    string `yaml:"default_branch"`
 	DefaultSandbox   string `yaml:"default_sandbox"`
 	DefaultAgent     string `yaml:"default_agent"`
 }
@@ -51,7 +50,6 @@ func NewSettings() *Settings {
 			AutoMerge:        true,
 			AutoDeleteBranch: true,
 			AutoStartTasks:   true,
-			DefaultBranch:    "main",
 			DefaultSandbox:   "sandbox-exec",
 			DefaultAgent:     "claude-code",
 		},

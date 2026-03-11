@@ -1,6 +1,5 @@
 import type { Settings } from '../../generated/watchfire_pb'
 import { useSettingsStore } from '../../stores/settings-store'
-import { Input } from '../../components/ui/Input'
 import { Toggle } from '../../components/ui/Toggle'
 
 interface Props {
@@ -21,11 +20,6 @@ export function DefaultsSection({ settings }: Props) {
         Defaults for New Projects
       </h3>
       <div className="space-y-4">
-        <Input
-          label="Default Branch"
-          value={defaults?.defaultBranch || 'main'}
-          onChange={(e) => update({ defaultBranch: e.target.value })}
-        />
         <Toggle
           checked={defaults?.autoMerge ?? true}
           onChange={(v) => update({ autoMerge: v })}

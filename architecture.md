@@ -928,6 +928,7 @@ Split layout with tabs:
     ├── project.yaml        # Project definition
     ├── tasks/
     │   └── 0001.yaml       # Task files (4-digit padded task_number)
+    ├── memory.md            # Persistent project knowledge across agent sessions
     ├── secrets/
     │   └── instructions.md # Agent-readable instructions for external services/credentials
     └── worktrees/

@@ -33,7 +33,6 @@ type Project struct {
 	Name             string    `yaml:"name"`
 	Status           string    `yaml:"status"` // "active" | "archived"
 	Color            string    `yaml:"color"`  // Hex color for GUI
-	DefaultBranch    string    `yaml:"default_branch"`
 	DefaultAgent     string    `yaml:"default_agent"`
 	Sandbox          string    `yaml:"sandbox"`
 	AutoMerge        bool      `yaml:"auto_merge"`
@@ -69,7 +68,6 @@ func NewProject(id, name, path string) *Project {
 		Name:             name,
 		Status:           "active",
 		Color:            RandomColor(),
-		DefaultBranch:    "main",
 		DefaultAgent:     "claude-code",
 		Sandbox:          "sandbox-exec",
 		AutoMerge:        true,

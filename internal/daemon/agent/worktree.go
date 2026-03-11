@@ -60,28 +60,21 @@ func EnsureWorktree(projectPath string, taskNumber int) (string, error) {
 	return worktreePath, nil
 }
 
-// MergeWorktree merges the worktree branch into the target branch using --no-ff.
+// MergeWorktree merges the worktree branch into the current branch using --no-ff.
 // Must be run from the project root (main worktree).
 // Returns (true, nil) if merge succeeded, (false, nil) if no file differences, or (false, err) on failure.
-func MergeWorktree(projectPath string, taskNumber int, targetBranch string) (bool, error) {
+func MergeWorktree(projectPath string, taskNumber int) (bool, error) {
 	padded := fmt.Sprintf("%04d", taskNumber)
 	branchName := fmt.Sprintf("watchfire/%s", padded)
 
-	// Check current branch — only checkout if not already on target
+	// Detect current branch — merge target is always the checked-out branch
 	revParse := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
 	revParse.Dir = projectPath
-	currentBranch, err := revParse.Output()
+	currentBranchOut, err := revParse.Output()
 	if err != nil {
 		return false, fmt.Errorf("failed to determine current branch: %w", err)
 	}
-
-	if strings.TrimSpace(string(currentBranch)) != targetBranch {
-		checkout := exec.Command("git", "checkout", targetBranch)
-		checkout.Dir = projectPath
-		if output, err := checkout.CombinedOutput(); err != nil {
-			return false, fmt.Errorf("failed to checkout %s: %s: %w", targetBranch, strings.TrimSpace(string(output)), err)
-		}
-	}
+	targetBranch := strings.TrimSpace(string(currentBranchOut))
 
 	// Log branch positions for debugging
 	mainHead := exec.Command("git", "rev-parse", "--short", targetBranch)

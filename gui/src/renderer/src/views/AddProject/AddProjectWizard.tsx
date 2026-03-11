@@ -12,7 +12,6 @@ import { StepDefinition } from './StepDefinition'
 export interface WizardData {
   path: string
   name: string
-  defaultBranch: string
   autoMerge: boolean
   autoDeleteBranch: boolean
   autoStartTasks: boolean
@@ -32,7 +31,6 @@ export function AddProjectWizard() {
   const [data, setData] = useState<WizardData>({
     path: '',
     name: '',
-    defaultBranch: 'main',
     autoMerge: true,
     autoDeleteBranch: true,
     autoStartTasks: true,
@@ -49,7 +47,6 @@ export function AddProjectWizard() {
       const project = await client.createProject({
         path,
         name: '',
-        defaultBranch: '',
         autoMerge: false,
         autoDeleteBranch: false,
         autoStartTasks: false,
@@ -78,7 +75,6 @@ export function AddProjectWizard() {
       const project = await client.createProject({
         path: data.path,
         name: data.name,
-        defaultBranch: data.defaultBranch,
         autoMerge: data.autoMerge,
         autoDeleteBranch: data.autoDeleteBranch,
         autoStartTasks: data.autoStartTasks,

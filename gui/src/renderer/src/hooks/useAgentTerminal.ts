@@ -128,11 +128,15 @@ export function useAgentTerminal({ projectId, containerRef, active = false }: Us
       },
       () => {
         term.write('\r\n\x1b[90m[Agent stopped]\x1b[0m\r\n')
-        // Schedule a reconnect attempt for wildfire phase transitions
-        if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
-        reconnectTimerRef.current = setTimeout(() => {
-          setReconnectKey((k) => k + 1)
-        }, 2000)
+        // Only reconnect if agent is still running (wildfire phase transitions)
+        // Don't reconnect if agent has truly stopped to avoid infinite loop
+        const currentStatus = useAgentStore.getState().statuses[projectId]
+        if (currentStatus?.isRunning) {
+          if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+          reconnectTimerRef.current = setTimeout(() => {
+            setReconnectKey((k) => k + 1)
+          }, 2000)
+        }
       }
     )
     abortRef.current = abort

@@ -62,20 +62,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 	autoDeleteBranch := promptYesNo(reader, "Auto-delete worktrees after merge?", true)
 	autoStartTasks := promptYesNo(reader, "Auto-start agent when task set to ready?", true)
 
-	fmt.Print("Default branch [main]: ")
-	defaultBranch, _ := reader.ReadString('\n')
-	defaultBranch = strings.TrimSpace(defaultBranch)
-	if defaultBranch == "" {
-		defaultBranch = "main"
-	}
-
 	// Create project using the project manager
 	mgr := project.NewManager()
 	pwe, err := mgr.CreateProject(project.CreateOptions{
 		Path:             cwd,
 		Name:             name,
 		Definition:       definition,
-		DefaultBranch:    defaultBranch,
 		AutoMerge:        autoMerge,
 		AutoDeleteBranch: autoDeleteBranch,
 		AutoStartTasks:   autoStartTasks,

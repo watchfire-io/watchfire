@@ -4,6 +4,7 @@ import type { Project } from '../../generated/watchfire_pb'
 import { useProjectsStore } from '../../stores/projects-store'
 import { useAppStore } from '../../stores/app-store'
 import { useTasksStore } from '../../stores/tasks-store'
+import { useGitStore } from '../../stores/git-store'
 import { StatusDot } from '../../components/StatusDot'
 import { AgentBadge } from '../../components/AgentBadge'
 import { Modal } from '../../components/ui/Modal'
@@ -18,10 +19,13 @@ export function ProjectCard({ project }: ProjectCardProps) {
   const removeProject = useProjectsStore((s) => s.removeProject)
   const tasks = useTasksStore((s) => s.tasks[project.projectId])
   const fetchTasks = useTasksStore((s) => s.fetchTasks)
+  const gitInfo = useGitStore((s) => s.gitInfo[project.projectId])
+  const fetchGitInfo = useGitStore((s) => s.fetchGitInfo)
   const [showConfirm, setShowConfirm] = useState(false)
 
   useEffect(() => {
     fetchTasks(project.projectId)
+    fetchGitInfo(project.projectId)
   }, [project.projectId])
 
   const taskCounts = {
@@ -65,7 +69,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
       <div className="flex items-center gap-3 text-xs text-[var(--wf-text-muted)] mb-3">
         <span className="flex items-center gap-1">
           <GitBranch size={11} className="shrink-0" />
-          {project.defaultBranch || 'main'}
+          {gitInfo?.currentBranch || '—'}
         </span>
         <span className="flex items-center gap-1 min-w-0">
           <Folder size={11} className="shrink-0" />

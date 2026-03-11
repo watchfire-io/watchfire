@@ -116,12 +116,12 @@ func New(port int) (*Server, error) {
 		mergeFailed := false
 		if proj.AutoMerge {
 			var err error
-			merged, err = agent.MergeWorktree(projectPath, taskNumber, proj.DefaultBranch)
+			merged, err = agent.MergeWorktree(projectPath, taskNumber)
 			if err != nil {
 				log.Printf("[merge] Auto-merge failed for task #%04d: %v", taskNumber, err)
 				mergeFailed = true
 			} else if merged {
-				log.Printf("[merge] Auto-merged task #%04d to %s", taskNumber, proj.DefaultBranch)
+				log.Printf("[merge] Auto-merged task #%04d into current branch", taskNumber)
 			} else {
 				log.Printf("[merge] Task #%04d has no file differences — skipped merge", taskNumber)
 			}

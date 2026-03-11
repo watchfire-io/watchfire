@@ -319,9 +319,6 @@ func updateProjectCmd(conn *grpc.ClientConn, projectID string, updates map[strin
 		if v, ok := updates["color"].(string); ok {
 			req.Color = &v
 		}
-		if v, ok := updates["default_branch"].(string); ok {
-			req.DefaultBranch = &v
-		}
 		if v, ok := updates["definition"].(string); ok {
 			req.Definition = &v
 		}

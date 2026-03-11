@@ -2,6 +2,10 @@
 
 ## [0.2.0] Ember
 
+### Added
+
+- Agent memory file (`.watchfire/memory.md`) — agents can persist project-specific knowledge (conventions, preferences, patterns) across sessions
+
 ### Changed
 
 - Removed configurable "default branch" setting — tasks now merge into whatever branch is currently checked out in the project root

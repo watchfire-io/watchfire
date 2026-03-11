@@ -1,5 +1,5 @@
 import { useRef, useEffect } from 'react'
-import { Play, Square } from 'lucide-react'
+import { Play } from 'lucide-react'
 import { useAgentStore } from '../../../stores/agent-store'
 import { useAgentTerminal } from '../../../hooks/useAgentTerminal'
 import { IssueBanner } from '../../../components/IssueBanner'
@@ -16,7 +16,7 @@ export function ChatTab({ projectId }: Props) {
   const agentStatus = useAgentStore((s) => s.statuses[projectId])
   const issue = useAgentStore((s) => s.issues[projectId])
   const startAgent = useAgentStore((s) => s.startAgent)
-  const stopAgent = useAgentStore((s) => s.stopAgent)
+
   const resumeAgent = useAgentStore((s) => s.resumeAgent)
   const fetchStatus = useAgentStore((s) => s.fetchStatus)
   const { toast } = useToast()
@@ -71,24 +71,12 @@ export function ChatTab({ projectId }: Props) {
     }
   }
 
-  const handleStop = async () => {
-    try {
-      await stopAgent(projectId)
-    } catch (err) {
-      toast(String(err), 'error')
-    }
-  }
-
   return (
     <div className="flex flex-col h-full">
       {/* Header — only when running */}
       {isRunning && (
-        <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--wf-border)]">
+        <div className="flex items-center px-3 py-2 border-b border-[var(--wf-border)]">
           <AgentBadge status={agentStatus} />
-          <Button size="sm" variant="danger" onClick={handleStop}>
-            <Square size={12} />
-            Stop
-          </Button>
         </div>
       )}
 

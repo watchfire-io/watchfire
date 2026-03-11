@@ -3,6 +3,7 @@ import { join } from 'path'
 import { existsSync } from 'fs'
 import { homedir } from 'os'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
+import { loadWindowState, trackWindowState } from './window-state'
 import { setupIpc } from './ipc'
 import { ensureDaemon, getDaemonInfo } from './daemon'
 import { checkAndInstallCLI } from './cli-installer'
@@ -51,9 +52,13 @@ function startDaemonWatcher(): void {
 }
 
 function createWindow(): void {
+  const savedState = loadWindowState()
+  const usePosition = savedState.x !== -1 && savedState.y !== -1
+
   mainWindow = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: savedState.width,
+    height: savedState.height,
+    ...(usePosition ? { x: savedState.x, y: savedState.y } : {}),
     minWidth: 900,
     minHeight: 600,
     show: false,
@@ -68,6 +73,8 @@ function createWindow(): void {
       nodeIntegration: false
     }
   })
+
+  trackWindowState(mainWindow)
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()

@@ -70,15 +70,6 @@ func runConfigure(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Default branch
-	fmt.Printf("Default branch [%s]: ", project.DefaultBranch)
-	branch, _ := reader.ReadString('\n')
-	branch = strings.TrimSpace(branch)
-	if branch != "" && branch != project.DefaultBranch {
-		project.DefaultBranch = branch
-		changed = true
-	}
-
 	// Automation settings
 	fmt.Println("\nAutomation settings:")
 

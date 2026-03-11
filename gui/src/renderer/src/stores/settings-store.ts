@@ -12,7 +12,6 @@ interface SettingsState {
       autoMerge?: boolean
       autoDeleteBranch?: boolean
       autoStartTasks?: boolean
-      defaultBranch?: string
       defaultSandbox?: string
       defaultAgent?: string
     }

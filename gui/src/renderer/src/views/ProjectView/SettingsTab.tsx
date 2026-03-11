@@ -25,7 +25,6 @@ export function SettingsTab({ projectId, project }: Props) {
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false)
   const [name, setName] = useState(project.name)
   const [color, setColor] = useState(project.color || '#e07040')
-  const [defaultBranch, setDefaultBranch] = useState(project.defaultBranch)
   const [autoMerge, setAutoMerge] = useState(project.autoMerge)
   const [autoDelete, setAutoDelete] = useState(project.autoDeleteBranch)
   const [autoStart, setAutoStart] = useState(project.autoStartTasks)
@@ -34,7 +33,6 @@ export function SettingsTab({ projectId, project }: Props) {
   useEffect(() => {
     setName(project.name)
     setColor(project.color || '#e07040')
-    setDefaultBranch(project.defaultBranch)
     setAutoMerge(project.autoMerge)
     setAutoDelete(project.autoDeleteBranch)
     setAutoStart(project.autoStartTasks)
@@ -86,12 +84,6 @@ export function SettingsTab({ projectId, project }: Props) {
           ))}
         </div>
       </div>
-
-      <Input
-        label="Default Branch"
-        value={defaultBranch}
-        onChange={(e) => { setDefaultBranch(e.target.value); debouncedSave({ defaultBranch: e.target.value }) }}
-      />
 
       <div className="space-y-4 pt-2">
         <Toggle

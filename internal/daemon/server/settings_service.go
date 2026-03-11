@@ -39,9 +39,6 @@ func (s *settingsService) UpdateSettings(_ context.Context, req *pb.UpdateSettin
 		settings.Defaults.AutoMerge = req.Defaults.AutoMerge
 		settings.Defaults.AutoDeleteBranch = req.Defaults.AutoDeleteBranch
 		settings.Defaults.AutoStartTasks = req.Defaults.AutoStartTasks
-		if req.Defaults.DefaultBranch != "" {
-			settings.Defaults.DefaultBranch = req.Defaults.DefaultBranch
-		}
 		if req.Defaults.DefaultSandbox != "" {
 			settings.Defaults.DefaultSandbox = req.Defaults.DefaultSandbox
 		}

@@ -28,7 +28,6 @@ type CreateOptions struct {
 	Path             string
 	Name             string
 	Definition       string
-	DefaultBranch    string
 	AutoMerge        bool
 	AutoDeleteBranch bool
 	AutoStartTasks   bool
@@ -46,7 +45,6 @@ type UpdateOptions struct {
 	ProjectID        string
 	Name             *string
 	Color            *string
-	DefaultBranch    *string
 	DefaultAgent     *string
 	AutoMerge        *bool
 	AutoDeleteBranch *bool
@@ -137,16 +135,9 @@ func (m *Manager) CreateProject(opts CreateOptions) (ProjectWithEntry, error) {
 		name = filepath.Base(opts.Path)
 	}
 
-	// Set defaults
-	defaultBranch := opts.DefaultBranch
-	if defaultBranch == "" {
-		defaultBranch = "main"
-	}
-
 	// Create project
 	p := models.NewProject(projectID, name, opts.Path)
 	p.Definition = opts.Definition
-	p.DefaultBranch = defaultBranch
 	p.AutoMerge = opts.AutoMerge
 	p.AutoDeleteBranch = opts.AutoDeleteBranch
 	p.AutoStartTasks = opts.AutoStartTasks
@@ -225,9 +216,6 @@ func (m *Manager) UpdateProject(opts UpdateOptions) (ProjectWithEntry, error) {
 	}
 	if opts.Color != nil {
 		p.Color = *opts.Color
-	}
-	if opts.DefaultBranch != nil {
-		p.DefaultBranch = *opts.DefaultBranch
 	}
 	if opts.DefaultAgent != nil {
 		p.DefaultAgent = *opts.DefaultAgent

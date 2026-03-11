@@ -41,13 +41,20 @@ export function ProjectView() {
   const { toast } = useToast()
 
   const [centerTab, setCenterTab] = useState<CenterTab>('tasks')
-  const [rightPanelOpen, setRightPanelOpen] = useState(true)
+  const [rightPanelOpen, setRightPanelOpen] = useState(() => {
+    const saved = localStorage.getItem('wf-right-panel-open')
+    return saved !== null ? saved === 'true' : true
+  })
   const { width: rightPanelWidth, handleDragStart } = usePanelResize({
     storageKey: 'wf-right-panel-width',
     defaultWidth: 520,
     minWidth: 350,
     maxWidth: 800
   })
+
+  useEffect(() => {
+    localStorage.setItem('wf-right-panel-open', String(rightPanelOpen))
+  }, [rightPanelOpen])
 
   const project = projects.find((p) => p.projectId === projectId)
   const isAgentRunning = agentStatus?.isRunning
@@ -178,7 +185,7 @@ export function ProjectView() {
             <Flame size={12} />
             Wildfire
           </Button>
-          <Button size="sm" variant="danger" onClick={handleStopAgent} disabled={!isAgentRunning} title="Stop the running agent">
+          <Button size="sm" variant="danger" onClick={handleStopAgent} disabled={!isAgentRunning || agentStatus?.mode === 'chat'} title="Stop the running agent">
             <Square size={12} />
             Stop
           </Button>
