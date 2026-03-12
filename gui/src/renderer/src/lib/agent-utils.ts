@@ -14,3 +14,11 @@ export function agentStatusEqual(a: AgentStatus | undefined, b: AgentStatus): bo
     a.wildfirePhase === b.wildfirePhase
   )
 }
+
+/**
+ * Returns true if the agent is doing autonomous work (not idle chat).
+ * Used to decide whether status dots should pulse.
+ */
+export function isAgentWorking(status: AgentStatus | undefined): boolean {
+  return !!status?.isRunning && status.mode !== 'chat'
+}

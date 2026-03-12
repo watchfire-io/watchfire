@@ -6,6 +6,7 @@ import { useAppStore } from '../../stores/app-store'
 import { useTasksStore } from '../../stores/tasks-store'
 import { useGitStore } from '../../stores/git-store'
 import { StatusDot } from '../../components/StatusDot'
+import { isAgentWorking } from '../../lib/agent-utils'
 import { AgentBadge } from '../../components/AgentBadge'
 import { Modal } from '../../components/ui/Modal'
 
@@ -58,7 +59,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
         <div className="flex items-center gap-2 min-w-0">
           <StatusDot
             color={project.color || '#e07040'}
-            pulsing={agentStatus?.isRunning}
+            pulsing={isAgentWorking(agentStatus)}
           />
           <h3 className="font-heading font-semibold text-sm truncate">{project.name}</h3>
         </div>

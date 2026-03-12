@@ -6,6 +6,7 @@ import { CSS } from '@dnd-kit/utilities'
 import { useAppStore } from '../stores/app-store'
 import { useProjectsStore } from '../stores/projects-store'
 import { StatusDot } from './StatusDot'
+import { isAgentWorking } from '../lib/agent-utils'
 import { cn } from '../lib/utils'
 import { Modal } from './ui/Modal'
 import watchfireIcon from '../assets/watchfire-icon.svg'
@@ -107,12 +108,11 @@ export function Sidebar() {
           <SortableContext items={projects.map((p) => p.projectId)} strategy={verticalListSortingStrategy}>
             {projects.map((p) => {
               const agentStatus = agentStatuses[p.projectId]
-              const isRunning = agentStatus?.isRunning
               return (
                 <SortableProjectItem
                   key={p.projectId}
                   id={p.projectId}
-                  icon={<StatusDot color={p.color || '#e07040'} pulsing={isRunning} size="sm" />}
+                  icon={<StatusDot color={p.color || '#e07040'} pulsing={isAgentWorking(agentStatus)} size="sm" />}
                   label={p.name}
                   active={view === 'project' && selectedProjectId === p.projectId}
                   collapsed={collapsed}

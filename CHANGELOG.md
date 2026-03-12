@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.0] Ember
+
+## [0.5.0] Ember
+
+### Fixed
+
+- Status indicator dots in sidebar/dashboard now only pulse for projects with an autonomous agent (task, wildfire, start-all) — chat mode no longer triggers pulsing
+
 ## [0.4.0] Ember
 
 ### Fixed

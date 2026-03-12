@@ -6,6 +6,7 @@ import { useTasksStore } from '../../stores/tasks-store'
 import { useAgentStore } from '../../stores/agent-store'
 import { useGitStore } from '../../stores/git-store'
 import { StatusDot } from '../../components/StatusDot'
+import { isAgentWorking } from '../../lib/agent-utils'
 import { AgentBadge } from '../../components/AgentBadge'
 import { Button } from '../../components/ui/Button'
 import { useToast } from '../../components/ui/Toast'
@@ -124,7 +125,7 @@ export function ProjectView() {
         {/* Row 1: Project name + status + panel toggle */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <StatusDot color={project.color || '#e07040'} pulsing={isAgentRunning} />
+            <StatusDot color={project.color || '#e07040'} pulsing={isAgentWorking(agentStatus)} />
             <h2 className="font-heading text-base font-semibold">{project.name}</h2>
             {isAgentRunning && <AgentBadge status={agentStatus} />}
           </div>
