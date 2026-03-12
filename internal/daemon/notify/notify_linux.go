@@ -19,10 +19,12 @@ func (l *linuxNotifier) Send(title, message string, icon []byte) error {
 	if err != nil {
 		return beeep.Notify(title, message, "")
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	if _, err := f.Write(icon); err != nil {
 		return beeep.Notify(title, message, "")
 	}
-	f.Close()
+	if err := f.Close(); err != nil {
+		return beeep.Notify(title, message, "")
+	}
 	return beeep.Notify(title, message, f.Name())
 }
