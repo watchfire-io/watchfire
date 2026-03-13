@@ -211,22 +211,20 @@ jobs:
           find dist/mac/Watchfire.app -path "*/node-pty/prebuilds" -type d -exec rm -rf {} + 2>/dev/null || true
           find dist/mac-arm64/Watchfire.app -path "*/node-pty/bin" -type d -exec rm -rf {} + 2>/dev/null || true
           find dist/mac-arm64/Watchfire.app -path "*/node-pty/prebuilds" -type d -exec rm -rf {} + 2>/dev/null || true
-          # Create universal (fat) node-pty native binaries via lipo, then replace
-          # both apps' copies so the merger sees identical files (no x64ArchFiles needed).
-          PTY_REL="Contents/Resources/app.asar.unpacked/node_modules/node-pty/build/Release"
-          X64_PTY="dist/mac/Watchfire.app/$PTY_REL"
-          ARM_PTY="dist/mac-arm64/Watchfire.app/$PTY_REL"
-          for f in pty.node spawn-helper; do
-            lipo -create "$X64_PTY/$f" "$ARM_PTY/$f" -output "/tmp/$f"
-            cp "/tmp/$f" "$X64_PTY/$f"
-            cp "/tmp/$f" "$ARM_PTY/$f"
-          done
-          echo "=== node-pty universal binaries ==="
-          file "$X64_PTY/pty.node" "$X64_PTY/spawn-helper"
+          # Debug: show ALL node-pty files and full file tree differences
+          echo "=== x64 node-pty tree ==="
+          find dist/mac/Watchfire.app -path "*/node-pty/*" -type f | sort
+          echo "=== arm64 node-pty tree ==="
+          find dist/mac-arm64/Watchfire.app -path "*/node-pty/*" -type f | sort
           # Create universal app by merging x64 and arm64
           cat > universal-merge.cjs << 'MERGESCRIPT'
-          process.on('unhandledRejection', (reason) => { console.error('Unhandled rejection:', reason); process.exit(1); });
-          process.on('uncaughtException', (err) => { console.error('Uncaught exception:', err); process.exit(1); });
+          const realExit = process.exit.bind(process);
+          process.exit = (code) => {
+            console.error(`process.exit(${code}) intercepted:`, new Error().stack);
+            realExit(code);
+          };
+          process.on('unhandledRejection', (reason) => { console.error('Unhandled rejection:', reason); realExit(1); });
+          process.on('uncaughtException', (err) => { console.error('Uncaught exception:', err); realExit(1); });
           const path = require('path');
           const fs = require('fs');
           const { makeUniversalApp } = require('@electron/universal');
@@ -235,14 +233,12 @@ jobs:
             const x64 = path.join(base, 'dist/mac/Watchfire.app');
             const arm64 = path.join(base, 'dist/mac-arm64/Watchfire.app');
             const out = path.join(base, 'dist/mac-universal/Watchfire.app');
-            console.log('x64 exists:', fs.existsSync(x64));
-            console.log('arm64 exists:', fs.existsSync(arm64));
             console.log('Starting universal merge...');
             await makeUniversalApp({ x64AppPath: x64, arm64AppPath: arm64, outAppPath: out, force: true });
             console.log('Universal merge complete');
             console.log('Contents:', fs.readdirSync(path.join(out, 'Contents')));
           }
-          main().catch(err => { console.error('Merge failed:', err); process.exit(1); });
+          main().catch(err => { console.error('Merge failed:', err); realExit(1); });
           MERGESCRIPT
           node universal-merge.cjs
           echo "=== Validating universal app bundle ==="
