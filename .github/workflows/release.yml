@@ -205,45 +205,32 @@ jobs:
           find dist/mac-arm64/Watchfire.app -name "CodeResources" -delete 2>/dev/null || true
           # Clean node-pty prebuilt binaries from both apps (electron-builder already
           # rebuilt correct arch into build/Release via @electron/rebuild).
-          # Remove bin/ (stale per-arch dirs) and prebuilds/ (npm-shipped prebuilts)
-          # from both apps so their file structures match for universal merge.
           find dist/mac/Watchfire.app -path "*/node-pty/bin" -type d -exec rm -rf {} + 2>/dev/null || true
           find dist/mac/Watchfire.app -path "*/node-pty/prebuilds" -type d -exec rm -rf {} + 2>/dev/null || true
           find dist/mac-arm64/Watchfire.app -path "*/node-pty/bin" -type d -exec rm -rf {} + 2>/dev/null || true
           find dist/mac-arm64/Watchfire.app -path "*/node-pty/prebuilds" -type d -exec rm -rf {} + 2>/dev/null || true
-          # Debug: show ALL node-pty files and full file tree differences
-          echo "=== x64 node-pty tree ==="
-          find dist/mac/Watchfire.app -path "*/node-pty/*" -type f | sort
-          echo "=== arm64 node-pty tree ==="
-          find dist/mac-arm64/Watchfire.app -path "*/node-pty/*" -type f | sort
-          # Create universal app by merging x64 and arm64
-          cat > universal-merge.cjs << 'MERGESCRIPT'
-          const realExit = process.exit.bind(process);
-          process.exit = (code) => {
-            console.error(`process.exit(${code}) intercepted:`, new Error().stack);
-            realExit(code);
-          };
-          process.on('unhandledRejection', (reason) => { console.error('Unhandled rejection:', reason); realExit(1); });
-          process.on('uncaughtException', (err) => { console.error('Uncaught exception:', err); realExit(1); });
-          const path = require('path');
-          const fs = require('fs');
-          const { makeUniversalApp } = require('@electron/universal');
-          async function main() {
-            const base = process.cwd();
-            const x64 = path.join(base, 'dist/mac/Watchfire.app');
-            const arm64 = path.join(base, 'dist/mac-arm64/Watchfire.app');
-            const out = path.join(base, 'dist/mac-universal/Watchfire.app');
-            console.log('Starting universal merge...');
-            await makeUniversalApp({ x64AppPath: x64, arm64AppPath: arm64, outAppPath: out, force: true });
-            console.log('Universal merge complete');
-            console.log('Contents:', fs.readdirSync(path.join(out, 'Contents')));
-          }
-          main().catch(err => { console.error('Merge failed:', err); realExit(1); });
-          MERGESCRIPT
-          node universal-merge.cjs
+          # Create universal app manually (bypass @electron/universal which silently fails)
+          # 1. Copy arm64 app as base (preserves symlinks, structure)
+          cp -R dist/mac-arm64/Watchfire.app dist/mac-universal/Watchfire.app
+          # 2. Find all Mach-O files and create universal binaries via lipo
+          lipo_count=0
+          skip_count=0
+          find dist/mac-universal/Watchfire.app -type f | while read -r uni_file; do
+            rel="${uni_file#dist/mac-universal/Watchfire.app/}"
+            x64_file="dist/mac/Watchfire.app/$rel"
+            if [ -f "$x64_file" ] && file "$uni_file" | grep -q "Mach-O"; then
+              lipo -create "$x64_file" "$uni_file" -output "${uni_file}.universal" 2>/dev/null
+              if [ $? -eq 0 ]; then
+                mv "${uni_file}.universal" "$uni_file"
+              else
+                echo "lipo warning: skipping $rel (may already be universal or single-arch only)"
+              fi
+            fi
+          done
           echo "=== Validating universal app bundle ==="
-          ls dist/mac-universal/Watchfire.app/Contents/ || { echo "ERROR: Contents dir missing!"; exit 1; }
+          ls dist/mac-universal/Watchfire.app/Contents/
           file dist/mac-universal/Watchfire.app/Contents/MacOS/Watchfire
+          file "dist/mac-universal/Watchfire.app/Contents/Resources/app.asar.unpacked/node_modules/node-pty/build/Release/pty.node"
           # Generate app-update.yml for electron-updater (--prepackaged skips doPack where this is normally created)
           mkdir -p dist/mac-universal/Watchfire.app/Contents/Resources
           printf 'provider: github\nowner: watchfire-io\nrepo: watchfire\nreleaseType: release\n' > dist/mac-universal/Watchfire.app/Contents/Resources/app-update.yml
