@@ -211,14 +211,19 @@ jobs:
           find dist/mac/Watchfire.app -path "*/node-pty/prebuilds" -type d -exec rm -rf {} + 2>/dev/null || true
           find dist/mac-arm64/Watchfire.app -path "*/node-pty/bin" -type d -exec rm -rf {} + 2>/dev/null || true
           find dist/mac-arm64/Watchfire.app -path "*/node-pty/prebuilds" -type d -exec rm -rf {} + 2>/dev/null || true
-          # Debug: show node-pty files in each app
-          echo "=== x64 node-pty files ==="
-          find dist/mac/Watchfire.app -path "*/node-pty/*" -name "*.node" -o -path "*/node-pty/*" -name "spawn-helper" | sort
-          echo "=== arm64 node-pty files ==="
-          find dist/mac-arm64/Watchfire.app -path "*/node-pty/*" -name "*.node" -o -path "*/node-pty/*" -name "spawn-helper" | sort
+          # Create universal (fat) node-pty native binaries via lipo, then replace
+          # both apps' copies so the merger sees identical files (no x64ArchFiles needed).
+          PTY_REL="Contents/Resources/app.asar.unpacked/node_modules/node-pty/build/Release"
+          X64_PTY="dist/mac/Watchfire.app/$PTY_REL"
+          ARM_PTY="dist/mac-arm64/Watchfire.app/$PTY_REL"
+          for f in pty.node spawn-helper; do
+            lipo -create "$X64_PTY/$f" "$ARM_PTY/$f" -output "/tmp/$f"
+            cp "/tmp/$f" "$X64_PTY/$f"
+            cp "/tmp/$f" "$ARM_PTY/$f"
+          done
+          echo "=== node-pty universal binaries ==="
+          file "$X64_PTY/pty.node" "$X64_PTY/spawn-helper"
           # Create universal app by merging x64 and arm64
-          # x64ArchFiles tells the merger that native .node files and spawn-helper
-          # are single-arch and should be taken from x64 app (not lipo'd)
           node -e "
             const path = require('path');
             const { makeUniversalApp } = require('@electron/universal');
@@ -228,7 +233,6 @@ jobs:
               arm64AppPath: path.join(base, 'dist/mac-arm64/Watchfire.app'),
               outAppPath: path.join(base, 'dist/mac-universal/Watchfire.app'),
               force: true,
-              x64ArchFiles: '**/node-pty/build/Release/**',
             }).then(() => console.log('Universal merge complete'))
               .catch(err => { console.error('Universal merge failed:', err.message); process.exit(1); });
           "
