@@ -9,7 +9,6 @@
     "preview": "electron-vite preview",
     "proto:gen": "buf generate",
     "package": "electron-vite build && electron-builder --config electron-builder.yml",
-    "postinstall": "electron-rebuild -w node-pty",
     "package:mac": "electron-vite build && electron-builder --mac --config electron-builder.yml"
   },
   "dependencies": {

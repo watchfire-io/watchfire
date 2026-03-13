@@ -203,14 +203,22 @@ jobs:
           # Also strip CodeResources from framework bundles
           find dist/mac/Watchfire.app -name "CodeResources" -delete 2>/dev/null || true
           find dist/mac-arm64/Watchfire.app -name "CodeResources" -delete 2>/dev/null || true
-          # Clean node-pty native binaries: remove ALL arch-specific dirs from both apps.
-          # @electron/rebuild puts the correct binary in build/Release/pty.node which
-          # node-pty loads first, so bin/ and prebuilds/ are not needed.
+          # Clean node-pty prebuilt binaries from both apps (electron-builder already
+          # rebuilt correct arch into build/Release via @electron/rebuild).
+          # Remove bin/ (stale per-arch dirs) and prebuilds/ (npm-shipped prebuilts)
+          # from both apps so their file structures match for universal merge.
           find dist/mac/Watchfire.app -path "*/node-pty/bin" -type d -exec rm -rf {} + 2>/dev/null || true
           find dist/mac/Watchfire.app -path "*/node-pty/prebuilds" -type d -exec rm -rf {} + 2>/dev/null || true
           find dist/mac-arm64/Watchfire.app -path "*/node-pty/bin" -type d -exec rm -rf {} + 2>/dev/null || true
           find dist/mac-arm64/Watchfire.app -path "*/node-pty/prebuilds" -type d -exec rm -rf {} + 2>/dev/null || true
+          # Debug: show node-pty files in each app
+          echo "=== x64 node-pty files ==="
+          find dist/mac/Watchfire.app -path "*/node-pty/*" -name "*.node" -o -path "*/node-pty/*" -name "spawn-helper" | sort
+          echo "=== arm64 node-pty files ==="
+          find dist/mac-arm64/Watchfire.app -path "*/node-pty/*" -name "*.node" -o -path "*/node-pty/*" -name "spawn-helper" | sort
           # Create universal app by merging x64 and arm64
+          # x64ArchFiles tells the merger that native .node files and spawn-helper
+          # are single-arch and should be taken from x64 app (not lipo'd)
           node -e "
             const path = require('path');
             const { makeUniversalApp } = require('@electron/universal');
@@ -220,10 +228,12 @@ jobs:
               arm64AppPath: path.join(base, 'dist/mac-arm64/Watchfire.app'),
               outAppPath: path.join(base, 'dist/mac-universal/Watchfire.app'),
               force: true,
+              x64ArchFiles: '**/node-pty/build/Release/**',
             }).then(() => console.log('Universal merge complete'))
               .catch(err => { console.error('Universal merge failed:', err.message); process.exit(1); });
           "
           # Generate app-update.yml for electron-updater (--prepackaged skips doPack where this is normally created)
+          mkdir -p dist/mac-universal/Watchfire.app/Contents/Resources
           printf 'provider: github\nowner: watchfire-io\nrepo: watchfire\nreleaseType: release\n' > dist/mac-universal/Watchfire.app/Contents/Resources/app-update.yml
           # Sign the universal app using @electron/osx-sign (handles nested frameworks/helpers properly)
           # and notarize using @electron/notarize, then package into DMG/zip without re-signing
