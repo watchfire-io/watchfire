@@ -18,6 +18,12 @@ export function setWindow(w: BrowserWindow): void {
   win = w
 }
 
+function safeSend(channel: string, data: unknown): void {
+  if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
+    win.webContents.send(channel, data)
+  }
+}
+
 export function createPty(cwd: string): string {
   if (!win) throw new Error('No window set')
 
@@ -33,11 +39,11 @@ export function createPty(cwd: string): string {
   })
 
   p.onData((data) => {
-    win?.webContents.send('pty-output', { id, data })
+    safeSend('pty-output', { id, data })
   })
 
   p.onExit(({ exitCode }) => {
-    win?.webContents.send('pty-exit', { id, exitCode })
+    safeSend('pty-exit', { id, exitCode })
     sessions.delete(id)
   })
 

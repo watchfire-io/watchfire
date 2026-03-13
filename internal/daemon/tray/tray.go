@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/getlantern/systray"
+	"github.com/watchfire-io/watchfire/internal/buildinfo"
 )
 
 const (
@@ -91,6 +92,10 @@ func onReady() {
 	// Header
 	header := systray.AddMenuItem("Watchfire Daemon", "")
 	header.Disable()
+
+	// Version
+	versionItem := systray.AddMenuItem(fmt.Sprintf("Version: %s", buildinfo.Version), "")
+	versionItem.Disable()
 
 	// Port
 	portItem = systray.AddMenuItem("Starting...", "")

@@ -5,11 +5,13 @@
 ### Added
 
 - Integrated terminal in the GUI — footer bar that expands into a resizable bottom panel with tabbed shell sessions via node-pty, Cmd+` toggle, Nerd Font support
+- Version display in system tray menu below "Watchfire Daemon" header for easy version identification
 
 ### Fixed
 
 - Status indicator dots in sidebar/dashboard now only pulse for projects with an autonomous agent (task, wildfire, start-all) — chat mode no longer triggers pulsing
 - Dashboard project card X button overlapping chevron arrow on hover
+- GUI crash ("Object has been destroyed") when PTY emits data after BrowserWindow is closed — `onData`/`onExit` callbacks now check `isDestroyed()` before sending IPC messages
 
 ## [0.4.0] Ember
 
