@@ -636,11 +636,21 @@ func resolveAgentPath() (string, error) {
 		homeDir + "/.local/bin/claude",
 	}
 
-	if runtime.GOOS == "darwin" {
+	switch runtime.GOOS {
+	case "darwin":
 		fallbacks = append(fallbacks,
 			"/opt/homebrew/bin/claude",
 			"/usr/local/bin/claude",
 		)
+	case "windows":
+		appData := os.Getenv("APPDATA")
+		localAppData := os.Getenv("LOCALAPPDATA")
+		if appData != "" {
+			fallbacks = append(fallbacks, appData+"\\claude\\claude.exe")
+		}
+		if localAppData != "" {
+			fallbacks = append(fallbacks, localAppData+"\\Programs\\claude\\claude.exe")
+		}
 	}
 
 	for _, p := range fallbacks {

@@ -186,6 +186,8 @@ func openGUI() {
 		cmd = exec.Command("open", "-b", "io.watchfire.app")
 	case "linux":
 		cmd = exec.Command("xdg-open", "watchfire://")
+	case "windows":
+		cmd = exec.Command("cmd", "/c", "start", "watchfire://")
 	default:
 		log.Printf("Open GUI not supported on %s", runtime.GOOS)
 		return

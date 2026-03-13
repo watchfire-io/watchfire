@@ -50,7 +50,7 @@ func NewSettings() *Settings {
 			AutoMerge:        true,
 			AutoDeleteBranch: true,
 			AutoStartTasks:   true,
-			DefaultSandbox:   "sandbox-exec",
+			DefaultSandbox:   DefaultSandboxMode(),
 			DefaultAgent:     "claude-code",
 		},
 		Updates: UpdatesConfig{

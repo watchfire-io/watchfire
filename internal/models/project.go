@@ -3,6 +3,7 @@ package models
 
 import (
 	"math/rand/v2"
+	"runtime"
 	"time"
 )
 
@@ -23,6 +24,15 @@ var ProjectColors = []string{
 // RandomColor returns a random color from the project palette.
 func RandomColor() string {
 	return ProjectColors[rand.IntN(len(ProjectColors))]
+}
+
+// DefaultSandboxMode returns the platform-appropriate sandbox mode.
+// macOS uses "sandbox-exec"; other platforms have no sandbox support yet.
+func DefaultSandboxMode() string {
+	if runtime.GOOS == "darwin" {
+		return "sandbox-exec"
+	}
+	return "none"
 }
 
 // Project represents a Watchfire project configuration.
@@ -69,7 +79,7 @@ func NewProject(id, name, path string) *Project {
 		Status:           "active",
 		Color:            RandomColor(),
 		DefaultAgent:     "claude-code",
-		Sandbox:          "sandbox-exec",
+		Sandbox:          DefaultSandboxMode(),
 		AutoMerge:        true,
 		AutoDeleteBranch: true,
 		AutoStartTasks:   true,
