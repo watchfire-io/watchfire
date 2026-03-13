@@ -2,6 +2,14 @@
 
 ## [0.6.0] Ember
 
+### Added
+
+- Integrated terminal in the GUI — footer bar that expands into a resizable bottom panel with tabbed shell sessions via node-pty, Cmd+` toggle, Nerd Font support
+
+### Fixed
+
+- Dashboard project card X button overlapping chevron arrow on hover
+
 ## [0.5.0] Ember
 
 ### Fixed

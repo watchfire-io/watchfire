@@ -859,6 +859,10 @@ Split layout with tabs:
 | **Branches** | List of worktrees/branches with status, actions |
 | **Logs** | Past session logs per task |
 
+**Bottom Panel (footer bar, expands upward):**
+
+- **Integrated terminal** — Always-visible footer bar at the bottom of the project view. Clicking it or pressing Cmd+` spawns a shell session via node-pty (runs in Electron main process, not the daemon). Supports up to 5 tabbed sessions per project with resizable panel height. Sessions are cleaned up on project switch or app quit.
+
 #### Global Settings
 
 | Section | Content |

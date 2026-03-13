@@ -3,8 +3,15 @@ import { existsSync } from 'fs'
 import { join } from 'path'
 import { getDaemonInfo, ensureDaemon } from './daemon'
 import { installCLI, needsInstall } from './cli-installer'
+import * as ptyManager from './pty-manager'
 
 export function setupIpc(): void {
+  // PTY handlers
+  ipcMain.handle('pty-create', (_ev, cwd: string) => ptyManager.createPty(cwd))
+  ipcMain.handle('pty-write', (_ev, id: string, data: string) => ptyManager.writePty(id, data))
+  ipcMain.handle('pty-resize', (_ev, id: string, cols: number, rows: number) => ptyManager.resizePty(id, cols, rows))
+  ipcMain.handle('pty-destroy', (_ev, id: string) => ptyManager.destroyPty(id))
+  ipcMain.handle('pty-destroy-all', () => ptyManager.destroyAll())
   ipcMain.handle('get-daemon-info', () => {
     return getDaemonInfo()
   })

@@ -3,6 +3,7 @@ productName: Watchfire
 directories:
   buildResources: resources
   output: dist
+npmRebuild: true
 files:
   - out/**/*
 extraResources:

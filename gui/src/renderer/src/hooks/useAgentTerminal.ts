@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { useAgentStore } from '../stores/agent-store'
+import { terminalTheme, terminalFontFamily } from '../lib/terminal-theme'
 
 interface UseAgentTerminalOptions {
   projectId: string
@@ -28,32 +29,11 @@ export function useAgentTerminal({ projectId, containerRef, active = false }: Us
     if (!containerRef.current) return
 
     const term = new Terminal({
-      fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+      fontFamily: terminalFontFamily,
       fontSize: 13,
       lineHeight: 1.2,
       cursorBlink: true,
-      theme: {
-        background: '#16181d',
-        foreground: '#ffffff',
-        cursor: '#e07040',
-        selectionBackground: '#2d3140',
-        black: '#16181d',
-        red: '#ff5f57',
-        green: '#28c940',
-        yellow: '#ffbd2e',
-        blue: '#007aff',
-        magenta: '#e07040',
-        cyan: '#5ac8fa',
-        white: '#ffffff',
-        brightBlack: '#2d3140',
-        brightRed: '#ff6b6b',
-        brightGreen: '#5bd75b',
-        brightYellow: '#ffca4b',
-        brightBlue: '#409cff',
-        brightMagenta: '#e88050',
-        brightCyan: '#70d7ef',
-        brightWhite: '#ffffff'
-      }
+      theme: terminalTheme
     })
 
     const fit = new FitAddon()

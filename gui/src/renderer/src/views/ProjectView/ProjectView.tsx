@@ -18,6 +18,8 @@ import { SecretsTab } from './SecretsTab'
 import { TrashTab } from './TrashTab'
 import { SettingsTab } from './SettingsTab'
 import { RightPanel } from './RightPanel/RightPanel'
+import { BottomPanel } from './BottomPanel/BottomPanel'
+import { useTerminalStore } from '../../stores/terminal-store'
 
 type CenterTab = 'tasks' | 'definition' | 'secrets' | 'trash' | 'settings'
 
@@ -84,6 +86,30 @@ export function ProjectView() {
     fetchGitInfo(projectId)
     const interval = setInterval(() => fetchGitInfo(projectId), 10000)
     return () => clearInterval(interval)
+  }, [projectId])
+
+  // Cmd+` / Ctrl+` to toggle terminal
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === '`') {
+        e.preventDefault()
+        const state = useTerminalStore.getState()
+        if (state.sessions.length === 0 && project) {
+          state.createSession(projectId!, project.path)
+        } else if (state.sessions.length > 0) {
+          state.destroyAllSessions()
+        }
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [projectId, project])
+
+  // Cleanup terminal sessions on project switch
+  useEffect(() => {
+    return () => {
+      useTerminalStore.getState().destroyAllSessions()
+    }
   }, [projectId])
 
   const handleStartAgent = async (mode: string) => {
@@ -194,55 +220,60 @@ export function ProjectView() {
       </div>
 
       {/* Content area */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* Center panel */}
-        <div className="flex-1 flex flex-col overflow-hidden">
-          {/* Tab bar */}
-          <div className="flex items-center gap-1 px-4 py-1 border-b border-[var(--wf-border)]">
-            {CENTER_TABS.map((tab) => {
-              const Icon = tab.icon
-              return (
-                <button
-                  key={tab.key}
-                  onClick={() => setCenterTab(tab.key)}
-                  className={cn(
-                    'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--wf-radius-md)] transition-colors',
-                    centerTab === tab.key
-                      ? 'bg-[var(--wf-bg-elevated)] text-[var(--wf-text-primary)]'
-                      : 'text-[var(--wf-text-muted)] hover:text-[var(--wf-text-secondary)]'
-                  )}
-                >
-                  <Icon size={14} />
-                  {tab.label}
-                </button>
-              )
-            })}
+      <div className="flex-1 flex flex-col overflow-hidden">
+        <div className="flex-1 flex overflow-hidden min-h-0">
+          {/* Center panel */}
+          <div className="flex-1 flex flex-col overflow-hidden">
+            {/* Tab bar */}
+            <div className="flex items-center gap-1 px-4 py-1 border-b border-[var(--wf-border)]">
+              {CENTER_TABS.map((tab) => {
+                const Icon = tab.icon
+                return (
+                  <button
+                    key={tab.key}
+                    onClick={() => setCenterTab(tab.key)}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--wf-radius-md)] transition-colors',
+                      centerTab === tab.key
+                        ? 'bg-[var(--wf-bg-elevated)] text-[var(--wf-text-primary)]'
+                        : 'text-[var(--wf-text-muted)] hover:text-[var(--wf-text-secondary)]'
+                    )}
+                  >
+                    <Icon size={14} />
+                    {tab.label}
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Tab content */}
+            <div className="flex-1 flex flex-col overflow-hidden">
+              {centerTab === 'tasks' && <TasksTab projectId={projectId} />}
+              {centerTab === 'definition' && <DefinitionTab projectId={projectId} project={project} />}
+              {centerTab === 'secrets' && <SecretsTab projectId={projectId} project={project} />}
+              {centerTab === 'trash' && <TrashTab projectId={projectId} />}
+              {centerTab === 'settings' && <SettingsTab projectId={projectId} project={project} />}
+            </div>
           </div>
 
-          {/* Tab content */}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            {centerTab === 'tasks' && <TasksTab projectId={projectId} />}
-            {centerTab === 'definition' && <DefinitionTab projectId={projectId} project={project} />}
-            {centerTab === 'secrets' && <SecretsTab projectId={projectId} project={project} />}
-            {centerTab === 'trash' && <TrashTab projectId={projectId} />}
-            {centerTab === 'settings' && <SettingsTab projectId={projectId} project={project} />}
-          </div>
+          {/* Right panel */}
+          {rightPanelOpen && (
+            <>
+              <div
+                onMouseDown={handleDragStart}
+                className="shrink-0 w-1 cursor-col-resize group relative"
+              >
+                <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 opacity-0 group-hover:opacity-100 bg-[var(--wf-accent)] transition-opacity" />
+              </div>
+              <div className="shrink-0 overflow-hidden border-l border-[var(--wf-border)]" style={{ width: rightPanelWidth }}>
+                <RightPanel projectId={projectId} />
+              </div>
+            </>
+          )}
         </div>
 
-        {/* Right panel */}
-        {rightPanelOpen && (
-          <>
-            <div
-              onMouseDown={handleDragStart}
-              className="shrink-0 w-1 cursor-col-resize group relative"
-            >
-              <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 opacity-0 group-hover:opacity-100 bg-[var(--wf-accent)] transition-opacity" />
-            </div>
-            <div className="shrink-0 overflow-hidden border-l border-[var(--wf-border)]" style={{ width: rightPanelWidth }}>
-              <RightPanel projectId={projectId} />
-            </div>
-          </>
-        )}
+        {/* Bottom panel — integrated terminal */}
+        <BottomPanel projectId={projectId} projectPath={project.path} />
       </div>
     </div>
   )

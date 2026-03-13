@@ -37,6 +37,17 @@ interface WatchfireAPI {
   onUpdateReady(callback: () => void): void
   onUpdateProgress(callback: (percent: number) => void): void
   onUpdateError(callback: (error: string) => void): void
+
+  // Terminal PTY
+  ptyCreate(cwd: string): Promise<string>
+  ptyWrite(id: string, data: string): Promise<void>
+  ptyResize(id: string, cols: number, rows: number): Promise<void>
+  ptyDestroy(id: string): Promise<void>
+  ptyDestroyAll(): Promise<void>
+  onPtyOutput(callback: (data: { id: string; data: string }) => void): void
+  offPtyOutput(): void
+  onPtyExit(callback: (data: { id: string; exitCode: number }) => void): void
+  offPtyExit(): void
 }
 
 declare global {

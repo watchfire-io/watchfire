@@ -8,6 +8,7 @@ import { setupIpc } from './ipc'
 import { ensureDaemon, getDaemonInfo } from './daemon'
 import { checkAndInstallCLI } from './cli-installer'
 import { initAutoUpdater } from './auto-updater'
+import { setWindow as setPtyWindow, destroyAll as destroyAllPtys } from './pty-manager'
 
 const DAEMON_YAML = join(homedir(), '.watchfire', 'daemon.yaml')
 
@@ -112,6 +113,11 @@ app.whenReady().then(async () => {
 
   createWindow()
 
+  // Wire PTY manager to main window
+  if (mainWindow) {
+    setPtyWindow(mainWindow)
+  }
+
   // Initialize auto-updater
   if (mainWindow) {
     initAutoUpdater(mainWindow)
@@ -125,8 +131,13 @@ app.whenReady().then(async () => {
 })
 
 app.on('window-all-closed', () => {
+  destroyAllPtys()
   // Don't stop the daemon when GUI closes
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+app.on('before-quit', () => {
+  destroyAllPtys()
 })

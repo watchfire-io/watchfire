@@ -48,7 +48,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
       {/* Remove button (visible on hover) */}
       <button
         onClick={(e) => { e.stopPropagation(); setShowConfirm(true) }}
-        className="absolute top-2 right-2 p-1 rounded-[var(--wf-radius-md)] text-[var(--wf-text-muted)] hover:text-[var(--wf-error)] hover:bg-[var(--wf-bg-elevated)] opacity-0 group-hover:opacity-100 transition-all"
+        className="absolute top-2 right-2 z-10 p-1 rounded-[var(--wf-radius-md)] text-[var(--wf-text-muted)] hover:text-[var(--wf-error)] hover:bg-[var(--wf-bg-elevated)] opacity-0 group-hover:opacity-100 transition-all"
         title="Remove project"
       >
         <X size={14} />
@@ -63,7 +63,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
           />
           <h3 className="font-heading font-semibold text-sm truncate">{project.name}</h3>
         </div>
-        <ChevronRight size={14} className="text-[var(--wf-text-muted)] shrink-0" />
+        <ChevronRight size={14} className="text-[var(--wf-text-muted)] shrink-0 group-hover:opacity-0 transition-opacity" />
       </div>
 
       {/* Meta: branch + folder */}

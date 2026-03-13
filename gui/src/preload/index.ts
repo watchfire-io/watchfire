@@ -68,6 +68,25 @@ const api = {
 
   onUpdateError: (callback: (error: string) => void): void => {
     ipcRenderer.on('update-error', (_event, error) => callback(error))
+  },
+
+  // Terminal PTY
+  ptyCreate: (cwd: string): Promise<string> => ipcRenderer.invoke('pty-create', cwd),
+  ptyWrite: (id: string, data: string): Promise<void> => ipcRenderer.invoke('pty-write', id, data),
+  ptyResize: (id: string, cols: number, rows: number): Promise<void> => ipcRenderer.invoke('pty-resize', id, cols, rows),
+  ptyDestroy: (id: string): Promise<void> => ipcRenderer.invoke('pty-destroy', id),
+  ptyDestroyAll: (): Promise<void> => ipcRenderer.invoke('pty-destroy-all'),
+  onPtyOutput: (callback: (data: { id: string; data: string }) => void): void => {
+    ipcRenderer.on('pty-output', (_ev, payload) => callback(payload))
+  },
+  offPtyOutput: (): void => {
+    ipcRenderer.removeAllListeners('pty-output')
+  },
+  onPtyExit: (callback: (data: { id: string; exitCode: number }) => void): void => {
+    ipcRenderer.on('pty-exit', (_ev, payload) => callback(payload))
+  },
+  offPtyExit: (): void => {
+    ipcRenderer.removeAllListeners('pty-exit')
   }
 }
 
