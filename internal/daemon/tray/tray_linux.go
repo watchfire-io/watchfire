@@ -1,4 +1,8 @@
-//go:build linux
+//go:build linux && !cgo
+
+// No-op tray implementation for Linux builds without CGO.
+// When built with CGO_ENABLED=1 (the default for install-linux), tray.go is used instead
+// and provides full AppIndicator support via github.com/getlantern/systray.
 
 package tray
 
@@ -7,12 +11,20 @@ import (
 	"sync"
 )
 
-// Run starts the tray (no-op on Linux). Blocks until Quit is called.
+var (
+	onStart, onExit func()
+	mu              sync.Mutex
+	running         bool
+	done            = make(chan struct{})
+)
+
+// Run starts the tray. Without CGO this is a no-op that still calls onStartFn
+// and blocks until Quit is called.
 func Run(s DaemonState, onStartFn, onExitFn func()) {
 	onStart = onStartFn
 	onExit = onExitFn
 
-	log.Println("System tray not supported on Linux, running without tray")
+	log.Println("[watchfire] system tray unavailable (built without CGO); run with CGO_ENABLED=1 to enable")
 
 	mu.Lock()
 	running = true
@@ -22,10 +34,10 @@ func Run(s DaemonState, onStartFn, onExitFn func()) {
 		onStart()
 	}
 
-	select {}
+	<-done
 }
 
-// Quit signals the tray to exit.
+// Quit unblocks Run and calls the exit callback.
 func Quit() {
 	mu.Lock()
 	defer mu.Unlock()
@@ -33,26 +45,12 @@ func Quit() {
 		return
 	}
 	running = false
-
 	if onExit != nil {
 		onExit()
 	}
+	close(done)
 }
 
-// UpdateAgents is a no-op on Linux.
-func UpdateAgents(agents []AgentInfo) {
-}
+// UpdateAgents is a no-op without CGO.
+func UpdateAgents(agents []AgentInfo) {}
 
-// UpdateProjects is a no-op on Linux.
-func UpdateProjects(projects []ProjectInfo) {
-}
-
-// SetUpdateAvailable is a no-op on Linux.
-func SetUpdateAvailable(available bool, version string) {
-}
-
-var (
-	onStart, onExit func()
-	mu              sync.RWMutex
-	running         bool
-)

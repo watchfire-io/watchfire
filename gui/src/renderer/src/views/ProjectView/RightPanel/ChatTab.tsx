@@ -24,16 +24,24 @@ export function ChatTab({ projectId }: Props) {
   const isRunning = agentStatus?.isRunning
   const autoStarted = useRef(false)
   const wasRunning = useRef(false)
+  const agentStartedAt = useRef<number | null>(null)
 
   // Reset auto-start flag when switching projects
   useEffect(() => {
     autoStarted.current = false
   }, [projectId])
 
-  // Reset auto-start when agent stops (so chat restarts after wildfire/task ends)
+  // Reset auto-start when a long-running agent stops (wildfire/task completion → restart chat).
+  // Do NOT reset on quick exits (< 10s) to prevent crash/startup-failure restart loops.
   useEffect(() => {
-    if (wasRunning.current && !isRunning) {
-      autoStarted.current = false
+    if (isRunning) {
+      agentStartedAt.current = Date.now()
+    } else if (wasRunning.current) {
+      const runTime = agentStartedAt.current ? Date.now() - agentStartedAt.current : 0
+      agentStartedAt.current = null
+      if (runTime >= 10_000) {
+        autoStarted.current = false
+      }
     }
     wasRunning.current = !!isRunning
   }, [isRunning])
