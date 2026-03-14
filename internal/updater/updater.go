@@ -102,12 +102,12 @@ func CheckForUpdate() (*UpdateResult, error) {
 
 // CLIAssetName returns the expected asset name for the CLI binary.
 func CLIAssetName() string {
-	return fmt.Sprintf("watchfire-darwin-%s", runtime.GOARCH)
+	return fmt.Sprintf("watchfire-%s-%s", runtime.GOOS, runtime.GOARCH)
 }
 
 // DaemonAssetName returns the expected asset name for the daemon binary.
 func DaemonAssetName() string {
-	return fmt.Sprintf("watchfired-darwin-%s", runtime.GOARCH)
+	return fmt.Sprintf("watchfired-%s-%s", runtime.GOOS, runtime.GOARCH)
 }
 
 // FindAsset finds an asset by name in a release.

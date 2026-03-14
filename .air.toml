@@ -6,7 +6,7 @@ tmp_dir = "tmp"
 
 [build]
 # Build command
-cmd = "make build-daemon-dev"
+cmd = "make build-daemon"
 # Binary file to run
 bin = "./build/watchfired"
 # Arguments to pass to the binary

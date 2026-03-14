@@ -1,3 +1,5 @@
+//go:build (darwin || linux) && cgo
+
 package tray
 
 import (
@@ -86,7 +88,7 @@ func onReady() {
 	// Generate tray icons
 	iconIdle = iconData
 	iconActive = generateActiveIcon(iconData)
-	systray.SetTemplateIcon(iconIdle, iconIdle)
+	setTrayIcon(iconIdle)
 	systray.SetTooltip(formatTooltip(0, 0))
 
 	// Header
@@ -357,9 +359,9 @@ func applyAgentUpdate(agents []AgentInfo) {
 
 	// Swap tray icon based on active agents
 	if len(agents) > 0 {
-		systray.SetTemplateIcon(iconActive, iconActive)
+		setTrayIcon(iconActive)
 	} else {
-		systray.SetTemplateIcon(iconIdle, iconIdle)
+		setTrayIcon(iconIdle)
 	}
 
 	// Hide all agent slots first
@@ -570,6 +572,16 @@ func generateColoredCircle(hexColor string, size int) []byte {
 		return nil
 	}
 	return buf.Bytes()
+}
+
+// setTrayIcon sets the tray icon using the appropriate API for each platform.
+// macOS uses template icons (monochrome, adapts to light/dark); Linux uses SetIcon directly.
+func setTrayIcon(data []byte) {
+	if runtime.GOOS == "darwin" {
+		systray.SetTemplateIcon(data, data)
+	} else {
+		systray.SetIcon(data)
+	}
 }
 
 // parseHexColor parses a hex color string (#RGB or #RRGGBB) into RGB values.

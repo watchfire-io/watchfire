@@ -1,3 +1,5 @@
+//go:build (darwin || linux) && cgo
+
 package tray
 
 import (
