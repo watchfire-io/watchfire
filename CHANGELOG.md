@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0] Ember
+
+### Added
+
+- `watchfire chat` CLI command — dedicated command to start an interactive chat session with full project context
+
+### Fixed
+
+- Agent chaining not stopping on auth (401) or rate-limit (429) errors — start-all/wildfire mode now checks for active issues before spawning the next agent
+
+### Changed
+
 ## [0.5.0] Ember
 
 ### Added

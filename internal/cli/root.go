@@ -93,6 +93,7 @@ func init() {
 
 	// Execution verbs
 	rootCmd.AddCommand(runCmd)
+	rootCmd.AddCommand(chatCmd)
 	rootCmd.AddCommand(planCmd)
 	rootCmd.AddCommand(generateCmd)
 	rootCmd.AddCommand(wildfireCmd)

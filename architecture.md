@@ -275,6 +275,7 @@ The CLI/TUI is the primary interface for developers. A single binary (`watchfire
 | Command | Alias | Description |
 |---------|-------|-------------|
 | `watchfire run [taskid\|all]` | | No arg = chat mode. taskid = run task. `all` = run all ready tasks in sequence. |
+| `watchfire chat` | | Start interactive chat session with project context |
 | `watchfire plan` | | Generate tasks from project definition |
 | `watchfire generate` | `gen` | Generate project definition using agent |
 | `watchfire wildfire` | `fire` | Autonomous three-phase loop until no new tasks or Ctrl+C |

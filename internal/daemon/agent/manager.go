@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -239,7 +240,9 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 	}
 
 	// Build args
+	sessionName := buildSessionName(opts.ProjectName, opts.Mode, opts.WildfirePhase, opts.TaskNumber, opts.TaskTitle)
 	args := []string{
+		"--name", sessionName,
 		"--append-system-prompt", composedPrompt,
 		"--dangerously-skip-permissions",
 	}
@@ -348,10 +351,17 @@ func (m *Manager) monitorProcess(projectID string, proc *Process) {
 		}
 	}
 
-	log.Printf("[chain] Decision: taskDoneOK=%v userStopped=%v mode=%s nextTaskFn=%v",
-		taskDoneOK, ag.userStopped, ag.Mode, m.nextTaskFn != nil)
+	// Before chaining, check if there's an active issue (auth error, rate limit)
+	hasIssue := proc.GetIssue() != nil
 
-	if taskDoneOK && !ag.userStopped && (ag.Mode == ModeStartAll || ag.Mode == ModeWildfire) && m.nextTaskFn != nil {
+	log.Printf("[chain] Decision: taskDoneOK=%v userStopped=%v hasIssue=%v mode=%s nextTaskFn=%v",
+		taskDoneOK, ag.userStopped, hasIssue, ag.Mode, m.nextTaskFn != nil)
+
+	if hasIssue {
+		log.Printf("[chain] Chaining blocked: active issue detected (type=%s) — stopping automatic mode", proc.GetIssue().Type)
+	}
+
+	if taskDoneOK && !ag.userStopped && !hasIssue && (ag.Mode == ModeStartAll || ag.Mode == ModeWildfire) && m.nextTaskFn != nil {
 		agentMode := ag.Mode
 		agentPhase := ag.WildfirePhase
 		projectPath := ag.ProjectPath
@@ -650,4 +660,60 @@ func resolveAgentPath() (string, error) {
 	}
 
 	return "", fmt.Errorf("claude binary not found. Install Claude Code or set path in ~/.watchfire/settings.yaml")
+}
+
+// buildSessionName constructs a structured --name value for Claude Code sessions.
+// Format: {project}:{mode}[:{task}]
+func buildSessionName(projectName string, mode Mode, phase WildfirePhase, taskNum int, taskTitle string) string {
+	slug := slugify(projectName, 30)
+
+	var modePart string
+	switch mode {
+	case ModeChat:
+		modePart = "chat"
+	case ModeTask:
+		modePart = "task"
+	case ModeStartAll:
+		modePart = "start-all"
+	case ModeWildfire:
+		modePart = "wildfire-" + strings.ToLower(string(phase))
+	case ModeGenerateDefinition:
+		modePart = "gen-definition"
+	case ModeGenerateTasks:
+		modePart = "gen-tasks"
+	default:
+		modePart = "agent"
+	}
+
+	name := slug + ":" + modePart
+
+	if taskNum > 0 && taskTitle != "" {
+		taskSlug := fmt.Sprintf("#%04d-%s", taskNum, slugify(taskTitle, 30))
+		name += ":" + taskSlug
+	}
+
+	if len(name) > 80 {
+		name = name[:80]
+		name = strings.TrimRight(name, "-:")
+	}
+
+	return name
+}
+
+// slugify converts a string to a URL-friendly slug.
+func slugify(s string, maxLen int) string {
+	s = strings.ToLower(s)
+	s = strings.Map(func(r rune) rune {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' {
+			return r
+		}
+		if r == ' ' || r == '_' {
+			return '-'
+		}
+		return -1
+	}, s)
+	if len(s) > maxLen {
+		s = s[:maxLen]
+	}
+	return strings.TrimRight(s, "-")
 }
