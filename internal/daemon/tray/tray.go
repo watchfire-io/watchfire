@@ -32,8 +32,8 @@ var (
 	portItem *systray.MenuItem
 
 	// Serialized tray update channel (prevents concurrent Cocoa API calls)
-	updateCh chan struct{}  // signal channel
-	updateMu sync.Mutex    // protects latestAgents
+	updateCh     chan struct{} // signal channel
+	updateMu     sync.Mutex    // protects latestAgents
 	latestAgents []AgentInfo
 
 	// Dynamic tray icons
