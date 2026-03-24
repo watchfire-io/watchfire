@@ -2171,12 +2171,22 @@ Tap repo: `watchfire/homebrew-tap` (separate repo, auto-updated on release)
 | **System tray** | Supported via systray (requires CGO; headless without CGO) |
 | **Notifications** | Windows toast notifications via `beeep` |
 
+### Install Scripts
+
+| Platform | Command |
+|----------|---------|
+| **macOS / Linux** | `curl -fsSL https://raw.githubusercontent.com/watchfire-io/watchfire/main/scripts/install.sh \| bash` |
+| **Windows** | `irm https://raw.githubusercontent.com/watchfire-io/watchfire/main/scripts/install.ps1 \| iex` |
+
+Both scripts auto-detect OS/arch, download the latest binaries from GitHub Releases, and install to a standard location (`/usr/local/bin` or `~/.local/bin` on Unix, `%LOCALAPPDATA%\Watchfire` on Windows).
+
 ### Distribution
 
 | Channel | What |
 |---------|------|
-| **GitHub Releases** | DMG (macOS), exe binaries (Windows), tarballs (Linux) |
+| **GitHub Releases** | DMG (macOS), standalone binaries (macOS/Linux/Windows amd64+arm64) |
 | **Homebrew** | CLI + daemon (macOS/Linux) |
+| **Install script** | `install.sh` (macOS/Linux), `install.ps1` (Windows) |
 | **Mac App Store** | Future consideration |
 
 ### Auto-Update

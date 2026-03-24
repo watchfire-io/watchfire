@@ -74,6 +74,17 @@ build-cli-amd64:
 	@mkdir -p $(BUILD_DIR)
 	GOARCH=amd64 $(GOBUILD) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(CLI_BINARY)-amd64 ./$(CMD_DIR)/watchfire
 
+# Linux builds (cross-compilation, no CGO — tray disabled, daemon runs headless)
+build-linux-amd64:
+	@mkdir -p $(BUILD_DIR)
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GOBUILD) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(CLI_BINARY)-linux-amd64 ./$(CMD_DIR)/watchfire
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 $(GOBUILD) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(DAEMON_BINARY)-linux-amd64 ./$(CMD_DIR)/watchfired
+
+build-linux-arm64:
+	@mkdir -p $(BUILD_DIR)
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 $(GOBUILD) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(CLI_BINARY)-linux-arm64 ./$(CMD_DIR)/watchfire
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 $(GOBUILD) -ldflags "$(LDFLAGS)" -o $(BUILD_DIR)/$(DAEMON_BINARY)-linux-arm64 ./$(CMD_DIR)/watchfired
+
 # Windows builds (cross-compilation, no CGO — tray disabled, daemon runs headless)
 build-windows-amd64:
 	@mkdir -p $(BUILD_DIR)

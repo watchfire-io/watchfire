@@ -126,6 +126,62 @@ jobs:
             build/watchfired-darwin-${{ matrix.arch }}
             build/watchfire-darwin-${{ matrix.arch }}
 
+  build-go-linux:
+    name: Build Go Linux (${{ matrix.arch }})
+    needs: version
+    if: needs.version.outputs.should_build == 'true'
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build binaries
+        env:
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+        run: |
+          make build-linux-${{ matrix.arch }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-binaries-linux-${{ matrix.arch }}
+          path: |
+            build/watchfire-linux-${{ matrix.arch }}
+            build/watchfired-linux-${{ matrix.arch }}
+
+  build-go-windows:
+    name: Build Go Windows (${{ matrix.arch }})
+    needs: version
+    if: needs.version.outputs.should_build == 'true'
+    strategy:
+      matrix:
+        arch: [amd64, arm64]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build binaries
+        env:
+          POSTHOG_KEY: ${{ secrets.POSTHOG_KEY }}
+        run: |
+          make build-windows-${{ matrix.arch }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-binaries-windows-${{ matrix.arch }}
+          path: |
+            build/watchfire-windows-${{ matrix.arch }}.exe
+            build/watchfired-windows-${{ matrix.arch }}.exe
+
   build-gui:
     name: Build GUI
     needs: [version, build-go]
@@ -305,7 +361,7 @@ jobs:
 
   release:
     name: Create Release
-    needs: [version, build-go, build-gui]
+    needs: [version, build-go, build-go-linux, build-go-windows, build-gui]
     if: needs.version.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -344,6 +400,14 @@ jobs:
                    artifacts/go-binaries-arm64/watchfire-darwin-arm64 \
                    artifacts/go-binaries-amd64/watchfired-darwin-amd64 \
                    artifacts/go-binaries-amd64/watchfire-darwin-amd64 \
+                   artifacts/go-binaries-linux-amd64/watchfire-linux-amd64 \
+                   artifacts/go-binaries-linux-amd64/watchfired-linux-amd64 \
+                   artifacts/go-binaries-linux-arm64/watchfire-linux-arm64 \
+                   artifacts/go-binaries-linux-arm64/watchfired-linux-arm64 \
+                   artifacts/go-binaries-windows-amd64/watchfire-windows-amd64.exe \
+                   artifacts/go-binaries-windows-amd64/watchfired-windows-amd64.exe \
+                   artifacts/go-binaries-windows-arm64/watchfire-windows-arm64.exe \
+                   artifacts/go-binaries-windows-arm64/watchfired-windows-arm64.exe \
                    artifacts/gui-dmg/*.dmg \
                    artifacts/gui-zip/*.zip \
                    artifacts/gui-latest-mac/latest-mac.yml; do

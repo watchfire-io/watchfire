@@ -76,6 +76,28 @@ jobs:
         working-directory: gui
         run: npm run build
 
+  go-build-linux:
+    name: Go Build (linux-amd64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build CLI (linux-amd64)
+        run: make build-linux-amd64
+
+  go-build-windows:
+    name: Go Build (windows-amd64)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Build CLI (windows-amd64)
+        run: make build-windows-amd64
+
   proto-lint:
     name: Proto Lint
     runs-on: ubuntu-latest

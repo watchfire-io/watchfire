@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.7.0] Ember
+
+### Added
+
+- **Linux and Windows binaries in GitHub Releases** — release workflow now builds amd64 + arm64 for darwin, linux, and windows (6 platform targets total)
+- **Cross-platform CI** — CI workflow verifies builds on macOS, Linux, and Windows
+- **Install scripts** — `scripts/install.sh` (macOS/Linux) and `scripts/install.ps1` (Windows) for one-line installation from GitHub Releases
+- **README.md** — updated with install instructions for all three platforms
+- **No-CGO tray fallback** — daemon runs headless when built without CGO (enables Linux/Windows cross-compilation)
+
+### Changed
+
 ## [0.6.0] Ember
 
 ### Added

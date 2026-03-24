@@ -12,7 +12,7 @@ AI coding agents work best when they have the right context. Watchfire lets you 
 
 ## Install
 
-### Download (macOS)
+### macOS
 
 <p align="center">
   <a href="https://github.com/watchfire-io/watchfire/releases/latest">
@@ -20,20 +20,35 @@ AI coding agents work best when they have the right context. Watchfire lets you 
   </a>
 </p>
 
-### Homebrew
-
-**Desktop app** (GUI + CLI):
+**Homebrew** (recommended):
 
 ```bash
 brew tap watchfire-io/tap
-brew install --cask watchfire-io/tap/watchfire
+brew install --cask watchfire-io/tap/watchfire   # Desktop app (GUI + CLI)
+brew install watchfire-io/tap/watchfire          # CLI & daemon only
 ```
 
-**CLI & daemon only**:
+**Script:**
 
 ```bash
-brew tap watchfire-io/tap
-brew install watchfire-io/tap/watchfire
+curl -fsSL https://raw.githubusercontent.com/watchfire-io/watchfire/main/scripts/install.sh | bash
+```
+
+### Linux
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/watchfire-io/watchfire/main/scripts/install.sh | bash
+```
+
+Homebrew also works on Linux:
+```bash
+brew tap watchfire-io/tap && brew install watchfire-io/tap/watchfire
+```
+
+### Windows
+
+```powershell
+irm https://raw.githubusercontent.com/watchfire-io/watchfire/main/scripts/install.ps1 | iex
 ```
 
 ---
