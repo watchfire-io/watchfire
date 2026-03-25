@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/getlantern/systray"
+
 	"github.com/watchfire-io/watchfire/internal/buildinfo"
 )
 
