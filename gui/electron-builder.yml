@@ -41,10 +41,6 @@ linux:
       arch: [x64]
     - target: deb
       arch: [x64]
-  desktop:
-    Name: Watchfire
-    Comment: Remote control for AI coding agents
-    Categories: Development;IDE;
   extraResources:
     - from: "../build/watchfired-x64"
       to: "watchfired"
@@ -64,7 +60,7 @@ win:
 nsis:
   oneClick: false
   perMachine: false
-  allowToDir: true
+  allowToChangeInstallationDirectory: true
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: Watchfire
