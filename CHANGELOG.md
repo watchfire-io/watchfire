@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.8.0] Ember
+
+### Fixed
+
+- `watchfire update` now works on Windows — `stopDaemonForUpdate` uses `Kill()` instead of `SIGTERM`
+- `findDaemonBinary()` handles Windows `.exe` extension correctly (was producing `watchfire.exed`)
+- Build directory fallback uses platform-appropriate binary name
+
+### Changed
+
 ## [0.7.0] Ember
 
 ### Added

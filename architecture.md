@@ -2194,8 +2194,8 @@ Both scripts auto-detect OS/arch, download the latest binaries from GitHub Relea
 | Component | Mechanism | Details |
 |-----------|-----------|---------|
 | **GUI** | `electron-updater` | Checks GitHub Releases for `latest-mac.yml`. Downloads `.zip` update. On restart, new app's first-launch logic updates CLI/daemon binaries. |
-| **CLI** | `watchfire update` | Queries GitHub Releases API. Downloads arch-specific binaries. Stops daemon if running. Atomically replaces self + daemon binary. Restarts daemon. |
-| **Daemon** | Startup check | Checks GitHub on startup (based on settings frequency). Stores result in memory. Exposes via `DaemonStatus.update_available/update_version/update_url` fields for clients to display. |
+| **CLI** | `watchfire update` | Queries GitHub Releases API. Downloads arch-specific binaries (`watchfire-{os}-{arch}[.exe]`). Stops daemon (SIGTERM on Unix, Kill on Windows). Atomically replaces self + daemon binary with rollback. Restarts daemon. Works on macOS, Linux, and Windows. |
+| **Daemon** | Startup check | Checks GitHub on startup (based on settings frequency: `every_launch`, `daily`, `weekly`). Stores result in memory. Exposes via `DaemonStatus.update_available/update_version/update_url` fields for clients to display. |
 
 ---
 

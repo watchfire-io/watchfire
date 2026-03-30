@@ -4,8 +4,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"syscall"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -108,24 +106,5 @@ var updateCmd = &cobra.Command{
 	},
 }
 
-// stopDaemonForUpdate stops the daemon via SIGTERM.
-func stopDaemonForUpdate(pid int) error {
-	process, err := os.FindProcess(pid)
-	if err != nil {
-		return fmt.Errorf("find daemon process: %w", err)
-	}
-
-	if err := process.Signal(syscall.SIGTERM); err != nil {
-		return fmt.Errorf("send stop signal: %w", err)
-	}
-
-	// Wait for daemon to stop
-	for i := 0; i < 50; i++ {
-		time.Sleep(100 * time.Millisecond)
-		running, _, _ := config.IsDaemonRunning()
-		if !running {
-			return nil
-		}
-	}
-	return fmt.Errorf("daemon did not stop in time")
-}
+// stopDaemonForUpdate stops the daemon process.
+// Platform-specific implementation in update_unix.go (SIGTERM) and update_windows.go (Kill).

@@ -6,6 +6,9 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
 	"time"
 
 	"github.com/watchfire-io/watchfire/internal/config"
@@ -72,19 +75,29 @@ func findDaemonBinary() (string, error) {
 		return path, nil
 	}
 
+	// Determine platform-appropriate executable extension
+	ext := ""
+	if runtime.GOOS == "windows" {
+		ext = ".exe"
+	}
+
 	// Try relative to current executable
 	execPath, err := os.Executable()
 	if err == nil {
-		// Try same directory
-		daemonPath := execPath[:len(execPath)-len("watchfire")] + "watchfired"
+		base := filepath.Base(execPath)
+		baseExt := filepath.Ext(base)
+		name := strings.TrimSuffix(base, baseExt)
+		daemonName := strings.Replace(name, "watchfire", "watchfired", 1) + baseExt
+		daemonPath := filepath.Join(filepath.Dir(execPath), daemonName)
 		if _, err := os.Stat(daemonPath); err == nil {
 			return daemonPath, nil
 		}
 	}
 
 	// Try build directory
-	if _, err := os.Stat("./build/watchfired"); err == nil {
-		return "./build/watchfired", nil
+	buildDaemon := "./build/watchfired" + ext
+	if _, err := os.Stat(buildDaemon); err == nil {
+		return buildDaemon, nil
 	}
 
 	return "", fmt.Errorf("watchfired not found. Install or build it first")
