@@ -64,8 +64,9 @@ function createWindow(): void {
     minHeight: 600,
     show: false,
     title: 'Watchfire',
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 16, y: 16 },
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 16 } }
+      : { frame: true }),
     backgroundColor: '#16181d',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

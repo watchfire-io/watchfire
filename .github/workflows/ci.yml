@@ -98,6 +98,23 @@ jobs:
       - name: Build CLI (windows-amd64)
         run: make build-windows-amd64
 
+  gui-build-linux:
+    name: GUI Build (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: gui/package-lock.json
+      - name: Install dependencies
+        working-directory: gui
+        run: npm ci
+      - name: Build GUI
+        working-directory: gui
+        run: npm run build
+
   proto-lint:
     name: Proto Lint
     runs-on: ubuntu-latest

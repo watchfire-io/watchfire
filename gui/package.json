@@ -9,7 +9,9 @@
     "preview": "electron-vite preview",
     "proto:gen": "buf generate",
     "package": "electron-vite build && electron-builder --config electron-builder.yml",
-    "package:mac": "electron-vite build && electron-builder --mac --config electron-builder.yml"
+    "package:mac": "electron-vite build && electron-builder --mac --config electron-builder.yml",
+    "package:linux": "electron-vite build && electron-builder --linux --config electron-builder.yml",
+    "package:win": "electron-vite build && electron-builder --win --config electron-builder.yml"
   },
   "dependencies": {
     "@bufbuild/protobuf": "^2.11.0",

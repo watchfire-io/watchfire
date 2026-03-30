@@ -359,9 +359,130 @@ jobs:
           name: gui-latest-mac
           path: gui/dist/latest-mac.yml
 
+  build-gui-linux:
+    name: Build GUI (Linux)
+    needs: [version, build-go-linux]
+    if: needs.version.outputs.should_build == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: gui/package-lock.json
+
+      - name: Download Linux amd64 binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: go-binaries-linux-amd64
+          path: build/
+
+      - name: Prepare binaries for electron-builder
+        run: |
+          # electron-builder uses "x64" not "amd64"
+          cp build/watchfired-linux-amd64 build/watchfired-x64
+          cp build/watchfire-linux-amd64 build/watchfire-x64
+          chmod +x build/watchfired-x64 build/watchfire-x64
+
+      - name: Sync version
+        run: make sync-version
+
+      - name: Install GUI dependencies
+        working-directory: gui
+        run: npm ci
+
+      - name: Build and package GUI
+        working-directory: gui
+        run: |
+          npx electron-vite build
+          npx electron-builder --config electron-builder.yml --publish never --linux AppImage deb --x64
+
+      - name: Upload AppImage
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-appimage
+          path: gui/dist/*.AppImage
+
+      - name: Upload deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-deb
+          path: gui/dist/*.deb
+
+      - name: Upload latest-linux.yml
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-latest-linux
+          path: gui/dist/latest-linux.yml
+
+  build-gui-windows:
+    name: Build GUI (Windows)
+    needs: [version, build-go-windows]
+    if: needs.version.outputs.should_build == 'true'
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: gui/package-lock.json
+
+      - name: Download Windows amd64 binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: go-binaries-windows-amd64
+          path: build/
+
+      - name: Prepare binaries for electron-builder
+        shell: bash
+        run: |
+          # electron-builder uses "x64" not "amd64"
+          cp build/watchfire-windows-amd64.exe build/watchfire-x64.exe
+          cp build/watchfired-windows-amd64.exe build/watchfired-x64.exe
+
+      - name: Sync version
+        shell: bash
+        run: |
+          VERSION=$(python3 -c "import json; print(json.load(open('version.json'))['version'])")
+          node -e "const fs=require('fs');const p=JSON.parse(fs.readFileSync('gui/package.json','utf8'));p.version='$VERSION';fs.writeFileSync('gui/package.json',JSON.stringify(p,null,2)+'\n')"
+
+      - name: Install GUI dependencies
+        working-directory: gui
+        run: npm ci
+
+      - name: Build and package GUI
+        working-directory: gui
+        run: |
+          npx electron-vite build
+          npx electron-builder --config electron-builder.yml --publish never --win nsis --x64
+
+      - name: Upload NSIS installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-nsis
+          path: gui/dist/*.exe
+
+      - name: Upload latest.yml
+        uses: actions/upload-artifact@v4
+        with:
+          name: gui-latest-windows
+          path: gui/dist/latest.yml
+
   release:
     name: Create Release
-    needs: [version, build-go, build-go-linux, build-go-windows, build-gui]
+    needs: [version, build-go, build-go-linux, build-go-windows, build-gui, build-gui-linux, build-gui-windows]
     if: needs.version.outputs.should_build == 'true'
     runs-on: ubuntu-latest
     permissions:
@@ -410,7 +531,12 @@ jobs:
                    artifacts/go-binaries-windows-arm64/watchfired-windows-arm64.exe \
                    artifacts/gui-dmg/*.dmg \
                    artifacts/gui-zip/*.zip \
-                   artifacts/gui-latest-mac/latest-mac.yml; do
+                   artifacts/gui-latest-mac/latest-mac.yml \
+                   artifacts/gui-appimage/*.AppImage \
+                   artifacts/gui-deb/*.deb \
+                   artifacts/gui-latest-linux/latest-linux.yml \
+                   artifacts/gui-nsis/*.exe \
+                   artifacts/gui-latest-windows/latest.yml; do
             if [ -f "$f" ]; then
               assets+=("$f")
             fi

@@ -1,19 +1,51 @@
-import { existsSync, copyFileSync, lstatSync, readlinkSync } from 'fs'
+import { existsSync, copyFileSync, lstatSync, readlinkSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { execSync } from 'child_process'
 import { app, dialog } from 'electron'
 import { stopDaemon } from './daemon'
 
-const HOMEBREW_PATHS = ['/opt/homebrew/bin', '/usr/local/bin']
-const DEFAULT_INSTALL_DIR = '/usr/local/bin'
-const CLI_PATH = join(DEFAULT_INSTALL_DIR, 'watchfire')
-const DAEMON_PATH = join(DEFAULT_INSTALL_DIR, 'watchfired')
+const IS_MAC = process.platform === 'darwin'
+const IS_WIN = process.platform === 'win32'
+const IS_LINUX = process.platform === 'linux'
 
-/** Find an installed binary in known Homebrew/system paths. */
+// Platform-specific install directories
+const MAC_INSTALL_DIRS = ['/opt/homebrew/bin', '/usr/local/bin']
+const LINUX_INSTALL_DIRS = ['/usr/local/bin', join(process.env.HOME || '', '.local', 'bin')]
+const WIN_INSTALL_DIR = join(
+  process.env.LOCALAPPDATA || join(process.env.USERPROFILE || '', 'AppData', 'Local'),
+  'Watchfire'
+)
+
+const CLI_NAME = IS_WIN ? 'watchfire.exe' : 'watchfire'
+const DAEMON_NAME = IS_WIN ? 'watchfired.exe' : 'watchfired'
+
+function getInstallDir(): string {
+  if (IS_MAC) return '/usr/local/bin'
+  if (IS_LINUX) return join(process.env.HOME || '', '.local', 'bin')
+  return WIN_INSTALL_DIR
+}
+
+function getSearchDirs(): string[] {
+  if (IS_MAC) return MAC_INSTALL_DIRS
+  if (IS_LINUX) return LINUX_INSTALL_DIRS
+  return [WIN_INSTALL_DIR]
+}
+
+/** Find an installed binary in known paths. */
 function findInstalledPath(binary: string): string | null {
-  for (const dir of HOMEBREW_PATHS) {
+  for (const dir of getSearchDirs()) {
     const p = join(dir, binary)
     if (existsSync(p)) return p
+  }
+  // Also check PATH on Windows
+  if (IS_WIN) {
+    try {
+      const result = execSync(`where ${binary}`, { encoding: 'utf-8', timeout: 5000 })
+      const firstLine = result.trim().split('\n')[0]
+      if (firstLine && existsSync(firstLine)) return firstLine
+    } catch {
+      // not found in PATH
+    }
   }
   return null
 }
@@ -25,8 +57,8 @@ interface InstallStatus {
 
 /** Check if the installed CLI binaries need installation or update. */
 export function needsInstall(): InstallStatus {
-  const cliPath = findInstalledPath('watchfire')
-  const daemonPath = findInstalledPath('watchfired')
+  const cliPath = findInstalledPath(CLI_NAME)
+  const daemonPath = findInstalledPath(DAEMON_NAME)
 
   if (!cliPath || !daemonPath) {
     return { needed: true, reason: 'missing' }
@@ -51,8 +83,9 @@ export function needsInstall(): InstallStatus {
   return { needed: false, reason: 'none' }
 }
 
-/** Check if a binary is managed by Homebrew. */
+/** Check if a binary is managed by Homebrew (macOS/Linux only). */
 function isHomebrewInstalled(binaryPath: string): boolean {
+  if (IS_WIN) return false
   try {
     const stat = lstatSync(binaryPath)
     if (!stat.isSymbolicLink()) return false
@@ -63,17 +96,19 @@ function isHomebrewInstalled(binaryPath: string): boolean {
   }
 }
 
-/** Copy bundled binaries to /usr/local/bin. */
+/** Copy bundled binaries to the platform-specific install directory. */
 export async function installCLI(): Promise<boolean> {
-  const bundledCLI = join(process.resourcesPath, 'watchfire')
-  const bundledDaemon = join(process.resourcesPath, 'watchfired')
+  // On macOS, bundled binaries are without extension (universal).
+  // On Linux/Windows, they match the platform binary name.
+  const bundledCLI = join(process.resourcesPath, CLI_NAME)
+  const bundledDaemon = join(process.resourcesPath, DAEMON_NAME)
 
   if (!existsSync(bundledCLI) || !existsSync(bundledDaemon)) {
     throw new Error('Bundled binaries not found in app resources')
   }
 
-  // Check if existing binaries are Homebrew-managed (in any known location)
-  const existingCLI = findInstalledPath('watchfire')
+  // Check if existing binaries are Homebrew-managed (macOS/Linux)
+  const existingCLI = findInstalledPath(CLI_NAME)
   if (existingCLI && isHomebrewInstalled(existingCLI)) {
     dialog.showMessageBoxSync({
       type: 'info',
@@ -85,26 +120,67 @@ export async function installCLI(): Promise<boolean> {
     return false
   }
 
-  // Try direct copy first
-  try {
-    copyFileSync(bundledCLI, CLI_PATH)
-    copyFileSync(bundledDaemon, DAEMON_PATH)
-    execSync(`chmod +x "${CLI_PATH}" "${DAEMON_PATH}"`)
-    return true
-  } catch {
-    // Direct copy failed (likely permissions), fall back to osascript
+  const installDir = getInstallDir()
+  const cliDest = join(installDir, CLI_NAME)
+  const daemonDest = join(installDir, DAEMON_NAME)
+
+  // Ensure install directory exists
+  if (!existsSync(installDir)) {
+    mkdirSync(installDir, { recursive: true })
   }
 
-  // Fall back to osascript with admin privileges
+  // Try direct copy first
   try {
-    const script = `
-      do shell script "cp '${bundledCLI}' '${CLI_PATH}' && cp '${bundledDaemon}' '${DAEMON_PATH}' && chmod +x '${CLI_PATH}' '${DAEMON_PATH}'" with administrator privileges
-    `
-    execSync(`osascript -e '${script.replace(/'/g, "'\\''")}'`, { timeout: 30000 })
+    copyFileSync(bundledCLI, cliDest)
+    copyFileSync(bundledDaemon, daemonDest)
+    if (!IS_WIN) {
+      execSync(`chmod +x "${cliDest}" "${daemonDest}"`)
+    }
     return true
   } catch {
-    return false
+    // Direct copy failed (likely permissions)
   }
+
+  if (IS_MAC) {
+    // Fall back to osascript with admin privileges
+    try {
+      const script = `
+        do shell script "cp '${bundledCLI}' '${cliDest}' && cp '${bundledDaemon}' '${daemonDest}' && chmod +x '${cliDest}' '${daemonDest}'" with administrator privileges
+      `
+      execSync(`osascript -e '${script.replace(/'/g, "'\\''")}'`, { timeout: 30000 })
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  if (IS_LINUX) {
+    // Fall back to pkexec for admin privileges
+    try {
+      execSync(
+        `pkexec sh -c 'cp "${bundledCLI}" "${cliDest}" && cp "${bundledDaemon}" "${daemonDest}" && chmod +x "${cliDest}" "${daemonDest}"'`,
+        { timeout: 30000 }
+      )
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  // Windows: try PowerShell elevation
+  if (IS_WIN) {
+    try {
+      const psScript = `
+        Start-Process powershell -Verb RunAs -ArgumentList '-Command', 'Copy-Item "${bundledCLI}" "${cliDest}" -Force; Copy-Item "${bundledDaemon}" "${daemonDest}" -Force'
+      `.replace(/\\/g, '\\\\')
+      execSync(`powershell -Command "${psScript}"`, { timeout: 30000 })
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  return false
 }
 
 /** Check and prompt for CLI installation on startup. */
@@ -116,7 +192,7 @@ export async function checkAndInstallCLI(): Promise<void> {
 
   const message =
     status.reason === 'missing'
-      ? 'Watchfire CLI tools are not installed. Install them to /usr/local/bin?'
+      ? 'Watchfire CLI tools are not installed. Install them to ' + getInstallDir() + '?'
       : `Watchfire CLI tools are outdated (app: ${app.getVersion()}). Update them?`
 
   const result = dialog.showMessageBoxSync({

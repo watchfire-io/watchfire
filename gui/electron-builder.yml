@@ -6,11 +6,6 @@ directories:
 npmRebuild: true
 files:
   - out/**/*
-extraResources:
-  - from: "../build/watchfired-${arch}"
-    to: "watchfired"
-  - from: "../build/watchfire-${arch}"
-    to: "watchfire"
 mac:
   icon: resources/icon.icns
   category: public.app-category.developer-tools
@@ -24,6 +19,11 @@ mac:
     - target: zip
       arch: [universal]
   notarize: true
+  extraResources:
+    - from: "../build/watchfired-${arch}"
+      to: "watchfired"
+    - from: "../build/watchfire-${arch}"
+      to: "watchfire"
 dmg:
   sign: true
   contents:
@@ -33,6 +33,41 @@ dmg:
       y: 220
       type: link
       path: /Applications
+linux:
+  icon: resources/icon.png
+  category: Development
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  desktop:
+    Name: Watchfire
+    Comment: Remote control for AI coding agents
+    Categories: Development;IDE;
+  extraResources:
+    - from: "../build/watchfired-x64"
+      to: "watchfired"
+    - from: "../build/watchfire-x64"
+      to: "watchfire"
+win:
+  icon: resources/icon.png
+  target:
+    - target: nsis
+      arch: [x64]
+  artifactName: "Watchfire-Setup-${version}.${ext}"
+  extraResources:
+    - from: "../build/watchfired-x64.exe"
+      to: "watchfired.exe"
+    - from: "../build/watchfire-x64.exe"
+      to: "watchfire.exe"
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToDir: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Watchfire
 publish:
   provider: github
   owner: watchfire-io

@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.9.0] Ember
+
+### Added
+
+- **Linux GUI** — AppImage and `.deb` packages for x64 Linux, built in GitHub Actions on `ubuntu-latest`. Bundled CLI + daemon binaries installed to `~/.local/bin` on first launch with `pkexec` fallback for admin privileges.
+- **Windows GUI** — NSIS installer (`Watchfire-Setup-x.y.z.exe`) for x64 Windows, built in GitHub Actions on `windows-latest`. Bundled CLI + daemon binaries installed to `%LOCALAPPDATA%\Watchfire` on first launch with PowerShell elevation fallback.
+- **Cross-platform auto-update for GUI** — `electron-updater` now checks `latest-linux.yml` (Linux) and `latest.yml` (Windows) in addition to `latest-mac.yml` (macOS). All three update manifests are generated and uploaded as release artifacts.
+- **Linux GUI CI verification** — `gui-build-linux` job in CI workflow verifies Electron builds on `ubuntu-latest` on every PR.
+
+### Changed
+
+- **CLI installer is cross-platform** — `cli-installer.ts` detects OS and uses platform-appropriate install directories (`/usr/local/bin` on macOS, `~/.local/bin` on Linux, `%LOCALAPPDATA%\Watchfire` on Windows) with platform-specific privilege elevation (`osascript`, `pkexec`, PowerShell)
+- **Window chrome adapts to platform** — macOS uses `hiddenInset` title bar with traffic lights; Linux and Windows use native window frames
+- **electron-builder.yml** — added `linux` (AppImage + deb) and `win` (NSIS) targets with platform-specific `extraResources` for correct binary bundling (`.exe` on Windows)
+- **Release workflow** — added `build-gui-linux` and `build-gui-windows` jobs; release job collects AppImage, deb, NSIS exe, and all update YAMLs as assets
+
 ## [0.8.0] Ember
 
 ### Fixed
