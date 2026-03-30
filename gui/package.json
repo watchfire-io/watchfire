@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "description": "Remote control for AI coding agents",
   "homepage": "https://github.com/watchfire-io/watchfire",
-  "author": "Watchfire <hello@watchfire.io>",
+  "author": "nunocoracao <nuno@n9o.xyz>",
   "main": "./out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
