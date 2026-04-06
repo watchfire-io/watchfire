@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.0] Ember
+
+### Added
+
+### Changed
+
+### Fixed
+
 ## [0.9.0] Ember
 
 ### Added

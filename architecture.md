@@ -2072,21 +2072,35 @@ Ad-hoc: `go run ./cmd/watchfire` or `go run ./cmd/watchfired`
 | `go-lint` | `macos-latest` | `golangci-lint` |
 | `go-test` | `macos-latest` | `make test` |
 | `go-build-arm64` | `macos-14` | Build daemon + CLI for arm64 (native, avoids CGO cross-compile) |
-| `go-build-amd64` | `macos-13` | Build daemon + CLI for amd64 (native, avoids CGO cross-compile) |
-| `gui-lint-build` | `macos-latest` | `npm ci` + `npm run build` |
+| `go-build-amd64` | `macos-latest` | Build daemon + CLI for amd64 (native, avoids CGO cross-compile) |
+| `gui-lint-build` | `macos-latest` | `npm ci` + `npm run build` (macOS) |
+| `gui-build-linux` | `ubuntu-latest` | `npm ci` + `npm run build` (Linux) |
+| `go-build-linux` | `ubuntu-latest` | Build CLI for linux-amd64 |
+| `go-build-windows` | `ubuntu-latest` | Build CLI for windows-amd64 |
 | `proto-lint` | `ubuntu-latest` | `buf lint` |
 
 ### On Push to Main (`release.yml`)
 
 1. **`version`** job — read `version.json`, output version + codename for other jobs
-2. **`build-go`** job — matrix `{macos-14/arm64, macos-13/amd64}`. Build with ldflags, codesign, notarize, upload arch-specific artifacts
-3. **`build-gui`** job — download both arch artifacts, `lipo` universal binaries, sync version, `npm ci && npm run package` with signing env vars. Uploads DMG + zip + `latest-mac.yml`
-4. **`release`** job — create/update draft GitHub Release with all artifacts + changelog notes
+2. **`build-go`** job — matrix `{macos-14/arm64, macos-latest/amd64}`. Build with ldflags, codesign, notarize, upload arch-specific artifacts
+3. **`build-go-linux`** job — matrix `{amd64, arm64}` on `ubuntu-latest`. Build CLI + daemon for Linux
+4. **`build-go-windows`** job — matrix `{amd64, arm64}` on `ubuntu-latest`. Build CLI + daemon for Windows
+5. **`build-gui`** job — download both macOS arch artifacts, `lipo` universal binaries, sync version, `npm ci && npm run package` with signing env vars. Uploads DMG + zip + `latest-mac.yml`
+6. **`build-gui-linux`** job — download Linux amd64 binaries, build AppImage + deb on `ubuntu-latest`. Uploads AppImage + deb + `latest-linux.yml`
+7. **`build-gui-windows`** job — download Windows amd64 binaries, build NSIS installer on `windows-latest`. Uploads installer exe + `latest.yml`
+8. **`release`** job — create/update draft GitHub Release with all artifacts + changelog notes
 
 **Build artifacts:**
-- `Watchfire.dmg` — Universal installer (GUI + CLI + daemon)
-- `watchfire-darwin-arm64` / `watchfire-darwin-amd64` — CLI only
-- `watchfired-darwin-arm64` / `watchfired-darwin-amd64` — Daemon only
+- `Watchfire.dmg` — macOS Universal installer (GUI + CLI + daemon)
+- `Watchfire-x.y.z.AppImage` — Linux x64 AppImage (GUI + CLI + daemon)
+- `watchfire_x.y.z_amd64.deb` — Linux x64 Debian package (GUI + CLI + daemon)
+- `Watchfire-Setup-x.y.z.exe` — Windows x64 NSIS installer (GUI + CLI + daemon)
+- `watchfire-darwin-arm64` / `watchfire-darwin-amd64` — CLI only (macOS)
+- `watchfired-darwin-arm64` / `watchfired-darwin-amd64` — Daemon only (macOS)
+- `watchfire-linux-amd64` / `watchfire-linux-arm64` — CLI only (Linux)
+- `watchfired-linux-amd64` / `watchfired-linux-arm64` — Daemon only (Linux)
+- `watchfire-windows-amd64.exe` / `watchfire-windows-arm64.exe` — CLI only (Windows)
+- `watchfired-windows-amd64.exe` / `watchfired-windows-arm64.exe` — Daemon only (Windows)
 
 ### Required GitHub Secrets
 
@@ -2161,15 +2175,31 @@ brew install watchfire   # Installs CLI + daemon
 
 Tap repo: `watchfire/homebrew-tap` (separate repo, auto-updated on release)
 
-### Windows
+### Linux (AppImage + deb)
 
 | Aspect | Behavior |
 |--------|----------|
-| **Binaries** | `watchfire.exe` and `watchfired.exe` (amd64, arm64) |
-| **Installation** | Download from GitHub Releases, add to PATH |
+| **Formats** | AppImage (portable, no install) and `.deb` (Debian/Ubuntu) |
+| **Architecture** | x64 only for GUI; CLI binaries available for amd64 + arm64 |
+| **Binary bundling** | `watchfire` and `watchfired` bundled in AppImage/deb via electron-builder `extraResources` |
+| **First-launch install** | App checks if `~/.local/bin/watchfire[d]` exists and matches version. If missing/outdated, shows install dialog. Falls back to `pkexec` for admin privileges. |
+| **Sandbox** | Landlock (kernel 5.13+) or bubblewrap fallback |
+| **System tray** | Headless (no CGO in cross-compiled builds) |
+| **Notifications** | Linux desktop notifications via `beeep` |
+| **Auto-update** | `electron-updater` checks GitHub Releases for `latest-linux.yml` |
+
+### Windows (NSIS Installer)
+
+| Aspect | Behavior |
+|--------|----------|
+| **Format** | NSIS installer (`Watchfire-Setup-x.y.z.exe`) |
+| **Architecture** | x64 only for GUI; CLI binaries available for amd64 + arm64 |
+| **Binary bundling** | `watchfire.exe` and `watchfired.exe` bundled via electron-builder `extraResources` |
+| **First-launch install** | App checks if `%LOCALAPPDATA%\Watchfire\watchfire.exe` exists and matches version. Falls back to PowerShell elevation. |
 | **Sandbox** | Not available — agent runs unsandboxed |
-| **System tray** | Supported via systray (requires CGO; headless without CGO) |
+| **System tray** | Headless (no CGO in cross-compiled builds) |
 | **Notifications** | Windows toast notifications via `beeep` |
+| **Auto-update** | `electron-updater` checks GitHub Releases for `latest.yml` |
 
 ### Install Scripts
 
@@ -2184,16 +2214,17 @@ Both scripts auto-detect OS/arch, download the latest binaries from GitHub Relea
 
 | Channel | What |
 |---------|------|
-| **GitHub Releases** | DMG (macOS), standalone binaries (macOS/Linux/Windows amd64+arm64) |
+| **GitHub Releases** | DMG (macOS), AppImage + deb (Linux), NSIS installer (Windows), standalone binaries (macOS/Linux/Windows amd64+arm64), auto-update YAMLs (`latest-mac.yml`, `latest-linux.yml`, `latest.yml`) |
 | **Homebrew** | CLI + daemon (macOS/Linux) |
 | **Install script** | `install.sh` (macOS/Linux), `install.ps1` (Windows) |
-| **Mac App Store** | Future consideration |
 
 ### Auto-Update
 
 | Component | Mechanism | Details |
 |-----------|-----------|---------|
-| **GUI** | `electron-updater` | Checks GitHub Releases for `latest-mac.yml`. Downloads `.zip` update. On restart, new app's first-launch logic updates CLI/daemon binaries. |
+| **GUI (macOS)** | `electron-updater` | Checks GitHub Releases for `latest-mac.yml`. Downloads `.zip` update. On restart, new app's first-launch logic updates CLI/daemon binaries. |
+| **GUI (Linux)** | `electron-updater` | Checks GitHub Releases for `latest-linux.yml`. Downloads `.AppImage` update. On restart, updates CLI/daemon binaries in `~/.local/bin`. |
+| **GUI (Windows)** | `electron-updater` | Checks GitHub Releases for `latest.yml`. Downloads NSIS installer update. On restart, updates CLI/daemon binaries in `%LOCALAPPDATA%\Watchfire`. |
 | **CLI** | `watchfire update` | Queries GitHub Releases API. Downloads arch-specific binaries (`watchfire-{os}-{arch}[.exe]`). Stops daemon (SIGTERM on Unix, Kill on Windows). Atomically replaces self + daemon binary with rollback. Restarts daemon. Works on macOS, Linux, and Windows. |
 | **Daemon** | Startup check | Checks GitHub on startup (based on settings frequency: `every_launch`, `daily`, `weekly`). Stores result in memory. Exposes via `DaemonStatus.update_available/update_version/update_url` fields for clients to display. |
 
