@@ -38,7 +38,7 @@ an individual is officially representing the community in public spaces.
 ## Enforcement
 
 Instances of unacceptable behavior may be reported to the project team at
-**conduct@watchfire.io**. All complaints will be reviewed and investigated
+**info@watchfire.io**. All complaints will be reviewed and investigated
 promptly and fairly. The project team is obligated to maintain confidentiality
 with regard to the reporter of an incident.
 
