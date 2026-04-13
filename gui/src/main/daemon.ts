@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'fs'
 import { join, resolve } from 'path'
 import { homedir } from 'os'
-import { execFile, execSync } from 'child_process'
+import { spawn, execSync } from 'child_process'
 import { createConnection } from 'net'
 import { parse } from 'yaml'
 import { app } from 'electron'
@@ -47,7 +47,7 @@ export async function ensureDaemon(): Promise<DaemonInfo> {
   }
 
   // Start daemon in background
-  const child = execFile(daemonPath, [], {
+  const child = spawn(daemonPath, [], {
     detached: true,
     stdio: 'ignore'
   })
