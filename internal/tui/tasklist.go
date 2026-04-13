@@ -254,10 +254,39 @@ func (tl *TaskList) View(width int) string {
 		return lipgloss.NewStyle().Foreground(colorDim).Render("No tasks. Press 'a' to add one.")
 	}
 
+	// Calculate available height: reserve space for scroll indicators and
+	// section header blank lines (each non-first header has a "\n" prefix = +1 visual line).
+	available := tl.height
+	hasUpIndicator := tl.scrollOffset > 0
+	if hasUpIndicator {
+		available-- // reserve 1 line for "▲ more"
+	}
+
+	// Determine visible items, accounting for headers that consume an extra line
 	var lines []string
-	end := tl.scrollOffset + tl.height
-	if end > len(items) {
-		end = len(items)
+	end := tl.scrollOffset
+	visualLines := 0
+	for end < len(items) && visualLines < available {
+		item := items[end]
+		cost := 1
+		if item.isHeader && end > 0 {
+			cost = 2 // blank line + header text
+		}
+		// Peek: will a "▼ more" indicator be needed after this item?
+		// If so, reserve 1 line (unless this is the last item).
+		remaining := available - visualLines
+		if end+1 < len(items) && cost >= remaining {
+			break // not enough room for this item + the ▼ indicator
+		}
+		visualLines += cost
+		end++
+	}
+
+	// Reserve space for ▼ indicator if there are more items
+	hasDownIndicator := end < len(items)
+	if hasDownIndicator && visualLines >= available {
+		// Remove last item to make room for the indicator
+		end--
 	}
 
 	for i := tl.scrollOffset; i < end; i++ {
@@ -311,10 +340,10 @@ func (tl *TaskList) View(width int) string {
 	}
 
 	// Scroll indicators
-	if tl.scrollOffset > 0 {
+	if hasUpIndicator {
 		lines = append([]string{lipgloss.NewStyle().Foreground(colorDim).Render("  ▲ more")}, lines...)
 	}
-	if end < len(items) {
+	if hasDownIndicator {
 		lines = append(lines, lipgloss.NewStyle().Foreground(colorDim).Render("  ▼ more"))
 	}
 

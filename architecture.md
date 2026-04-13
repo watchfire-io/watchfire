@@ -83,6 +83,7 @@ The daemon is the backend brain of Watchfire. It manages multiple projects simul
 | **Stale branches** | If a branch already exists when creating a worktree, deletes it and recreates from current HEAD |
 | **Merge conflict** | On merge failure, runs `git merge --abort` to restore clean working directory |
 | **Chain stop** | Merge failure stops wildfire/start-all chaining (prevents cascading failures) |
+| **Restart limit** | If same task restarts 3+ times without completing, chaining stops and agent enters chat mode |
 | **Pruning** | Periodically detects and cleans orphaned worktrees |
 
 ### Coding Agent Abstraction
@@ -926,13 +927,16 @@ Split layout with tabs:
 ├── installation_id     # Stable UUID for analytics (decoupled from settings)
 └── logs/               # Session logs
     └── <project_id>/
-        └── <task_number>-<session>-<timestamp>.log
+        ├── <task_number>-<session>-<timestamp>.log      # PTY scrollback (fallback)
+        └── <task_number>-<session>-<timestamp>.jsonl     # Claude JSONL transcript (preferred)
 ```
 
 **Log filename examples:**
-- `0001-1-2026-02-03T13-05-00.log` — task 1, session 1
-- `0001-2-2026-02-03T14-30-00.log` — task 1, session 2
+- `0001-1-2026-02-03T13-05-00.log` — task 1, session 1 (PTY scrollback)
+- `0001-1-2026-02-03T13-05-00.jsonl` — task 1, session 1 (Claude JSONL transcript)
 - `chat-1-2026-02-03T15-00-00.log` — chat mode (no task)
+
+**Transcript discovery:** On agent exit, the daemon finds Claude Code's JSONL transcript at `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl` by matching the `customTitle` field (first line) against the `--name` session name passed to claude. The JSONL is copied to the logs directory. `ReadLog` prefers the `.jsonl` and formats it as readable User/Assistant conversation; falls back to `.log` if no transcript exists.
 
 ### Per-Project (`<project>/.watchfire/`)
 
@@ -1191,6 +1195,18 @@ PTY Read → detectIssues() → Pattern Match → AgentIssue → Broadcast to Su
 | **Agent state** | Agent keeps running (allows user to wait or take action) |
 | **Notification** | Clients receive issue with `reset_at` and `cooldown_until` timestamps |
 | **User override** | Call `ResumeAgent` RPC to clear cooldown and retry |
+
+### Restart Protection
+
+If the same task is restarted multiple times without completing (e.g., due to rate limits, crashes, or auth errors that aren't detected as issues), the daemon stops chaining and transitions to chat mode.
+
+| Aspect | Behavior |
+|--------|----------|
+| **Trigger** | Same task restarted 3+ times consecutively without reaching `status: done` |
+| **Action** | Stop wildfire/start-all chaining, start chat-mode agent instead |
+| **Counter** | Per-project in `Manager.taskRestarts` memory map (reset on task progression) |
+| **Reset** | Counter resets when a different task is chained (successful progression) or agent is stopped by user |
+| **Logging** | Warning logged with task number and restart count when limit reached |
 
 ### gRPC RPCs for Issues
 
@@ -1610,6 +1626,8 @@ RestoreTask → clears deleted_at
 ```
 
 Each phase is a separate agent process. The daemon manages all transitions.
+
+**Restart protection:** If the same task is restarted 3 times without completing, wildfire stops and transitions to chat mode. See "Restart Protection" in the Agent Detection section.
 
 **Ctrl+C in wildfire:** Detaches only (agent continues in background)
 

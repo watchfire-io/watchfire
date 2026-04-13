@@ -27,19 +27,21 @@ export function TaskModal({ open, onClose, projectId, task }: Props) {
 
   const isEdit = !!task
 
+  // Initialize form state when the modal opens — use task?.taskNumber as a stable
+  // dependency instead of the full task object, which changes reference on every poll.
   useEffect(() => {
-    if (task) {
+    if (open && task) {
       setTitle(task.title)
       setPrompt(task.prompt)
       setCriteria(task.acceptanceCriteria)
       setStatus(task.status === 'ready' ? 'ready' : 'draft')
-    } else {
+    } else if (!open) {
       setTitle('')
       setPrompt('')
       setCriteria('')
       setStatus('draft')
     }
-  }, [task, open])
+  }, [task?.taskNumber, open])
 
   const handleSave = async () => {
     if (!title.trim()) return

@@ -7,6 +7,7 @@ interface AgentState {
   statuses: Record<string, AgentStatus>
   issues: Record<string, AgentIssue | null>
   screenAborts: Record<string, AbortController>
+  rawAborts: Record<string, AbortController>
   issueAborts: Record<string, AbortController>
 
   fetchStatus: (projectId: string) => Promise<void>
@@ -42,6 +43,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   statuses: {},
   issues: {},
   screenAborts: {},
+  rawAborts: {},
   issueAborts: {},
 
   fetchStatus: async (projectId) => {
@@ -135,11 +137,11 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   },
 
   subscribeRawOutput: (projectId, onData, onEnd) => {
-    // Cancel existing subscription
-    get().screenAborts[projectId]?.abort()
+    // Cancel existing subscription (use rawAborts, not screenAborts)
+    get().rawAborts[projectId]?.abort()
 
     const abort = new AbortController()
-    set((s) => ({ screenAborts: { ...s.screenAborts, [projectId]: abort } }))
+    set((s) => ({ rawAborts: { ...s.rawAborts, [projectId]: abort } }))
 
     const client = getAgentClient()
     ;(async () => {
@@ -191,6 +193,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
 
   cleanupSubscriptions: (projectId) => {
     get().screenAborts[projectId]?.abort()
+    get().rawAborts[projectId]?.abort()
     get().issueAborts[projectId]?.abort()
   }
 }))

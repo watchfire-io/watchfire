@@ -11,4 +11,5 @@ type LogEntry struct {
 	StartedAt     string `yaml:"started_at"`
 	EndedAt       string `yaml:"ended_at"`
 	Status        string `yaml:"status"`
+	HasTranscript bool   `yaml:"has_transcript"` // true if a JSONL transcript is available
 }

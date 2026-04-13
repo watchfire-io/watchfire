@@ -22,6 +22,7 @@ import (
 const (
 	pollTaskStatusInterval = 5 * time.Second
 	pollSignalFileInterval = 3 * time.Second
+	maxTaskRestarts        = 3 // Stop chaining after this many consecutive restarts of the same task
 )
 
 // Mode defines the mode an agent runs in.
@@ -58,6 +59,7 @@ type RunningAgent struct {
 	WildfirePhase WildfirePhase
 	TaskNumber    int
 	TaskTitle     string
+	SessionName   string // --name value passed to claude (used for transcript lookup)
 	WorktreePath  string
 	Process       *Process
 	userStopped   bool // set by StopAgentByUser to prevent chaining in wildfire/start-all
@@ -84,6 +86,7 @@ type StartOptions struct {
 type Manager struct {
 	mu             sync.RWMutex
 	agents         map[string]*RunningAgent // keyed by ProjectID
+	taskRestarts   map[string]int           // keyed by ProjectID — consecutive restarts of the same task
 	onChangeFn     func()                   // called when agent state changes (for tray updates)
 	nextTaskFn     func(projectID, projectPath string, mode Mode, phase WildfirePhase, rows, cols int) (*StartOptions, error)
 	onTaskDoneFn   func(projectPath string, taskNumber int, worktreePath string) bool // called after agent exits for a task; returns true to continue chaining
@@ -93,7 +96,8 @@ type Manager struct {
 // NewManager creates a new agent manager.
 func NewManager() *Manager {
 	return &Manager{
-		agents: make(map[string]*RunningAgent),
+		agents:       make(map[string]*RunningAgent),
+		taskRestarts: make(map[string]int),
 	}
 }
 
@@ -292,6 +296,7 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 		WildfirePhase: opts.WildfirePhase,
 		TaskNumber:    opts.TaskNumber,
 		TaskTitle:     opts.TaskTitle,
+		SessionName:   sessionName,
 		WorktreePath:  worktreePath,
 		Process:       proc,
 	}
@@ -370,6 +375,9 @@ func (m *Manager) monitorProcess(projectID string, proc *Process) {
 		agentMode := ag.Mode
 		agentPhase := ag.WildfirePhase
 		projectPath := ag.ProjectPath
+		projectName := ag.ProjectName
+		projectColor := ag.ProjectColor
+		prevTaskNumber := ag.TaskNumber
 		rows, cols := proc.TerminalSize()
 
 		// Clean up old process resources before chaining
@@ -386,6 +394,42 @@ func (m *Manager) monitorProcess(projectID string, proc *Process) {
 			return
 		}
 		if nextOpts != nil {
+			// Restart protection: if the same task is returned again, track consecutive restarts.
+			// After maxTaskRestarts, stop chaining and transition to chat mode.
+			if nextOpts.TaskNumber == prevTaskNumber && prevTaskNumber > 0 {
+				m.mu.Lock()
+				m.taskRestarts[projectID]++
+				count := m.taskRestarts[projectID]
+				m.mu.Unlock()
+
+				if count >= maxTaskRestarts {
+					log.Printf("[chain] Restart limit reached: task #%04d restarted %d times without completing — switching to chat mode", prevTaskNumber, count)
+					m.mu.Lock()
+					delete(m.taskRestarts, projectID)
+					m.mu.Unlock()
+
+					chatOpts := StartOptions{
+						ProjectID:    projectID,
+						ProjectName:  projectName,
+						ProjectPath:  projectPath,
+						ProjectColor: projectColor,
+						Mode:         ModeChat,
+						Rows:         rows,
+						Cols:         cols,
+					}
+					if _, err := m.StartAgent(chatOpts); err != nil {
+						log.Printf("[chain] Failed to start chat mode after restart limit: %v", err)
+					}
+					return
+				}
+				log.Printf("[chain] Task #%04d restart %d/%d", prevTaskNumber, count, maxTaskRestarts)
+			} else {
+				// Different task — reset counter (successful progression)
+				m.mu.Lock()
+				m.taskRestarts[projectID] = 0
+				m.mu.Unlock()
+			}
+
 			log.Printf("%s: starting next — mode=%s phase=%s task=#%04d", agentMode, nextOpts.Mode, nextOpts.WildfirePhase, nextOpts.TaskNumber)
 			if _, err := m.StartAgent(*nextOpts); err != nil {
 				log.Printf("%s: failed to start next: %v", agentMode, err)
@@ -400,6 +444,7 @@ func (m *Manager) monitorProcess(projectID string, proc *Process) {
 	// Non-chaining mode: just clean up
 	proc.Cleanup()
 	delete(m.agents, projectID)
+	delete(m.taskRestarts, projectID)
 	m.persistStateLocked()
 	m.mu.Unlock()
 }
@@ -598,6 +643,24 @@ func (m *Manager) writeSessionLog(ag *RunningAgent, proc *Process) {
 		return
 	}
 	log.Printf("Session log written: %s", entry.LogID)
+
+	// Try to find and copy the Claude Code JSONL transcript
+	workDir := ag.WorktreePath
+	if workDir == "" {
+		workDir = ag.ProjectPath
+	}
+	if ag.SessionName != "" && workDir != "" {
+		transcriptPath, findErr := config.FindClaudeTranscript(workDir, ag.SessionName)
+		if findErr != nil {
+			log.Printf("No transcript found for session %q: %v", ag.SessionName, findErr)
+		} else {
+			if copyErr := config.CopyTranscript(ag.ProjectID, entry.LogID, transcriptPath); copyErr != nil {
+				log.Printf("Failed to copy transcript for session %q: %v", ag.SessionName, copyErr)
+			} else {
+				log.Printf("Transcript copied: %s.jsonl", entry.LogID)
+			}
+		}
+	}
 }
 
 // persistStateLocked writes the current agent state to ~/.watchfire/agents.yaml.

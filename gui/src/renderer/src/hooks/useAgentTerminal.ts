@@ -84,8 +84,6 @@ export function useAgentTerminal({ projectId, containerRef, active = false }: Us
       return
     }
 
-    const isReconnect = reconnectKey > 0
-
     // Send resize immediately so daemon knows our dimensions
     const fit = fitRef.current
     if (fit) {
@@ -96,10 +94,10 @@ export function useAgentTerminal({ projectId, containerRef, active = false }: Us
       }
     }
 
-    // Only clear on initial subscribe, not reconnects
-    if (!isReconnect) {
-      term.clear()
-    }
+    // Always clear terminal before subscribing. The daemon sends the full raw buffer
+    // as catch-up on every new subscription, so clearing is safe — no data is lost.
+    // Without this, reconnects (wildfire phase transitions) accumulate duplicate headers.
+    term.clear()
 
     const abort = subscribeRawOutput(
       projectId,

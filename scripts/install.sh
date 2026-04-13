@@ -5,6 +5,7 @@ set -euo pipefail
 
 REPO="watchfire-io/watchfire"
 INSTALL_DIR="${WATCHFIRE_INSTALL_DIR:-}"
+TMP_DIR=""
 
 # Colors
 RED='\033[0;31m'
@@ -100,25 +101,24 @@ main() {
     local daemon_name="watchfired-${os}-${arch}"
 
     # Download binaries
-    local tmp_dir
-    tmp_dir=$(mktemp -d)
-    trap 'rm -rf "$tmp_dir"' EXIT
+    TMP_DIR=$(mktemp -d)
+    trap 'rm -rf "$TMP_DIR"' EXIT
 
     info "Downloading watchfire v${version}..."
-    download "${base_url}/${cli_name}" "${tmp_dir}/watchfire"
-    download "${base_url}/${daemon_name}" "${tmp_dir}/watchfired"
+    download "${base_url}/${cli_name}" "${TMP_DIR}/watchfire"
+    download "${base_url}/${daemon_name}" "${TMP_DIR}/watchfired"
 
-    chmod +x "${tmp_dir}/watchfire" "${tmp_dir}/watchfired"
+    chmod +x "${TMP_DIR}/watchfire" "${TMP_DIR}/watchfired"
 
     # Install
     info "Installing to ${install_dir}..."
     if [ -w "$install_dir" ]; then
-        mv "${tmp_dir}/watchfire" "${install_dir}/watchfire"
-        mv "${tmp_dir}/watchfired" "${install_dir}/watchfired"
+        mv "${TMP_DIR}/watchfire" "${install_dir}/watchfire"
+        mv "${TMP_DIR}/watchfired" "${install_dir}/watchfired"
     else
         warn "Elevated permissions required for ${install_dir}"
-        sudo mv "${tmp_dir}/watchfire" "${install_dir}/watchfire"
-        sudo mv "${tmp_dir}/watchfired" "${install_dir}/watchfired"
+        sudo mv "${TMP_DIR}/watchfire" "${install_dir}/watchfire"
+        sudo mv "${TMP_DIR}/watchfired" "${install_dir}/watchfired"
     fi
 
     # macOS: remove quarantine and ad-hoc sign

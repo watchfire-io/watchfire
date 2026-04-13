@@ -4,9 +4,22 @@
 
 ### Added
 
+- **JSONL transcript logs** — session logs now capture Claude Code's structured JSONL transcripts (`~/.claude/projects/`) instead of raw PTY scrollback, producing clean readable User/Assistant conversation logs
+- **Transcript auto-discovery** — daemon locates Claude Code's transcript files by matching session names and copies them to `~/.watchfire/logs/` alongside the existing `.log` file
+
 ### Changed
 
+- **Log viewer** — TUI and GUI now display formatted conversation transcripts (User/Assistant messages, tool call summaries) instead of garbled terminal output; falls back to PTY scrollback when no transcript is available
+
 ### Fixed
+
+- **Agent restart loop** — wildfire/start-all now stops after 3 consecutive restarts of the same task and transitions to chat mode, preventing infinite loops on rate limits, crashes, or auth expiry
+- **Sandbox blocks ~/Desktop projects** (#17) — macOS Seatbelt sandbox no longer denies read access to protected directories (Desktop, Documents, Downloads, etc.) when the project is located inside one of them
+- **TUI task list scroll with 100+ tasks** (#18) — fixed height accounting for section header blank lines and scroll indicators that caused the last few tasks to be invisible
+- **Install script "tmp_dir: unbound variable"** (#20) — moved temp directory variable to global scope so the cleanup trap can access it after function returns
+- **Desktop always thinks CLI tools are outdated** (#21) — version check now strips ANSI escape codes before parsing and logs the actual error when the CLI binary can't be executed
+- **Can't edit already created tasks in GUI** (#23) — task editor no longer resets form contents when background polling refreshes the task list
+- **Duplicate terminal headers in GUI** — Chat panel no longer accumulates repeated Claude Code banners when switching projects or during wildfire phase transitions; terminal is properly cleared before each new subscription, and raw output subscriptions use their own abort map instead of colliding with screen subscriptions
 
 ## [0.9.0] Ember
 
@@ -159,7 +172,7 @@ The always-on backend that manages everything:
 - **Git worktree isolation** — Each task runs in its own worktree (`watchfire/<task_number>`), auto-merged back on completion with conflict detection
 - **macOS sandbox** — Agents run inside `sandbox-exec` with restricted filesystem/network access
 - **File watching** — Real-time detection of task completion and phase signals via fsnotify, with polling fallback for reliability
-- **Session logs** — Every agent session recorded to `~/.watchfire/logs/` with YAML metadata
+- **Session logs** — Agent sessions logged to `~/.watchfire/logs/` with JSONL transcripts from Claude Code (clean conversation format) and PTY scrollback fallback
 - **System tray** — Menu bar icon showing daemon status, active agents with colored project dots, and quick stop/quit actions
 - **Secrets folder** — `.watchfire/secrets/instructions.md` for providing agents with external service credentials and setup instructions, injected into the system prompt
 - **Issue detection** — Monitors agent output for auth errors (401, expired tokens) and rate limits (429), with real-time notifications to clients

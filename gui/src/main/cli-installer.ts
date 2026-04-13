@@ -66,7 +66,9 @@ export function needsInstall(): InstallStatus {
 
   // Check version of installed binary
   try {
-    const output = execSync(`"${cliPath}" version`, { encoding: 'utf-8', timeout: 5000 })
+    const rawOutput = execSync(`"${cliPath}" version`, { encoding: 'utf-8', timeout: 5000 })
+    // Strip ANSI escape codes (lipgloss may emit them even in non-TTY on some platforms)
+    const output = rawOutput.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
     const match = output.match(/Watchfire\s+([\d.]+)/)
     if (match) {
       const installedVersion = match[1]
@@ -75,8 +77,10 @@ export function needsInstall(): InstallStatus {
         return { needed: true, reason: 'outdated' }
       }
     }
-  } catch {
-    // If we can't run the binary, treat as needing install
+  } catch (err) {
+    // If we can't run the binary, treat as needing install.
+    // Log the actual error for debugging (e.g., wrong platform binary, missing libs).
+    console.error('[cli-installer] Failed to check CLI version:', err instanceof Error ? err.message : err)
     return { needed: true, reason: 'outdated' }
   }
 
