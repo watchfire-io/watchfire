@@ -5,14 +5,13 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/watchfire-io/watchfire/internal/config"
+	"github.com/watchfire-io/watchfire/internal/daemon/agent/backend"
 	"github.com/watchfire-io/watchfire/internal/daemon/agent/prompts"
 	"github.com/watchfire-io/watchfire/internal/daemon/task"
 	"github.com/watchfire-io/watchfire/internal/models"
@@ -244,14 +243,32 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 		}
 	}
 
-	// Build args
+	// Build command via the Claude backend. Per-project agent resolution
+	// lands in a later task; for now we dispatch through the registry with
+	// the hardcoded "claude-code" key to preserve behaviour.
 	sessionName := buildSessionName(opts.ProjectName, opts.Mode, opts.WildfirePhase, opts.TaskNumber, opts.TaskTitle)
-	args := []string{
-		"--name", sessionName,
-		"--append-system-prompt", composedPrompt,
-		"--dangerously-skip-permissions",
+
+	be, ok := backend.Get(backend.ClaudeBackendName)
+	if !ok {
+		m.mu.Unlock()
+		return nil, fmt.Errorf("claude backend not registered")
 	}
-	args = append(args, taskArgs...)
+
+	var initialPrompt string
+	if len(taskArgs) > 0 {
+		initialPrompt = taskArgs[0]
+	}
+	built, err := be.BuildCommand(backend.CommandOpts{
+		WorkDir:       workDir,
+		SessionName:   sessionName,
+		SystemPrompt:  composedPrompt,
+		InitialPrompt: initialPrompt,
+	})
+	if err != nil {
+		m.mu.Unlock()
+		return nil, fmt.Errorf("failed to build agent command: %w", err)
+	}
+	args := built.Args
 
 	// Get home directory
 	homeDir, err := os.UserHomeDir()
@@ -650,7 +667,12 @@ func (m *Manager) writeSessionLog(ag *RunningAgent, proc *Process) {
 		workDir = ag.ProjectPath
 	}
 	if ag.SessionName != "" && workDir != "" {
-		transcriptPath, findErr := config.FindClaudeTranscript(workDir, ag.SessionName)
+		be, ok := backend.Get(backend.ClaudeBackendName)
+		if !ok {
+			log.Printf("claude backend not registered — skipping transcript lookup")
+			return
+		}
+		transcriptPath, findErr := be.LocateTranscript(workDir, proc.StartedAt(), ag.SessionName)
 		if findErr != nil {
 			log.Printf("No transcript found for session %q: %v", ag.SessionName, findErr)
 		} else {
@@ -689,45 +711,17 @@ func (m *Manager) persistStateLocked() {
 	}
 }
 
-// resolveAgentPath finds the claude binary.
-// Check order: settings.yaml → exec.LookPath → platform-specific fallbacks.
+// resolveAgentPath resolves the active agent binary. This is a thin
+// wrapper around the Claude backend for now; a follow-up task will replace
+// it with per-project agent resolution that picks the backend from
+// project.DefaultAgent.
 func resolveAgentPath() (string, error) {
-	// 1. Check settings.yaml for configured path
-	settings, err := config.LoadSettings()
-	if err == nil && settings != nil {
-		if agentCfg, ok := settings.Agents["claude-code"]; ok && agentCfg.Path != "" {
-			if _, err := os.Stat(agentCfg.Path); err == nil {
-				return agentCfg.Path, nil
-			}
-		}
+	be, ok := backend.Get(backend.ClaudeBackendName)
+	if !ok {
+		return "", fmt.Errorf("claude backend not registered")
 	}
-
-	// 2. Try exec.LookPath
-	if path, err := exec.LookPath("claude"); err == nil {
-		return path, nil
-	}
-
-	// 3. Platform-specific fallbacks
-	homeDir, _ := os.UserHomeDir()
-	fallbacks := []string{
-		homeDir + "/.claude/local/claude",
-		homeDir + "/.local/bin/claude",
-	}
-
-	if runtime.GOOS == "darwin" {
-		fallbacks = append(fallbacks,
-			"/opt/homebrew/bin/claude",
-			"/usr/local/bin/claude",
-		)
-	}
-
-	for _, p := range fallbacks {
-		if _, err := os.Stat(p); err == nil {
-			return p, nil
-		}
-	}
-
-	return "", fmt.Errorf("claude binary not found. Install Claude Code or set path in ~/.watchfire/settings.yaml")
+	settings, _ := config.LoadSettings()
+	return be.ResolveExecutable(settings)
 }
 
 // buildSessionName constructs a structured --name value for Claude Code sessions.
