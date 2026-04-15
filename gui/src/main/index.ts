@@ -1,6 +1,7 @@
-import { app, BrowserWindow, shell } from 'electron'
+import { app, BrowserWindow, protocol, shell, net } from 'electron'
 import { join } from 'path'
 import { existsSync } from 'fs'
+import { pathToFileURL } from 'url'
 import { homedir } from 'os'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { loadWindowState, trackWindowState } from './window-state'
@@ -80,6 +81,11 @@ function createWindow(): void {
 
   mainWindow.on('ready-to-show', () => {
     mainWindow?.show()
+    // Auto-open DevTools in dev so any residual renderer error is visible
+    // to anyone running `npm run dev` without requiring Cmd+Opt+I.
+    if (is.dev) {
+      mainWindow?.webContents.openDevTools({ mode: 'detach' })
+    }
   })
 
   mainWindow.webContents.setWindowOpenHandler((details) => {
@@ -87,16 +93,55 @@ function createWindow(): void {
     return { action: 'deny' }
   })
 
-  // Load renderer
+  // Load renderer. In production, serve via a custom `app://` scheme instead
+  // of `file://`. Vite emits `<script type="module" crossorigin>` for the
+  // entry bundle, and Chromium treats `crossorigin` modules loaded from a
+  // `file://` origin as cross-origin requests — they are silently blocked,
+  // producing the exact blank-window symptom seen on macOS. Loading from a
+  // standard `app://` scheme gives the renderer a real origin and restores
+  // module execution. Dev mode keeps using the Vite dev server.
   if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
   } else {
-    mainWindow.loadFile(join(__dirname, '../renderer/index.html'))
+    mainWindow.loadURL('app://renderer/index.html')
   }
 }
 
+const RENDERER_DIR = join(__dirname, '../renderer')
+
+function registerAppProtocol(): void {
+  protocol.handle('app', (request) => {
+    const url = new URL(request.url)
+    // Strip leading slash and normalize. `app://renderer/index.html` ->
+    // `index.html` inside RENDERER_DIR. Any sub-path (assets/foo.js)
+    // resolves under the same root.
+    const relative = decodeURIComponent(url.pathname).replace(/^\/+/, '')
+    const resolved = join(RENDERER_DIR, relative)
+    // Guard against path traversal escaping the renderer dir.
+    if (!resolved.startsWith(RENDERER_DIR)) {
+      return new Response('Forbidden', { status: 403 })
+    }
+    return net.fetch(pathToFileURL(resolved).toString())
+  })
+}
+
+// Privileged schemes must be declared before `app.whenReady()` resolves.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'app',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      corsEnabled: true
+    }
+  }
+])
+
 app.whenReady().then(async () => {
   electronApp.setAppUserModelId('io.watchfire.app')
+
+  registerAppProtocol()
 
   // Optimize for development
   app.on('browser-window-created', (_, window) => {

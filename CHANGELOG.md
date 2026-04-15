@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.0.1]
+
+### Fixed
+
+- **GUI: blank window on macOS** — production renderer is now served over a custom `app://` protocol instead of `file://`, restoring execution of the `crossorigin` ES-module entry bundle that Chromium was silently blocking. Added global `error` / `unhandledrejection` handlers in the renderer entry so any future module-init failure surfaces in the window instead of rendering blank, guarded module-top `localStorage` access in Zustand stores, and auto-opened DevTools in dev so residual issues are immediately visible
+
 ## [2.0.0] Spark
 
 ### Added
