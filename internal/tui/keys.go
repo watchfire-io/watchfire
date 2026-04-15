@@ -4,9 +4,10 @@ import "github.com/charmbracelet/bubbles/key"
 
 // GlobalKeys are always active.
 type GlobalKeys struct {
-	Quit key.Binding
-	Help key.Binding
-	Tab  key.Binding
+	Quit           key.Binding
+	Help           key.Binding
+	Tab            key.Binding
+	GlobalSettings key.Binding
 }
 
 var globalKeys = GlobalKeys{
@@ -21,6 +22,10 @@ var globalKeys = GlobalKeys{
 	Tab: key.NewBinding(
 		key.WithKeys("tab"),
 		key.WithHelp("Tab", "switch panel"),
+	),
+	GlobalSettings: key.NewBinding(
+		key.WithKeys("ctrl+g"),
+		key.WithHelp("Ctrl+g", "global settings"),
 	),
 }
 

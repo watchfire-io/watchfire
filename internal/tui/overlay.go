@@ -9,10 +9,11 @@ import (
 
 // Overlay constants.
 const (
-	overlayNone     = 0
-	overlayHelp     = 1
-	overlayAddTask  = 2
-	overlayEditTask = 3
+	overlayNone           = 0
+	overlayHelp           = 1
+	overlayAddTask        = 2
+	overlayEditTask       = 3
+	overlayGlobalSettings = 4
 )
 
 // renderOverlay renders an overlay centered on top of the base view.

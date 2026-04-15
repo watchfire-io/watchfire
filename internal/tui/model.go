@@ -53,12 +53,13 @@ type Model struct {
 	showSaved bool
 
 	// Child components
-	taskList       *TaskList
-	terminal       *Terminal
-	definitionView *DefinitionView
-	settingsForm   *SettingsForm
-	logViewer      *LogViewer
-	taskForm       *TaskForm
+	taskList           *TaskList
+	terminal           *Terminal
+	definitionView     *DefinitionView
+	settingsForm       *SettingsForm
+	logViewer          *LogViewer
+	taskForm           *TaskForm
+	globalSettingsForm *GlobalSettingsForm
 
 	// Program reference for goroutine Send()
 	program *programRef
@@ -91,16 +92,17 @@ type Model struct {
 func NewModel(projectID string, program *programRef) Model {
 	ctx, cancel := context.WithCancel(context.Background())
 	return Model{
-		projectID:      projectID,
-		splitRatio:     defaultSplitRatio,
-		taskList:       NewTaskList(),
-		terminal:       NewTerminal(),
-		definitionView: NewDefinitionView(),
-		settingsForm:   NewSettingsForm(),
-		logViewer:      NewLogViewer(),
-		program:        program,
-		streamCtx:      ctx,
-		streamCancel:   cancel,
+		projectID:          projectID,
+		splitRatio:         defaultSplitRatio,
+		taskList:           NewTaskList(),
+		terminal:           NewTerminal(),
+		definitionView:     NewDefinitionView(),
+		settingsForm:       NewSettingsForm(),
+		logViewer:          NewLogViewer(),
+		globalSettingsForm: NewGlobalSettingsForm(),
+		program:            program,
+		streamCtx:          ctx,
+		streamCancel:       cancel,
 	}
 }
 
@@ -280,6 +282,18 @@ func (m Model) View() string {
 		case overlayAddTask, overlayEditTask:
 			if m.taskForm != nil {
 				overlayContent = m.taskForm.View()
+			}
+		case overlayGlobalSettings:
+			if m.globalSettingsForm != nil {
+				width := m.width / 2
+				if width < 50 {
+					width = 50
+				}
+				if width > m.width-4 {
+					width = m.width - 4
+				}
+				m.globalSettingsForm.SetWidth(width)
+				overlayContent = overlayStyle.Width(width).Render(m.globalSettingsForm.View())
 			}
 		}
 		if overlayContent != "" {

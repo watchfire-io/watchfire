@@ -61,6 +61,14 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 	case key.Matches(msg, globalKeys.Tab):
 		m.focusedPanel = 1 - m.focusedPanel
 		return nil
+
+	case key.Matches(msg, globalKeys.GlobalSettings):
+		m.activeOverlay = overlayGlobalSettings
+		m.globalSettingsForm.Reset()
+		if m.conn != nil {
+			return getSettingsCmd(m.conn)
+		}
+		return nil
 	}
 
 	// Tab switching (only when left panel focused and not in terminal)
@@ -367,6 +375,61 @@ func (m *Model) handleOverlayKey(msg tea.KeyMsg) tea.Cmd {
 
 	case overlayAddTask, overlayEditTask:
 		return m.handleTaskFormKey(msg)
+
+	case overlayGlobalSettings:
+		return m.handleGlobalSettingsKey(msg)
+	}
+	return nil
+}
+
+func (m *Model) handleGlobalSettingsKey(msg tea.KeyMsg) tea.Cmd {
+	g := m.globalSettingsForm
+	if g == nil {
+		m.activeOverlay = overlayNone
+		return nil
+	}
+
+	if g.IsEditing() {
+		switch msg.Type {
+		case tea.KeyEnter:
+			changed, agent, path := g.FinishEdit()
+			if changed && m.conn != nil {
+				return updateGlobalSettingsCmd(m.conn, nil, map[string]string{agent: path})
+			}
+			return nil
+		case tea.KeyEscape:
+			g.CancelEdit()
+			return nil
+		default:
+			ti := g.InputModel()
+			newTI, _ := ti.Update(msg)
+			*ti = newTI
+			return nil
+		}
+	}
+
+	switch msg.String() {
+	case "esc":
+		m.activeOverlay = overlayNone
+		g.Reset()
+		return nil
+	case "up", "k":
+		g.MoveUp()
+		return nil
+	case "down", "j":
+		g.MoveDown()
+		return nil
+	case "enter":
+		if g.StartEdit() {
+			return nil
+		}
+		// Default selector: cycle.
+		changed, val := g.CycleDefault()
+		if changed && m.conn != nil {
+			v := val
+			return updateGlobalSettingsCmd(m.conn, &v, nil)
+		}
+		return nil
 	}
 	return nil
 }
