@@ -1,5 +1,21 @@
 import { create } from 'zustand'
 
+function safeGetItem(key: string): string | null {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function safeSetItem(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value)
+  } catch {
+    /* storage unavailable — ignore */
+  }
+}
+
 export interface TerminalSession {
   id: string
   label: string
@@ -44,8 +60,8 @@ function nextLabel(sessions: TerminalSession[]): string {
 export const useTerminalStore = create<TerminalState>((set, get) => ({
   sessions: [],
   activeSessionId: null,
-  panelOpen: localStorage.getItem('wf-terminal-panel-open') === 'true',
-  panelHeight: Number(localStorage.getItem('wf-terminal-panel-height')) || 250,
+  panelOpen: safeGetItem('wf-terminal-panel-open') === 'true',
+  panelHeight: Number(safeGetItem('wf-terminal-panel-height')) || 250,
   listenerRegistered: false,
 
   outputCallbacks: new Map(),
@@ -129,12 +145,12 @@ export const useTerminalStore = create<TerminalState>((set, get) => ({
 
   togglePanel: () => {
     const next = !get().panelOpen
-    localStorage.setItem('wf-terminal-panel-open', String(next))
+    safeSetItem('wf-terminal-panel-open', String(next))
     set({ panelOpen: next })
   },
 
   setPanelHeight: (height) => {
-    localStorage.setItem('wf-terminal-panel-height', String(height))
+    safeSetItem('wf-terminal-panel-height', String(height))
     set({ panelHeight: height })
   }
 }))

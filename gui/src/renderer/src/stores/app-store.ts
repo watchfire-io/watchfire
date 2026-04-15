@@ -1,5 +1,21 @@
 import { create } from 'zustand'
 
+function safeGetItem(key: string): string | null {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+
+function safeSetItem(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value)
+  } catch {
+    /* storage unavailable — ignore */
+  }
+}
+
 export type AppView = 'dashboard' | 'project' | 'add-project' | 'settings'
 
 interface AppState {
@@ -23,7 +39,7 @@ export const useAppStore = create<AppState>((set) => ({
   connected: false,
   daemonPort: null,
   theme: 'system',
-  sidebarCollapsed: localStorage.getItem('wf-sidebar-collapsed') === 'true',
+  sidebarCollapsed: safeGetItem('wf-sidebar-collapsed') === 'true',
 
   setView: (view) => set({ view }),
 
@@ -46,7 +62,7 @@ export const useAppStore = create<AppState>((set) => ({
   toggleSidebar: () =>
     set((s) => {
       const next = !s.sidebarCollapsed
-      localStorage.setItem('wf-sidebar-collapsed', String(next))
+      safeSetItem('wf-sidebar-collapsed', String(next))
       return { sidebarCollapsed: next }
     })
 }))
