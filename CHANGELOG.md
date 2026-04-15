@@ -17,8 +17,6 @@
 - **Backend-contributed sandbox paths** — writable paths, cache patterns, and stripped env vars are now contributed by each backend via `SandboxExtras()` instead of being hardcoded in the sandbox layer
 - **Codex system-prompt isolation** — Codex receives the composed Watchfire system prompt via a per-session `CODEX_HOME` directory containing a generated `AGENTS.md`, keeping the user's real `~/.codex` untouched
 
-### Fixed
-
 ### Migration
 
 - Existing projects without `default_agent` continue to use Claude Code — no action required
