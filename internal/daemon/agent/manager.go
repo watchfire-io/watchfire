@@ -60,6 +60,7 @@ type RunningAgent struct {
 	TaskTitle     string
 	SessionName   string // --name value passed to claude (used for transcript lookup)
 	WorktreePath  string
+	BackendName   string // resolved agent backend name (e.g. "claude-code", "codex")
 	Process       *Process
 	userStopped   bool // set by StopAgentByUser to prevent chaining in wildfire/start-all
 }
@@ -170,17 +171,26 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 		m.watchProjectFn(opts.ProjectID, opts.ProjectPath)
 	}
 
-	// Resolve agent binary path
-	agentPath, err := resolveAgentPath()
-	if err != nil {
-		m.mu.Unlock()
-		return nil, fmt.Errorf("failed to find claude: %w", err)
-	}
-
-	// Load project config for definition
+	// Load project config for definition and agent selection
 	project, err := config.LoadProject(opts.ProjectPath)
 	if err != nil {
 		log.Printf("Warning: could not load project config: %v", err)
+	}
+
+	// Resolve which agent backend to use for this project. Falls back to
+	// Claude only when neither the project nor global settings specify one.
+	settings, _ := config.LoadSettings()
+	be, err := resolveBackend(project, settings)
+	if err != nil {
+		m.mu.Unlock()
+		return nil, err
+	}
+
+	// Resolve agent binary path via the backend.
+	agentPath, err := be.ResolveExecutable(settings)
+	if err != nil {
+		m.mu.Unlock()
+		return nil, fmt.Errorf("failed to find %s binary: %w", be.Name(), err)
 	}
 
 	// Determine working directory, system prompt, and positional args
@@ -243,15 +253,15 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 		}
 	}
 
-	// Build command via the Claude backend. Per-project agent resolution
-	// lands in a later task; for now we dispatch through the registry with
-	// the hardcoded "claude-code" key to preserve behaviour.
+	// Build command via the resolved backend.
 	sessionName := buildSessionName(opts.ProjectName, opts.Mode, opts.WildfirePhase, opts.TaskNumber, opts.TaskTitle)
 
-	be, ok := backend.Get(backend.ClaudeBackendName)
-	if !ok {
+	// Deliver the composed system prompt via the backend. For Claude this
+	// is a no-op (the prompt rides the CLI flag); for Codex this materialises
+	// a per-session CODEX_HOME with AGENTS.md plus auth symlinks.
+	if err := installSystemPrompt(be, workDir, sessionName, composedPrompt); err != nil {
 		m.mu.Unlock()
-		return nil, fmt.Errorf("claude backend not registered")
+		return nil, fmt.Errorf("failed to install system prompt: %w", err)
 	}
 
 	var initialPrompt string
@@ -289,6 +299,9 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 	}
 	// Override working directory to worktree for task mode
 	cmd.Dir = workDir
+	// Merge backend-contributed env vars (e.g. CODEX_HOME) into the sandbox
+	// env without losing sandbox-driven changes (StripEnv, TERM, COLORTERM).
+	cmd.Env = mergeBackendEnv(cmd.Env, built.Env)
 
 	// Start in PTY
 	proc, err := NewProcess(ProcessOptions{
@@ -315,6 +328,7 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 		TaskTitle:     opts.TaskTitle,
 		SessionName:   sessionName,
 		WorktreePath:  worktreePath,
+		BackendName:   be.Name(),
 		Process:       proc,
 	}
 
@@ -645,11 +659,15 @@ func (m *Manager) writeSessionLog(ag *RunningAgent, proc *Process) {
 		status = "interrupted"
 	}
 
+	backendName := ag.BackendName
+	if backendName == "" {
+		backendName = backend.ClaudeBackendName
+	}
 	entry, err := config.WriteLog(
 		ag.ProjectID,
 		ag.TaskNumber,
 		0, // session number — could track this per-task but 0 is fine for now
-		"claude-code",
+		backendName,
 		string(ag.Mode),
 		status,
 		proc.StartedAt(),
@@ -667,9 +685,9 @@ func (m *Manager) writeSessionLog(ag *RunningAgent, proc *Process) {
 		workDir = ag.ProjectPath
 	}
 	if ag.SessionName != "" && workDir != "" {
-		be, ok := backend.Get(backend.ClaudeBackendName)
+		be, ok := backend.Get(backendName)
 		if !ok {
-			log.Printf("claude backend not registered — skipping transcript lookup")
+			log.Printf("backend %q not registered — skipping transcript lookup", backendName)
 			return
 		}
 		transcriptPath, findErr := be.LocateTranscript(workDir, proc.StartedAt(), ag.SessionName)
@@ -711,17 +729,87 @@ func (m *Manager) persistStateLocked() {
 	}
 }
 
-// resolveAgentPath resolves the active agent binary. This is a thin
-// wrapper around the Claude backend for now; a follow-up task will replace
-// it with per-project agent resolution that picks the backend from
-// project.DefaultAgent.
-func resolveAgentPath() (string, error) {
-	be, ok := backend.Get(backend.ClaudeBackendName)
-	if !ok {
-		return "", fmt.Errorf("claude backend not registered")
+// resolveBackend picks the agent backend for a project using the chain:
+//  1. project.DefaultAgent (from .watchfire/project.yaml) if non-empty.
+//  2. Global settings.Defaults.DefaultAgent (from ~/.watchfire/settings.yaml)
+//     if non-empty and not the "ask per project" sentinel (empty string).
+//  3. Fallback to the Claude backend for backwards compatibility.
+//
+// An unknown agent name returns ErrUnknownBackend rather than silently
+// falling back, so misconfiguration surfaces to the caller instead of
+// spawning a different agent than the user intended.
+func resolveBackend(project *models.Project, settings *models.Settings) (backend.Backend, error) {
+	name := ""
+	if project != nil {
+		name = strings.TrimSpace(project.DefaultAgent)
 	}
-	settings, _ := config.LoadSettings()
-	return be.ResolveExecutable(settings)
+	if name == "" && settings != nil {
+		name = strings.TrimSpace(settings.Defaults.DefaultAgent)
+	}
+	if name == "" {
+		name = backend.ClaudeBackendName
+	}
+
+	be, ok := backend.Get(name)
+	if !ok {
+		return nil, fmt.Errorf("%w: %q", backend.ErrUnknownBackend, name)
+	}
+	return be, nil
+}
+
+// installSystemPrompt delivers the composed system prompt to the backend.
+// Some backends (Codex) need the session name to key the per-session config
+// directory; if the backend exposes InstallSystemPromptForSession we prefer
+// that path over the workDir-derived fallback.
+func installSystemPrompt(be backend.Backend, workDir, sessionName, composedPrompt string) error {
+	if ext, ok := be.(interface {
+		InstallSystemPromptForSession(sessionName, composedPrompt string) error
+	}); ok {
+		return ext.InstallSystemPromptForSession(sessionName, composedPrompt)
+	}
+	return be.InstallSystemPrompt(workDir, composedPrompt)
+}
+
+// mergeBackendEnv folds backend-contributed env vars into the sandbox-computed
+// env. A backend's BuildCommand typically returns os.Environ() plus a few
+// additions (e.g. CODEX_HOME); we only adopt the additions so sandbox changes
+// to TERM/COLORTERM and StripEnv deletions are preserved.
+func mergeBackendEnv(sandboxEnv, backendEnv []string) []string {
+	if len(backendEnv) == 0 {
+		return sandboxEnv
+	}
+	parent := os.Environ()
+	parentSet := make(map[string]string, len(parent))
+	for _, e := range parent {
+		if i := strings.IndexByte(e, '='); i >= 0 {
+			parentSet[e[:i]] = e[i+1:]
+		}
+	}
+	sandboxKeys := make(map[string]int, len(sandboxEnv))
+	for i, e := range sandboxEnv {
+		if j := strings.IndexByte(e, '='); j >= 0 {
+			sandboxKeys[e[:j]] = i
+		}
+	}
+	out := sandboxEnv
+	for _, e := range backendEnv {
+		j := strings.IndexByte(e, '=')
+		if j < 0 {
+			continue
+		}
+		key, val := e[:j], e[j+1:]
+		if pv, inParent := parentSet[key]; inParent && pv == val {
+			// Unchanged from parent env — sandbox env already has it (or
+			// deliberately stripped it); don't re-add.
+			continue
+		}
+		if idx, exists := sandboxKeys[key]; exists {
+			out[idx] = e
+		} else {
+			out = append(out, e)
+		}
+	}
+	return out
 }
 
 // buildSessionName constructs a structured --name value for Claude Code sessions.
