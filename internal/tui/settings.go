@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/watchfire-io/watchfire/internal/daemon/agent/backend"
 	pb "github.com/watchfire-io/watchfire/proto"
 )
 
@@ -16,15 +17,24 @@ type FieldType int
 const (
 	fieldText FieldType = iota
 	fieldToggle
+	fieldCycle
 )
+
+// CycleOption is a single option in a cycling field.
+type CycleOption struct {
+	Value   string // Value persisted (e.g. backend Name())
+	Display string // Label shown to the user (e.g. backend DisplayName())
+}
 
 // SettingsField is a single field in the settings form.
 type SettingsField struct {
-	Label     string
-	Key       string // Maps to project field
-	Value     string
-	BoolValue bool
-	Type      FieldType
+	Label        string
+	Key          string // Maps to project field
+	Value        string
+	BoolValue    bool
+	Type         FieldType
+	CycleOptions []CycleOption
+	CycleIndex   int
 }
 
 // SettingsForm manages the settings tab.
@@ -48,13 +58,50 @@ func NewSettingsForm() *SettingsForm {
 
 // LoadFromProject populates fields from project data.
 func (s *SettingsForm) LoadFromProject(project *pb.Project) {
+	agentOptions := buildAgentCycleOptions()
+	agentIdx := agentCycleIndex(agentOptions, project.DefaultAgent)
+
 	s.fields = []SettingsField{
 		{Label: "Name", Key: "name", Value: project.Name, Type: fieldText},
 		{Label: "Color", Key: "color", Value: project.Color, Type: fieldText},
+		{Label: "Agent", Key: "default_agent", Type: fieldCycle, CycleOptions: agentOptions, CycleIndex: agentIdx},
 		{Label: "Auto-merge", Key: "auto_merge", BoolValue: project.AutoMerge, Type: fieldToggle},
 		{Label: "Auto-delete Branch", Key: "auto_delete_branch", BoolValue: project.AutoDeleteBranch, Type: fieldToggle},
 		{Label: "Auto-start Tasks", Key: "auto_start_tasks", BoolValue: project.AutoStartTasks, Type: fieldToggle},
 	}
+}
+
+// buildAgentCycleOptions returns the ordered cycle options for the Agent
+// field, derived from the backend registry. When no backend is registered
+// (tests, stripped builds) it falls back to a single "claude-code" option so
+// the UI remains stable.
+func buildAgentCycleOptions() []CycleOption {
+	backends := backend.List()
+	if len(backends) == 0 {
+		return []CycleOption{{Value: "claude-code", Display: "Claude Code"}}
+	}
+	opts := make([]CycleOption, 0, len(backends))
+	for _, b := range backends {
+		opts = append(opts, CycleOption{Value: b.Name(), Display: b.DisplayName()})
+	}
+	return opts
+}
+
+// agentCycleIndex finds the index of the given agent name in opts. If not
+// found (e.g. existing project with unset or unknown agent), it returns the
+// index of "claude-code" when present, else 0.
+func agentCycleIndex(opts []CycleOption, name string) int {
+	for i, o := range opts {
+		if o.Value == name {
+			return i
+		}
+	}
+	for i, o := range opts {
+		if o.Value == "claude-code" {
+			return i
+		}
+	}
+	return 0
 }
 
 // SetSize updates dimensions.
@@ -78,15 +125,23 @@ func (s *SettingsForm) MoveDown() {
 	}
 }
 
-// Toggle toggles a boolean field or starts editing a text field.
+// Toggle toggles a boolean field, cycles a cycle field, or returns no-op for
+// text fields.
 func (s *SettingsForm) Toggle() (changed bool, key string, value interface{}) {
 	if s.cursor < 0 || s.cursor >= len(s.fields) {
 		return false, "", nil
 	}
 	f := &s.fields[s.cursor]
-	if f.Type == fieldToggle {
+	switch f.Type {
+	case fieldToggle:
 		f.BoolValue = !f.BoolValue
 		return true, f.Key, f.BoolValue
+	case fieldCycle:
+		if len(f.CycleOptions) == 0 {
+			return false, "", nil
+		}
+		f.CycleIndex = (f.CycleIndex + 1) % len(f.CycleOptions)
+		return true, f.Key, f.CycleOptions[f.CycleIndex].Value
 	}
 	return false, "", nil
 }
@@ -181,6 +236,12 @@ func (s *SettingsForm) View() string {
 				val = settingsToggleOff.Render("[OFF]")
 			}
 			line = label + " " + val
+		} else if f.Type == fieldCycle {
+			display := ""
+			if len(f.CycleOptions) > 0 && f.CycleIndex >= 0 && f.CycleIndex < len(f.CycleOptions) {
+				display = f.CycleOptions[f.CycleIndex].Display
+			}
+			line = label + " " + settingsValueStyle.Render(display)
 		} else {
 			if s.editing && i == s.cursor {
 				line = label + " " + s.input.View()
