@@ -33,7 +33,7 @@ Location: `<project>/.watchfire/project.yaml`
 project_id: <uuid>
 name: <string>
 default_branch: main
-default_agent: claude-code
+default_agent: <agent-name>  # e.g. claude-code, codex
 sandbox: sandbox-exec
 auto_merge: true
 auto_delete_branch: true
