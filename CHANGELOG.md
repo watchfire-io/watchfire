@@ -1,5 +1,29 @@
 # Changelog
 
+## [2.0.0] Spark
+
+### Added
+
+- **Pluggable agent backend interface** — new `AgentBackend` interface in `internal/daemon/agent/backend/` lets any CLI coding agent be plugged into Watchfire (executable resolution, command construction, sandbox extras, system-prompt delivery, transcript discovery and formatting)
+- **OpenAI Codex backend** — Codex ships as a first-class backend alongside Claude Code, registered in the backend registry and selectable per project
+- **Agent picker in `watchfire init`** — init wizard prompts for the coding agent to use, seeding `project.default_agent` in `project.yaml`
+- **Agent selector in project settings (TUI)** — settings tab exposes a backend picker so the agent can be switched after init
+- **Global settings UI for agent paths** — new settings overlay for registering custom binary paths per backend and choosing the global default agent, including an "Ask per project" option that forces `watchfire init` to prompt every time
+
+### Changed
+
+- **Per-project agent resolution** — the daemon now resolves the agent per project: `project.default_agent` → global `settings.defaults.default_agent` → `claude-code`
+- **Backend-owned transcript discovery** — JSONL transcript location and formatting moved out of the agent manager and into each backend's `LocateTranscript` / `FormatTranscript` implementation
+- **Backend-contributed sandbox paths** — writable paths, cache patterns, and stripped env vars are now contributed by each backend via `SandboxExtras()` instead of being hardcoded in the sandbox layer
+- **Codex system-prompt isolation** — Codex receives the composed Watchfire system prompt via a per-session `CODEX_HOME` directory containing a generated `AGENTS.md`, keeping the user's real `~/.codex` untouched
+
+### Fixed
+
+### Migration
+
+- Existing projects without `default_agent` continue to use Claude Code — no action required
+- Custom `codex` binary paths can be configured via the new global settings UI or by hand in `~/.watchfire/settings.yaml`
+
 ## [1.0.0] Ember
 
 ### Added

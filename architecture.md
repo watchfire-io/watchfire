@@ -88,12 +88,39 @@ The daemon is the backend brain of Watchfire. It manages multiple projects simul
 
 ### Coding Agent Abstraction
 
+Watchfire dispatches agent-specific behaviour through a `Backend` interface defined in `internal/daemon/agent/backend/backend.go`. Backends register themselves in a process-wide registry from `init()`; the daemon looks them up by name when spawning a session.
+
 | Aspect | Behavior |
 |--------|----------|
-| **Abstraction** | Generic "coding agent" interface |
-| **Initial agent** | Claude Code |
-| **Future agents** | Designed to support others (Cursor, Aider, etc.) |
-| **Agent config** | Agent-specific settings abstracted behind interface |
+| **Interface** | `Backend` in `internal/daemon/agent/backend/` |
+| **Registry** | Process-wide `Register`/`Get`/`List` keyed by `Name()` (e.g. `"claude-code"`, `"codex"`); duplicate registration panics at startup |
+| **Shipped backends** | `claude-code` (Claude Code), `codex` (OpenAI Codex) |
+| **Agent resolution** | Per-project (`project.default_agent`) → global default (`settings.defaults.default_agent`) → `claude-code` fallback. Global default may be the special `"ask"` value, which forces `watchfire init` to prompt every time. No per-task override. |
+| **Prompt pipeline** | `internal/daemon/agent/prompts/` composes one canonical, agent-agnostic prompt. `InstallSystemPrompt(workDir, composedPrompt)` delivers it — Claude Code uses the `--append-system-prompt` flag (no-op install), Codex writes `AGENTS.md` into a per-session `CODEX_HOME` directory |
+| **Transcript ownership** | Each backend owns `LocateTranscript(workDir, started, sessionHint)` and `FormatTranscript(jsonlPath)` — the daemon copies and renders whatever the backend returns |
+| **Sandbox contributions** | `SandboxExtras()` returns writable subpaths/literals, cache patterns, and env vars to strip; the sandbox layer merges these with the base policy |
+
+The `Backend` interface methods:
+
+| Method | Purpose |
+|--------|---------|
+| `Name()` | Stable identifier persisted in `project.yaml`/`settings.yaml` |
+| `DisplayName()` | Human-readable label for UIs |
+| `ResolveExecutable(s *models.Settings)` | Absolute path to the agent binary (user-configured path → PATH → well-known install locations) |
+| `BuildCommand(opts)` | Assemble the PTY invocation (path, args, env, whether initial prompt is pasted post-start or embedded in args) |
+| `SandboxExtras()` | Paths/env the sandbox profile must allow/strip for this backend |
+| `InstallSystemPrompt(workDir, composedPrompt)` | Deliver the composed prompt (CLI flag no-op, or file write such as `AGENTS.md`). Called after the worktree exists but before `BuildCommand` |
+| `LocateTranscript(workDir, started, sessionHint)` | Find the JSONL transcript the backend produced for this session |
+| `FormatTranscript(jsonlPath)` | Render the JSONL into the plain-text transcript shown in the log viewer |
+
+**`CODEX_HOME` per-session isolation**: Codex's transcript and auth layout sits under `$CODEX_HOME` (default `~/.codex`). To deliver the Watchfire system prompt without mutating the user's real home, `InstallSystemPrompt` creates a per-session directory, writes `AGENTS.md` into it, and `BuildCommand` exports `CODEX_HOME=<that dir>` in the child env. Future agents that discover config via a `HOME`-like env var can use the same trick.
+
+#### Adding a new backend
+
+1. Implement `Backend` in `internal/daemon/agent/backend/<name>.go` (name, display name, executable resolution, command builder, system-prompt installer, transcript locate/format).
+2. Register it in that file's `init()` via `backend.Register(&<Name>Backend{})`.
+3. Contribute sandbox extras from `SandboxExtras()` — writable paths (config dir, auth dir), cache patterns, env vars to strip (e.g. nested-session detection variables).
+4. Implement transcript discovery (match the backend's on-disk session layout) and a formatter that maps the backend's JSONL schema onto User/Assistant/tool entries.
 
 ### Agent Sandbox & Permissions
 
@@ -107,7 +134,7 @@ The daemon is the backend brain of Watchfire. It manages multiple projects simul
 | **Agent permissions** | Agent runs in "yolo mode" — full permissions within sandbox |
 | **Claude Code flag** | `--dangerously-skip-permissions` |
 | **Security model** | Agent has free reign inside sandbox; sandbox limits blast radius |
-| **Write-allowed paths** | Project dir, `~/.claude`, temp dirs, package manager caches (`~/.npm`, `~/.yarn`, `~/.pnpm-store`, `~/.cache`), dev tool caches (`~/.cargo`, `~/go`, `~/.rustup`). macOS also: `~/Library/Caches/*`, `~/Library/Application Support` |
+| **Write-allowed paths** | Base policy: project dir, temp dirs, package manager caches (`~/.npm`, `~/.yarn`, `~/.pnpm-store`, `~/.cache`), dev tool caches (`~/.cargo`, `~/go`, `~/.rustup`). macOS also: `~/Library/Caches/*`, `~/Library/Application Support`. Backend-contributed extras (e.g. `~/.claude` for Claude Code, per-session `CODEX_HOME` for Codex) are merged in via `Backend.SandboxExtras()` — they are **not** hardcoded in the sandbox layer |
 | **Denied paths (read+write)** | `~/.ssh`, `~/.aws`, `~/.gnupg`, `~/.netrc`, `~/.npmrc`. macOS also: `~/Desktop`, `~/Documents`, `~/Downloads`, `~/Music`, `~/Movies`, `~/Pictures`. `.env` files, `.git/hooks` (Seatbelt only — regex patterns) |
 | **Settings** | Global: `settings.yaml` → `defaults.default_sandbox`. Per-project: `project.yaml` → `sandbox`. CLI: `--sandbox <backend>` / `--no-sandbox` |
 
