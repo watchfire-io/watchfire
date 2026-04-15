@@ -406,6 +406,59 @@ func reconnectTick() tea.Cmd {
 	})
 }
 
+func getSettingsCmd(conn *grpc.ClientConn) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewSettingsServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		settings, err := client.GetSettings(ctx, &emptypb.Empty{})
+		if err != nil {
+			return ErrorMsg{Err: fmt.Errorf("failed to load settings: %w", err)}
+		}
+		return SettingsLoadedMsg{Settings: settings}
+	}
+}
+
+// updateGlobalSettingsCmd sends an UpdateSettings RPC. defaultAgent is
+// a pointer so callers can omit it; when non-nil (including empty) the
+// defaults block is sent. agents carries a merge of agent path edits;
+// nil means no change. A nil pointer / nil map sends no change at all.
+func updateGlobalSettingsCmd(conn *grpc.ClientConn, defaultAgent *string, agents map[string]string) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewSettingsServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		req := &pb.UpdateSettingsRequest{}
+		if defaultAgent != nil {
+			// Load current defaults so we don't zero out the other fields.
+			cur, err := client.GetSettings(ctx, &emptypb.Empty{})
+			if err != nil {
+				return ErrorMsg{Err: fmt.Errorf("failed to load settings: %w", err)}
+			}
+			d := cur.Defaults
+			if d == nil {
+				d = &pb.DefaultsConfig{}
+			}
+			d.DefaultAgent = *defaultAgent
+			req.Defaults = d
+		}
+		if agents != nil {
+			req.Agents = make(map[string]*pb.AgentConfig, len(agents))
+			for name, path := range agents {
+				req.Agents[name] = &pb.AgentConfig{Path: path}
+			}
+		}
+
+		settings, err := client.UpdateSettings(ctx, req)
+		if err != nil {
+			return ErrorMsg{Err: fmt.Errorf("failed to save settings: %w", err)}
+		}
+		return SettingsSavedMsg{Settings: settings}
+	}
+}
+
 func fetchGitInfoCmd(conn *grpc.ClientConn, projectID string) tea.Cmd {
 	return func() tea.Msg {
 		client := pb.NewProjectServiceClient(conn)

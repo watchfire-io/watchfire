@@ -22,6 +22,7 @@ var helpSections = []helpSection{
 		keys: []helpKey{
 			{"Ctrl+q", "Quit"},
 			{"Ctrl+h", "Toggle help"},
+			{"Ctrl+g", "Global settings"},
 			{"Tab", "Switch panel focus"},
 			{"1/2/3", "Switch left panel tab"},
 			{"Shift+drag", "Select text (copy)"},

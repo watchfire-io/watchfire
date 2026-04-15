@@ -109,3 +109,13 @@ type UpdateAvailableMsg struct {
 type GitInfoMsg struct {
 	Info *pb.GitInfo
 }
+
+// SettingsLoadedMsg carries global settings from GetSettings RPC.
+type SettingsLoadedMsg struct {
+	Settings *pb.Settings
+}
+
+// SettingsSavedMsg signals a successful settings update.
+type SettingsSavedMsg struct {
+	Settings *pb.Settings
+}

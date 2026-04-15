@@ -183,6 +183,17 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 		m.logViewer.SetLogContent(msg.Entry, msg.Content)
 		return true, nil
 
+	// ── Global settings ────────────────────────────────────────────
+	case SettingsLoadedMsg:
+		m.globalSettingsForm.Load(msg.Settings)
+		return true, nil
+
+	case SettingsSavedMsg:
+		m.globalSettingsForm.Load(msg.Settings)
+		m.showSaved = true
+		cmds = append(cmds, clearSavedAfter(clearSavedTimeout))
+		return true, tea.Batch(cmds...)
+
 	// ── Editor finished ────────────────────────────────────────────
 	case EditorFinishedMsg:
 		if msg.Err != nil {

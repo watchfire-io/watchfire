@@ -9,6 +9,7 @@ import (
 
 	"github.com/watchfire-io/watchfire/internal/analytics"
 	"github.com/watchfire-io/watchfire/internal/config"
+	"github.com/watchfire-io/watchfire/internal/daemon/agent/backend"
 	"github.com/watchfire-io/watchfire/internal/models"
 	pb "github.com/watchfire-io/watchfire/proto"
 )
@@ -42,9 +43,14 @@ func (s *settingsService) UpdateSettings(_ context.Context, req *pb.UpdateSettin
 		if req.Defaults.DefaultSandbox != "" {
 			settings.Defaults.DefaultSandbox = req.Defaults.DefaultSandbox
 		}
+		// Empty string means "Ask per project" — always write through so
+		// the user can clear a previously-set global default.
 		if req.Defaults.DefaultAgent != "" {
-			settings.Defaults.DefaultAgent = req.Defaults.DefaultAgent
+			if _, ok := backend.Get(req.Defaults.DefaultAgent); !ok {
+				return nil, fmt.Errorf("unknown agent %q", req.Defaults.DefaultAgent)
+			}
 		}
+		settings.Defaults.DefaultAgent = req.Defaults.DefaultAgent
 	}
 
 	if req.Updates != nil {
@@ -61,7 +67,13 @@ func (s *settingsService) UpdateSettings(_ context.Context, req *pb.UpdateSettin
 		}
 	}
 
-	// Merge agent configs
+	// Merge agent configs. Reject unknown agents so typos in the UI or
+	// stale clients don't silently pollute settings.yaml.
+	for name := range req.Agents {
+		if _, ok := backend.Get(name); !ok {
+			return nil, fmt.Errorf("unknown agent %q", name)
+		}
+	}
 	for name, agentCfg := range req.Agents {
 		if settings.Agents == nil {
 			settings.Agents = make(map[string]*models.AgentConfig)
