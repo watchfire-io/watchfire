@@ -28,6 +28,7 @@ type CreateOptions struct {
 	Path             string
 	Name             string
 	Definition       string
+	DefaultAgent     string
 	AutoMerge        bool
 	AutoDeleteBranch bool
 	AutoStartTasks   bool
@@ -138,6 +139,9 @@ func (m *Manager) CreateProject(opts CreateOptions) (ProjectWithEntry, error) {
 	// Create project
 	p := models.NewProject(projectID, name, opts.Path)
 	p.Definition = opts.Definition
+	if opts.DefaultAgent != "" {
+		p.DefaultAgent = opts.DefaultAgent
+	}
 	p.AutoMerge = opts.AutoMerge
 	p.AutoDeleteBranch = opts.AutoDeleteBranch
 	p.AutoStartTasks = opts.AutoStartTasks

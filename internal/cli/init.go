@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/watchfire-io/watchfire/internal/config"
+	"github.com/watchfire-io/watchfire/internal/daemon/agent/backend"
 	"github.com/watchfire-io/watchfire/internal/daemon/project"
 )
 
@@ -55,6 +56,12 @@ func runInit(cmd *cobra.Command, args []string) error {
 	definition, _ := reader.ReadString('\n')
 	definition = strings.TrimSpace(definition)
 
+	// Prompt for agent
+	defaultAgent, err := promptAgent(reader)
+	if err != nil {
+		return err
+	}
+
 	// Prompt for settings
 	fmt.Println("\nProject settings:")
 
@@ -68,6 +75,7 @@ func runInit(cmd *cobra.Command, args []string) error {
 		Path:             cwd,
 		Name:             name,
 		Definition:       definition,
+		DefaultAgent:     defaultAgent,
 		AutoMerge:        autoMerge,
 		AutoDeleteBranch: autoDeleteBranch,
 		AutoStartTasks:   autoStartTasks,
@@ -86,6 +94,84 @@ func runInit(cmd *cobra.Command, args []string) error {
 	fmt.Printf("  - Run %s to see all tasks\n", styleCommand.Render("watchfire task list"))
 
 	return nil
+}
+
+// promptAgent asks the user which agent should run tasks for this project.
+// The default selection follows this rule:
+//   - If the global Defaults.DefaultAgent is a registered backend, pre-select it.
+//   - If it is empty ("Ask per project"), force an explicit choice.
+//   - Otherwise fall back to claude-code (or the first registered backend).
+func promptAgent(reader *bufio.Reader) (string, error) {
+	backends := backend.List()
+	if len(backends) == 0 {
+		// No registered backends — fall back silently.
+		return "claude-code", nil
+	}
+
+	// Resolve the default index.
+	defaultIdx := -1
+	settings, _ := config.LoadSettings()
+	globalDefault := ""
+	if settings != nil {
+		globalDefault = settings.Defaults.DefaultAgent
+	}
+	if globalDefault != "" {
+		for i, b := range backends {
+			if b.Name() == globalDefault {
+				defaultIdx = i
+				break
+			}
+		}
+	}
+	if defaultIdx == -1 && globalDefault != "" {
+		// Global default set but not registered: fall back.
+		for i, b := range backends {
+			if b.Name() == "claude-code" {
+				defaultIdx = i
+				break
+			}
+		}
+	}
+	if defaultIdx == -1 && globalDefault == "" {
+		// "Ask per project" — no default, force explicit choice.
+	} else if defaultIdx == -1 {
+		defaultIdx = 0
+	}
+
+	fmt.Println("\nWhich agent will run tasks for this project?")
+	for i, b := range backends {
+		marker := " "
+		if i == defaultIdx {
+			marker = "*"
+		}
+		fmt.Printf("  %s %d) %s\n", marker, i+1, b.DisplayName())
+	}
+
+	for {
+		if defaultIdx >= 0 {
+			fmt.Printf("Select agent [%d]: ", defaultIdx+1)
+		} else {
+			fmt.Print("Select agent: ")
+		}
+		response, _ := reader.ReadString('\n')
+		response = strings.TrimSpace(response)
+
+		if response == "" {
+			if defaultIdx >= 0 {
+				return backends[defaultIdx].Name(), nil
+			}
+			fmt.Println("  Please choose an agent.")
+			continue
+		}
+
+		// Accept either the index or the backend name.
+		for i, b := range backends {
+			if response == b.Name() || response == fmt.Sprintf("%d", i+1) {
+				return b.Name(), nil
+			}
+		}
+		fmt.Println("  Invalid selection. Try again.")
+	}
 }
 
 func promptYesNo(reader *bufio.Reader, prompt string, defaultVal bool) bool {
