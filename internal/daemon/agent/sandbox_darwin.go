@@ -16,11 +16,14 @@ import (
 var protectedUserDirs = []string{"Desktop", "Documents", "Downloads", "Music", "Movies", "Pictures"}
 
 // GenerateProfile generates a macOS sandbox-exec profile for the given policy.
-// If Trace is true, a (trace ...) directive is prepended to log denied operations.
-func GenerateProfile(homeDir, projectDir string, trace bool) string {
+// Agent-specific writable paths are read from policy.Extras.
+func GenerateProfile(policy SandboxPolicy) string {
 	var sb strings.Builder
 
-	if trace {
+	homeDir := policy.HomeDir
+	projectDir := policy.ProjectDir
+
+	if policy.Trace {
 		sb.WriteString("(trace \"/tmp/watchfire-sandbox-trace.sb\")\n")
 	}
 
@@ -43,20 +46,25 @@ func GenerateProfile(homeDir, projectDir string, trace bool) string {
 	for _, dir := range protectedUserDirs {
 		protectedPath := filepath.Join(homeDir, dir)
 		if strings.HasPrefix(projectDir, protectedPath+"/") || projectDir == protectedPath {
-			// Project is inside this protected dir — skip deny rule
 			fmt.Fprintf(&sb, "; (deny skipped for %s — project is inside it)\n", dir)
 			continue
 		}
 		fmt.Fprintf(&sb, "(deny file-read* (subpath %q))\n", protectedPath)
 	}
-	sb.WriteString("; NOTE: Keychains allowed - required for Claude Code auth\n\n")
+	sb.WriteString("; NOTE: Keychains allowed - required for agent auth\n\n")
 
-	// WRITE ACCESS - Project + Claude config + caches + temp
-	sb.WriteString("; WRITE ACCESS - Project + Claude config + caches + temp\n")
+	// WRITE ACCESS - Project + agent extras + caches + temp
+	sb.WriteString("; WRITE ACCESS - Project + agent extras + caches + temp\n")
 	fmt.Fprintf(&sb, "(allow file-write* (subpath %q))\n", projectDir)
-	fmt.Fprintf(&sb, "(allow file-write* (subpath %q))\n", filepath.Join(homeDir, ".claude"))
-	fmt.Fprintf(&sb, "(allow file-write* (literal %q))\n", filepath.Join(homeDir, ".claude.json"))
-	fmt.Fprintf(&sb, "(allow file-write* (subpath %q))\n", filepath.Join(homeDir, "Library", "Caches", "claude-cli-nodejs"))
+	for _, p := range policy.Extras.WritableSubpaths {
+		fmt.Fprintf(&sb, "(allow file-write* (subpath %q))\n", p)
+	}
+	for _, p := range policy.Extras.WritableLiterals {
+		fmt.Fprintf(&sb, "(allow file-write* (literal %q))\n", p)
+	}
+	for _, p := range policy.Extras.CachePatterns {
+		fmt.Fprintf(&sb, "(allow file-write* (subpath %q))\n", p)
+	}
 	sb.WriteString("(allow file-write* (subpath \"/tmp\"))\n")
 	sb.WriteString("(allow file-write* (subpath \"/private/tmp\"))\n")
 	sb.WriteString("(allow file-write* (subpath \"/var/folders\"))\n")
@@ -112,7 +120,6 @@ func platformDefaults(homeDir string) PlatformDefaults {
 			"/private/tmp",
 			"/var/folders",
 			"/private/var/folders",
-			filepath.Join(homeDir, "Library", "Caches", "claude-cli-nodejs"),
 			filepath.Join(homeDir, "Library", "Caches", "npm"),
 			filepath.Join(homeDir, "Library", "Caches", "yarn"),
 			filepath.Join(homeDir, "Library", "Application Support"),
@@ -130,9 +137,8 @@ func platformDefaults(homeDir string) PlatformDefaults {
 
 // spawnSandboxedPlatform creates a sandboxed exec.Cmd using macOS sandbox-exec.
 func spawnSandboxedPlatform(policy SandboxPolicy, command string, args ...string) (*exec.Cmd, string, error) {
-	profile := GenerateProfile(policy.HomeDir, policy.ProjectDir, policy.Trace)
+	profile := GenerateProfile(policy)
 
-	// Write profile to temp file
 	tmpFile, err := os.CreateTemp("", "watchfire-sandbox-*.sb")
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to create sandbox profile: %w", err)
@@ -144,15 +150,13 @@ func spawnSandboxedPlatform(policy SandboxPolicy, command string, args ...string
 	}
 	_ = tmpFile.Close()
 
-	// Build: sandbox-exec -f <tmpfile> <command> <args...>
 	sandboxArgs := []string{"-f", tmpFile.Name(), command}
 	sandboxArgs = append(sandboxArgs, args...)
 	cmd := exec.Command("sandbox-exec", sandboxArgs...)
 
 	cmd.Dir = policy.ProjectDir
-	env := buildBaseEnv(policy.ProjectDir)
+	env := buildBaseEnv(policy)
 
-	// Ensure Homebrew paths are in PATH
 	path := os.Getenv("PATH")
 	for _, p := range []string{"/opt/homebrew/bin", "/usr/local/bin"} {
 		if !strings.Contains(path, p) {
@@ -166,12 +170,12 @@ func spawnSandboxedPlatform(policy SandboxPolicy, command string, args ...string
 }
 
 // spawnSandboxedWithBackend routes to the requested backend on macOS.
-func spawnSandboxedWithBackend(backend string, policy SandboxPolicy, command string, args ...string) (*exec.Cmd, string, error) {
-	switch backend {
+func spawnSandboxedWithBackend(sandboxBackend string, policy SandboxPolicy, command string, args ...string) (*exec.Cmd, string, error) {
+	switch sandboxBackend {
 	case SandboxSeatbelt:
 		return spawnSandboxedPlatform(policy, command, args...)
 	default:
-		log.Printf("[sandbox] Backend %q not available on macOS, falling back to seatbelt", backend)
+		log.Printf("[sandbox] Backend %q not available on macOS, falling back to seatbelt", sandboxBackend)
 		return spawnSandboxedPlatform(policy, command, args...)
 	}
 }

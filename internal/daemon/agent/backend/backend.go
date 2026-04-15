@@ -81,11 +81,17 @@ type Command struct {
 // SandboxExtras is the set of paths a backend contributes to the
 // sandbox-exec policy. Subpaths are directory trees, literals are exact
 // file paths, and CachePatterns are glob-friendly cache locations the
-// backend writes to.
+// backend writes to. StripEnv lists environment variables that must be
+// removed from the child process environment (e.g. nested-session
+// detection variables specific to the backend's CLI).
+//
+// Path entries may use a leading "~/" to refer to the user's home
+// directory; the sandbox layer expands this at policy build time.
 type SandboxExtras struct {
 	WritableSubpaths []string
 	WritableLiterals []string
 	CachePatterns    []string
+	StripEnv         []string
 }
 
 var (

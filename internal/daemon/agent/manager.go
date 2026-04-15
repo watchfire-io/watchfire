@@ -282,7 +282,7 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 	if sandbox == "" {
 		sandbox = SandboxAuto
 	}
-	cmd, sandboxTmp, err := SpawnSandboxedWith(sandbox, homeDir, opts.ProjectPath, agentPath, args...)
+	cmd, sandboxTmp, err := SpawnSandboxedWith(sandbox, homeDir, opts.ProjectPath, be.SandboxExtras(), agentPath, args...)
 	if err != nil {
 		m.mu.Unlock()
 		return nil, fmt.Errorf("failed to create sandboxed command: %w", err)
