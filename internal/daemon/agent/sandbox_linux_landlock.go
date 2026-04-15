@@ -75,7 +75,7 @@ func spawnWithLandlock(policy SandboxPolicy, command string, args ...string) (*e
 
 	cmd := exec.Command(daemonPath, "--sandbox-exec", tmpFile.Name())
 	cmd.Dir = policy.ProjectDir
-	cmd.Env = buildBaseEnv(policy.ProjectDir)
+	cmd.Env = buildBaseEnv(policy)
 
 	return cmd, tmpFile.Name(), nil
 }

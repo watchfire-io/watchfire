@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 )
 
 // platformDefaults returns Linux-specific path additions.
@@ -75,7 +74,7 @@ func spawnWithBwrap(bwrapPath string, policy SandboxPolicy, command string, args
 	// Writable: project directory.
 	bwrapArgs = append(bwrapArgs, "--bind", policy.ProjectDir, policy.ProjectDir)
 
-	// Writable: Claude config, package manager caches, dev tool caches.
+	// Writable: agent extras, package manager caches, dev tool caches.
 	for _, writable := range policy.WritablePaths {
 		if writable == "/tmp" {
 			continue // Already handled above with --tmpfs
@@ -96,14 +95,14 @@ func spawnWithBwrap(bwrapPath string, policy SandboxPolicy, command string, args
 
 	cmd := exec.Command(bwrapPath, bwrapArgs...)
 	cmd.Dir = policy.ProjectDir
-	cmd.Env = buildBaseEnv(policy.ProjectDir)
+	cmd.Env = buildBaseEnv(policy)
 
 	return cmd, "", nil // No temp file cleanup needed for bwrap
 }
 
 // spawnSandboxedWithBackend routes to the requested backend on Linux.
-func spawnSandboxedWithBackend(backend string, policy SandboxPolicy, command string, args ...string) (*exec.Cmd, string, error) {
-	switch backend {
+func spawnSandboxedWithBackend(sandboxBackend string, policy SandboxPolicy, command string, args ...string) (*exec.Cmd, string, error) {
+	switch sandboxBackend {
 	case SandboxLandlock:
 		if landlockAvailable() {
 			return spawnWithLandlock(policy, command, args...)
@@ -122,13 +121,4 @@ func spawnSandboxedWithBackend(backend string, policy SandboxPolicy, command str
 	default:
 		return spawnSandboxedPlatform(policy, command, args...)
 	}
-}
-
-// claudeJSONPath returns the path to ~/.claude.json if it exists.
-func claudeJSONPath(homeDir string) string {
-	p := filepath.Join(homeDir, ".claude.json")
-	if _, err := os.Stat(p); err == nil {
-		return p
-	}
-	return ""
 }

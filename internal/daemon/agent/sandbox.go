@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/watchfire-io/watchfire/internal/daemon/agent/backend"
 )
 
 // SandboxBackend identifies the sandbox implementation to use.
@@ -34,6 +36,12 @@ type SandboxPolicy struct {
 	// Only supported by Seatbelt; other backends ignore these.
 	WriteProtectedPatterns []string
 
+	// Extras is the set of paths (and env-var strips) contributed by the
+	// active agent backend. The sandbox policy renders these generically
+	// alongside the base allow-list, keeping the policy itself free of
+	// agent-specific knowledge. Path entries are already home-expanded.
+	Extras backend.SandboxExtras
+
 	// Enable trace logging of denied operations (debug only).
 	Trace bool
 }
@@ -44,27 +52,36 @@ type PlatformDefaults struct {
 	ExtraDenied   []string
 }
 
-// DefaultPolicy builds the shared sandbox policy, then merges OS-specific extras.
-func DefaultPolicy(homeDir, projectDir string) SandboxPolicy {
+// DefaultPolicy builds the shared sandbox policy, then merges OS-specific
+// extras and the caller-supplied backend extras. Path entries in extras
+// that begin with "~/" are expanded against homeDir.
+func DefaultPolicy(homeDir, projectDir string, extras backend.SandboxExtras) SandboxPolicy {
+	expanded := expandExtras(extras, homeDir)
+
+	// Merge extras into WritablePaths so non-seatbelt backends (bwrap,
+	// Landlock) see the same writable surface as the macOS profile.
+	writable := []string{
+		"/tmp",
+		// Package manager caches
+		filepath.Join(homeDir, ".npm"),
+		filepath.Join(homeDir, ".yarn"),
+		filepath.Join(homeDir, ".pnpm-store"),
+		filepath.Join(homeDir, ".cache"),
+		filepath.Join(homeDir, ".local", "share", "pnpm"),
+		filepath.Join(homeDir, ".local"),
+		// Dev tool caches
+		filepath.Join(homeDir, ".cargo"),
+		filepath.Join(homeDir, "go"),
+		filepath.Join(homeDir, ".rustup"),
+	}
+	writable = append(writable, expanded.WritableSubpaths...)
+	writable = append(writable, expanded.WritableLiterals...)
+	writable = append(writable, expanded.CachePatterns...)
+
 	policy := SandboxPolicy{
-		HomeDir:    homeDir,
-		ProjectDir: projectDir,
-		WritablePaths: []string{
-			filepath.Join(homeDir, ".claude"),
-			filepath.Join(homeDir, ".claude.json"),
-			"/tmp",
-			// Package manager caches
-			filepath.Join(homeDir, ".npm"),
-			filepath.Join(homeDir, ".yarn"),
-			filepath.Join(homeDir, ".pnpm-store"),
-			filepath.Join(homeDir, ".cache"),
-			filepath.Join(homeDir, ".local", "share", "pnpm"),
-			filepath.Join(homeDir, ".local"),
-			// Dev tool caches
-			filepath.Join(homeDir, ".cargo"),
-			filepath.Join(homeDir, "go"),
-			filepath.Join(homeDir, ".rustup"),
-		},
+		HomeDir:       homeDir,
+		ProjectDir:    projectDir,
+		WritablePaths: writable,
 		DeniedPaths: []string{
 			filepath.Join(homeDir, ".ssh"),
 			filepath.Join(homeDir, ".aws"),
@@ -76,7 +93,8 @@ func DefaultPolicy(homeDir, projectDir string) SandboxPolicy {
 			`/\.env($|[^/]*)`,
 			filepath.Join(projectDir, ".git", "hooks"),
 		},
-		Trace: os.Getenv("WATCHFIRE_SANDBOX_TRACE") == "1",
+		Extras: expanded,
+		Trace:  os.Getenv("WATCHFIRE_SANDBOX_TRACE") == "1",
 	}
 
 	// Merge platform-specific extras
@@ -87,42 +105,73 @@ func DefaultPolicy(homeDir, projectDir string) SandboxPolicy {
 	return policy
 }
 
-// SpawnSandboxed creates an exec.Cmd that runs the given command inside a sandbox.
-// The sandbox backend is chosen automatically based on the platform.
+// expandExtras returns a copy of extras with any leading "~/" in paths
+// replaced by homeDir. A bare "~" is treated as homeDir.
+func expandExtras(extras backend.SandboxExtras, homeDir string) backend.SandboxExtras {
+	expand := func(paths []string) []string {
+		if len(paths) == 0 {
+			return nil
+		}
+		out := make([]string, 0, len(paths))
+		for _, p := range paths {
+			switch {
+			case p == "~":
+				p = homeDir
+			case strings.HasPrefix(p, "~/"):
+				p = filepath.Join(homeDir, p[2:])
+			}
+			out = append(out, p)
+		}
+		return out
+	}
+	return backend.SandboxExtras{
+		WritableSubpaths: expand(extras.WritableSubpaths),
+		WritableLiterals: expand(extras.WritableLiterals),
+		CachePatterns:    expand(extras.CachePatterns),
+		StripEnv:         append([]string(nil), extras.StripEnv...),
+	}
+}
+
+// SpawnSandboxed creates an exec.Cmd that runs the given command inside a
+// sandbox. The sandbox backend is chosen automatically based on the
+// platform. Extras are the agent backend's contributed paths/env strips.
 // Returns the command, an optional temp file path for cleanup, and an error.
-func SpawnSandboxed(homeDir, projectDir, command string, args ...string) (*exec.Cmd, string, error) {
-	policy := DefaultPolicy(homeDir, projectDir)
+func SpawnSandboxed(homeDir, projectDir string, extras backend.SandboxExtras, command string, args ...string) (*exec.Cmd, string, error) {
+	policy := DefaultPolicy(homeDir, projectDir, extras)
 	return spawnSandboxedPlatform(policy, command, args...)
 }
 
 // SpawnSandboxedWith creates an exec.Cmd using a specific sandbox backend.
 // Pass SandboxNone to run unsandboxed, SandboxAuto for platform default.
-func SpawnSandboxedWith(backend, homeDir, projectDir, command string, args ...string) (*exec.Cmd, string, error) {
-	if backend == SandboxNone {
+func SpawnSandboxedWith(sandboxBackend, homeDir, projectDir string, extras backend.SandboxExtras, command string, args ...string) (*exec.Cmd, string, error) {
+	if sandboxBackend == SandboxNone {
 		log.Println("[sandbox] Running agent without sandbox (--no-sandbox or sandbox=none)")
-		policy := DefaultPolicy(homeDir, projectDir)
+		policy := DefaultPolicy(homeDir, projectDir, extras)
 		return spawnUnsandboxed(policy, command, args...)
 	}
-	if backend == "" || backend == SandboxAuto {
-		return SpawnSandboxed(homeDir, projectDir, command, args...)
+	if sandboxBackend == "" || sandboxBackend == SandboxAuto {
+		return SpawnSandboxed(homeDir, projectDir, extras, command, args...)
 	}
-	// Specific backend requested
-	policy := DefaultPolicy(homeDir, projectDir)
-	return spawnSandboxedWithBackend(backend, policy, command, args...)
+	policy := DefaultPolicy(homeDir, projectDir, extras)
+	return spawnSandboxedWithBackend(sandboxBackend, policy, command, args...)
 }
 
 // spawnUnsandboxed creates a plain exec.Cmd with no sandboxing.
 func spawnUnsandboxed(policy SandboxPolicy, command string, args ...string) (*exec.Cmd, string, error) {
 	cmd := exec.Command(command, args...)
 	cmd.Dir = policy.ProjectDir
-	cmd.Env = buildBaseEnv(policy.ProjectDir)
+	cmd.Env = buildBaseEnv(policy)
 	return cmd, "", nil
 }
 
 // buildBaseEnv creates the common environment for sandboxed/unsandboxed agents.
-func buildBaseEnv(projectDir string) []string {
+// Any variables listed in policy.Extras.StripEnv are removed (e.g. a backend's
+// own nested-session detection variable).
+func buildBaseEnv(policy SandboxPolicy) []string {
 	env := os.Environ()
-	env = removeEnv(env, "CLAUDECODE") // prevent nested-session detection
+	for _, key := range policy.Extras.StripEnv {
+		env = removeEnv(env, key)
+	}
 	env = setEnv(env, "TERM", "xterm-256color")
 	env = setEnv(env, "COLORTERM", "truecolor")
 	return env
@@ -157,11 +206,11 @@ func ValidSandboxBackends() []string {
 }
 
 // ValidateSandboxBackend checks if the given backend name is valid.
-func ValidateSandboxBackend(backend string) error {
+func ValidateSandboxBackend(name string) error {
 	for _, b := range ValidSandboxBackends() {
-		if backend == b {
+		if name == b {
 			return nil
 		}
 	}
-	return fmt.Errorf("invalid sandbox backend %q; valid options: %s", backend, strings.Join(ValidSandboxBackends(), ", "))
+	return fmt.Errorf("invalid sandbox backend %q; valid options: %s", name, strings.Join(ValidSandboxBackends(), ", "))
 }

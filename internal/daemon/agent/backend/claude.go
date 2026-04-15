@@ -82,6 +82,7 @@ func (c *Claude) SandboxExtras() SandboxExtras {
 		WritableSubpaths: []string{"~/.claude"},
 		WritableLiterals: []string{"~/.claude.json"},
 		CachePatterns:    []string{"~/Library/Caches/claude-cli-nodejs"},
+		StripEnv:         []string{"CLAUDECODE"},
 	}
 }
 

@@ -19,7 +19,7 @@ func spawnSandboxedPlatform(policy SandboxPolicy, command string, args ...string
 }
 
 // spawnSandboxedWithBackend falls back to unsandboxed on unsupported platforms.
-func spawnSandboxedWithBackend(backend string, policy SandboxPolicy, command string, args ...string) (*exec.Cmd, string, error) {
-	log.Printf("[sandbox] Backend %q not available on this platform — running unsandboxed", backend)
+func spawnSandboxedWithBackend(sandboxBackend string, policy SandboxPolicy, command string, args ...string) (*exec.Cmd, string, error) {
+	log.Printf("[sandbox] Backend %q not available on this platform — running unsandboxed", sandboxBackend)
 	return spawnUnsandboxed(policy, command, args...)
 }
