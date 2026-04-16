@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
+import type { AgentInfo } from '../../generated/watchfire_pb'
 import { useSettingsStore } from '../../stores/settings-store'
 import { useAppStore } from '../../stores/app-store'
+import { getSettingsClient } from '../../lib/grpc-client'
 import { DefaultsSection } from './DefaultsSection'
 import { AppearanceSection } from './AppearanceSection'
-import { ClaudeCliSection } from './ClaudeCliSection'
+import { AgentPathsSection } from './AgentPathsSection'
 import { UpdatesSection } from './UpdatesSection'
 import { AboutSection } from './AboutSection'
 
@@ -13,6 +15,8 @@ export function GlobalSettings() {
   const loading = useSettingsStore((s) => s.loading)
   const connected = useAppStore((s) => s.connected)
   const [version, setVersion] = useState<string>('')
+  const [agents, setAgents] = useState<AgentInfo[]>([])
+  const [agentsLoaded, setAgentsLoaded] = useState(false)
 
   useEffect(() => {
     fetchSettings()
@@ -22,6 +26,26 @@ export function GlobalSettings() {
   // Re-fetch settings when reconnecting after a disconnect
   useEffect(() => {
     if (connected) fetchSettings()
+  }, [connected])
+
+  useEffect(() => {
+    if (!connected) return
+    let cancelled = false
+    setAgentsLoaded(false)
+    ;(async () => {
+      try {
+        const res = await getSettingsClient().listAgents({})
+        if (!cancelled) {
+          setAgents(res.agents)
+          setAgentsLoaded(true)
+        }
+      } catch {
+        if (!cancelled) setAgentsLoaded(true)
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
   }, [connected])
 
   if (loading && !settings) {
@@ -39,8 +63,8 @@ export function GlobalSettings() {
         {settings && (
           <>
             <AppearanceSection settings={settings} />
-            <DefaultsSection settings={settings} />
-            <ClaudeCliSection settings={settings} />
+            <DefaultsSection settings={settings} agents={agents} agentsLoaded={agentsLoaded} />
+            <AgentPathsSection settings={settings} agents={agents} agentsLoaded={agentsLoaded} />
             <UpdatesSection settings={settings} />
           </>
         )}

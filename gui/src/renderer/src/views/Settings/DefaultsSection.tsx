@@ -1,17 +1,31 @@
-import type { Settings } from '../../generated/watchfire_pb'
+import type { AgentInfo, Settings } from '../../generated/watchfire_pb'
 import { useSettingsStore } from '../../stores/settings-store'
 import { Toggle } from '../../components/ui/Toggle'
+import { Select, type SelectOption } from '../../components/ui/Select'
 
 interface Props {
   settings: Settings
+  agents: AgentInfo[]
+  agentsLoaded: boolean
 }
 
-export function DefaultsSection({ settings }: Props) {
+export function DefaultsSection({ settings, agents, agentsLoaded }: Props) {
   const updateSettings = useSettingsStore((s) => s.updateSettings)
   const defaults = settings.defaults
 
   const update = (partial: Record<string, unknown>) => {
     updateSettings({ defaults: { ...defaults, ...partial } as any })
+  }
+
+  const currentAgent = defaults?.defaultAgent ?? ''
+  const knownAgent = agents.some((a) => a.name === currentAgent)
+
+  const agentOptions: SelectOption[] = [
+    { value: '', label: 'Ask per project' },
+    ...agents.map((a) => ({ value: a.name, label: a.displayName }))
+  ]
+  if (currentAgent && !knownAgent) {
+    agentOptions.push({ value: currentAgent, label: `${currentAgent} (unknown)` })
   }
 
   return (
@@ -20,6 +34,19 @@ export function DefaultsSection({ settings }: Props) {
         Defaults for New Projects
       </h3>
       <div className="space-y-4">
+        <div className="space-y-1.5">
+          <Select
+            label="Default Agent"
+            value={currentAgent}
+            options={agentOptions}
+            disabled={!agentsLoaded}
+            onChange={(v) => update({ defaultAgent: v })}
+          />
+          <p className="text-xs text-[var(--wf-text-muted)]">
+            Used for new projects when not set per-project. &ldquo;Ask per project&rdquo; makes the
+            Add Project wizard prompt every time.
+          </p>
+        </div>
         <Toggle
           checked={defaults?.autoMerge ?? true}
           onChange={(v) => update({ autoMerge: v })}
