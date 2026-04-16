@@ -38,12 +38,14 @@ function renderFatalError(label: string, err: unknown): void {
   if (pre) pre.textContent = message
 }
 
-window.addEventListener('error', (event) => {
+const onError = (event: ErrorEvent): void => {
   renderFatalError('Uncaught error during initialization:', event.error ?? event.message)
-})
-window.addEventListener('unhandledrejection', (event) => {
+}
+const onRejection = (event: PromiseRejectionEvent): void => {
   renderFatalError('Unhandled promise rejection during initialization:', event.reason)
-})
+}
+window.addEventListener('error', onError)
+window.addEventListener('unhandledrejection', onRejection)
 
 // Dynamic import so the handlers above run before any store-initialization
 // side-effects in the imported module graph.
@@ -59,6 +61,12 @@ window.addEventListener('unhandledrejection', (event) => {
       ])
     await import('./global.css')
     await import('@xterm/xterm/css/xterm.css')
+
+    // App loaded successfully — remove the fatal error handlers so that
+    // non-fatal runtime errors (e.g. xterm internal race conditions) are
+    // logged to the console instead of replacing the entire UI.
+    window.removeEventListener('error', onError)
+    window.removeEventListener('unhandledrejection', onRejection)
 
     createRoot(document.getElementById('root')!).render(
       <StrictMode>

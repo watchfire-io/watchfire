@@ -83,6 +83,20 @@ func GenerateProfile(policy SandboxPolicy) string {
 	sb.WriteString("; CLI TOOL CONFIG (Vercel, Firebase, gcloud, etc.)\n")
 	fmt.Fprintf(&sb, "(allow file-write* (subpath %q))\n\n", filepath.Join(homeDir, "Library", "Application Support"))
 
+	// KEYCHAIN - Agent auth token persistence
+	// Agents like Claude Code refresh OAuth tokens via macOS's Security
+	// framework on startup, which writes to the login keychain's SQLite DB.
+	// Without this, refresh fails and the agent falls through to API-key
+	// billing precedence, producing spurious "out of extra usage" errors
+	// on active Max/Pro subscriptions. Scoped to the login keychain (and
+	// its SQLite WAL/SHM sidecars) — other keychains stay protected.
+	sb.WriteString("; KEYCHAIN - Agent auth token persistence\n")
+	keychainDir := filepath.Join(homeDir, "Library", "Keychains")
+	for _, suffix := range []string{"login.keychain-db", "login.keychain-db-shm", "login.keychain-db-wal"} {
+		fmt.Fprintf(&sb, "(allow file-write* (literal %q))\n", filepath.Join(keychainDir, suffix))
+	}
+	sb.WriteString("\n")
+
 	// DEV TOOL CACHES
 	sb.WriteString("; DEV TOOL CACHES\n")
 	for _, dir := range []string{".cargo", "go", ".rustup"} {
@@ -158,7 +172,12 @@ func spawnSandboxedPlatform(policy SandboxPolicy, command string, args ...string
 	env := buildBaseEnv(policy)
 
 	path := os.Getenv("PATH")
-	for _, p := range []string{"/opt/homebrew/bin", "/usr/local/bin"} {
+	homeDir := policy.HomeDir
+	for _, p := range []string{
+		filepath.Join(homeDir, ".local", "bin"),
+		"/opt/homebrew/bin",
+		"/usr/local/bin",
+	} {
 		if !strings.Contains(path, p) {
 			path = p + ":" + path
 		}

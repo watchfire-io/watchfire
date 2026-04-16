@@ -38,8 +38,19 @@ export function useAgentTerminal({ projectId, containerRef, active = false }: Us
 
     const fit = new FitAddon()
     term.loadAddon(fit)
-    term.open(containerRef.current)
-    requestAnimationFrame(() => fit.fit())
+
+    // Defer open() until the container has non-zero dimensions.
+    // xterm's Viewport constructor crashes if the container has no layout.
+    const container = containerRef.current
+    const tryOpen = (): void => {
+      if (!container.isConnected || container.clientWidth === 0 || container.clientHeight === 0) {
+        requestAnimationFrame(tryOpen)
+        return
+      }
+      term.open(container)
+      fit.fit()
+    }
+    tryOpen()
 
     termRef.current = term
     fitRef.current = fit
@@ -56,7 +67,7 @@ export function useAgentTerminal({ projectId, containerRef, active = false }: Us
       resizeTimerRef.current = setTimeout(() => {
         fit.fit()
         const dims = fit.proposeDimensions()
-        if (dims) {
+        if (dims && Number.isFinite(dims.rows) && Number.isFinite(dims.cols)) {
           resize(projectId, dims.rows, dims.cols)
         }
       }, 100)
@@ -89,7 +100,7 @@ export function useAgentTerminal({ projectId, containerRef, active = false }: Us
     if (fit) {
       fit.fit()
       const dims = fit.proposeDimensions()
-      if (dims) {
+      if (dims && Number.isFinite(dims.rows) && Number.isFinite(dims.cols)) {
         resize(projectId, dims.rows, dims.cols)
       }
     }
@@ -130,7 +141,9 @@ export function useAgentTerminal({ projectId, containerRef, active = false }: Us
     const fit = fitRef.current
     if (!fit) return { rows: 24, cols: 80 }
     const dims = fit.proposeDimensions()
-    return dims ? { rows: dims.rows, cols: dims.cols } : { rows: 24, cols: 80 }
+    return dims && Number.isFinite(dims.rows) && Number.isFinite(dims.cols)
+      ? { rows: dims.rows, cols: dims.cols }
+      : { rows: 24, cols: 80 }
   }, [])
 
   return { terminal: termRef, getDimensions }

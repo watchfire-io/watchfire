@@ -59,6 +59,11 @@ const claudeExpectedProfile = `(version 1)
 ; CLI TOOL CONFIG (Vercel, Firebase, gcloud, etc.)
 (allow file-write* (subpath "/home/test/Library/Application Support"))
 
+; KEYCHAIN - Agent auth token persistence
+(allow file-write* (literal "/home/test/Library/Keychains/login.keychain-db"))
+(allow file-write* (literal "/home/test/Library/Keychains/login.keychain-db-shm"))
+(allow file-write* (literal "/home/test/Library/Keychains/login.keychain-db-wal"))
+
 ; DEV TOOL CACHES
 (allow file-write* (subpath "/home/test/.cargo"))
 (allow file-write* (subpath "/home/test/go"))

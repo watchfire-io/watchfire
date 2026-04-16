@@ -1,10 +1,48 @@
 import { existsSync, readFileSync } from 'fs'
 import { join, resolve } from 'path'
-import { homedir } from 'os'
+import { homedir, platform } from 'os'
 import { spawn, execSync } from 'child_process'
 import { createConnection } from 'net'
 import { parse } from 'yaml'
 import { app } from 'electron'
+
+/**
+ * Resolve the user's login shell PATH.
+ * macOS GUI apps inherit a minimal environment (PATH=/usr/bin:/bin:/usr/sbin:/sbin)
+ * which is missing user-installed tool paths like ~/.local/bin. This causes
+ * spawned agents (e.g. Claude Code) to run in a degraded environment that can
+ * break authentication and billing routing.
+ */
+function resolveShellEnv(): Record<string, string> {
+  const env: Record<string, string> = { ...process.env }
+  if (platform() !== 'darwin' && platform() !== 'linux') return env
+
+  try {
+    const shell = process.env.SHELL || '/bin/zsh'
+    // Run a login shell to get the full PATH
+    const fullPath = execSync(`${shell} -l -c 'echo $PATH'`, {
+      encoding: 'utf-8',
+      timeout: 5000
+    }).trim()
+    if (fullPath) {
+      env.PATH = fullPath
+    }
+  } catch {
+    // Fallback: manually prepend common user paths
+    const home = homedir()
+    const userPaths = [
+      join(home, '.local', 'bin'),
+      '/opt/homebrew/bin',
+      '/usr/local/bin'
+    ]
+    const currentPath = process.env.PATH || ''
+    const missing = userPaths.filter((p) => !currentPath.includes(p))
+    if (missing.length > 0) {
+      env.PATH = [...missing, currentPath].join(':')
+    }
+  }
+  return env
+}
 
 export interface DaemonInfo {
   host: string
@@ -46,10 +84,12 @@ export async function ensureDaemon(): Promise<DaemonInfo> {
     throw new Error('watchfired binary not found')
   }
 
-  // Start daemon in background
+  // Start daemon in background with the user's full shell environment.
+  // Without this, macOS GUI apps pass a minimal env that breaks agent auth.
   const child = spawn(daemonPath, [], {
     detached: true,
-    stdio: 'ignore'
+    stdio: 'ignore',
+    env: resolveShellEnv()
   })
   child.unref()
 

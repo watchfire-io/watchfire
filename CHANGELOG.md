@@ -1,11 +1,5 @@
 # Changelog
 
-## [2.0.1]
-
-### Fixed
-
-- **GUI: blank window on macOS** — production renderer is now served over a custom `app://` protocol instead of `file://`, restoring execution of the `crossorigin` ES-module entry bundle that Chromium was silently blocking. Added global `error` / `unhandledrejection` handlers in the renderer entry so any future module-init failure surfaces in the window instead of rendering blank, guarded module-top `localStorage` access in Zustand stores, and auto-opened DevTools in dev so residual issues are immediately visible
-
 ## [2.0.0] Spark
 
 ### Added
@@ -22,6 +16,11 @@
 - **Backend-owned transcript discovery** — JSONL transcript location and formatting moved out of the agent manager and into each backend's `LocateTranscript` / `FormatTranscript` implementation
 - **Backend-contributed sandbox paths** — writable paths, cache patterns, and stripped env vars are now contributed by each backend via `SandboxExtras()` instead of being hardcoded in the sandbox layer
 - **Codex system-prompt isolation** — Codex receives the composed Watchfire system prompt via a per-session `CODEX_HOME` directory containing a generated `AGENTS.md`, keeping the user's real `~/.codex` untouched
+
+### Fixed
+
+- **Agent auth failure when launched from GUI** — macOS GUI apps inherit a minimal environment (`PATH=/usr/bin:/bin:/usr/sbin:/sbin`) missing user-installed tool paths like `~/.local/bin`. This caused Claude Code to misroute API calls through "extra usage" billing instead of the user's subscription, producing spurious "You're out of extra usage" errors on task, Run All, and Wildfire modes while Chat mode worked fine. The Electron daemon spawner now resolves the user's full login-shell PATH before launching `watchfired`, and the macOS sandbox PATH enrichment adds `~/.local/bin` alongside `/opt/homebrew/bin` and `/usr/local/bin`
+- **GUI: blank window on macOS** — production renderer is now served over a custom `app://` protocol instead of `file://`, restoring execution of the `crossorigin` ES-module entry bundle that Chromium was silently blocking. Added global `error` / `unhandledrejection` handlers in the renderer entry so any future module-init failure surfaces in the window instead of rendering blank, guarded module-top `localStorage` access in Zustand stores, and auto-opened DevTools in dev so residual issues are immediately visible
 
 ### Migration
 
