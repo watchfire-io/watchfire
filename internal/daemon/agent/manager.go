@@ -58,7 +58,7 @@ type RunningAgent struct {
 	WildfirePhase WildfirePhase
 	TaskNumber    int
 	TaskTitle     string
-	SessionName   string // --name value passed to claude (used for transcript lookup)
+	SessionName   string // --name value passed to agent (used for transcript lookup)
 	WorktreePath  string
 	BackendName   string // resolved agent backend name (e.g. "claude-code", "codex")
 	Process       *Process
@@ -679,7 +679,7 @@ func (m *Manager) writeSessionLog(ag *RunningAgent, proc *Process) {
 	}
 	log.Printf("Session log written: %s", entry.LogID)
 
-	// Try to find and copy the Claude Code JSONL transcript
+	// Try to find and copy the agent's JSONL transcript
 	workDir := ag.WorktreePath
 	if workDir == "" {
 		workDir = ag.ProjectPath
@@ -812,7 +812,7 @@ func mergeBackendEnv(sandboxEnv, backendEnv []string) []string {
 	return out
 }
 
-// buildSessionName constructs a structured --name value for Claude Code sessions.
+// buildSessionName constructs a structured --name value for agent sessions.
 // Format: {project}:{mode}[:{task}]
 func buildSessionName(projectName string, mode Mode, phase WildfirePhase, taskNum int, taskTitle string) string {
 	slug := slugify(projectName, 30)
