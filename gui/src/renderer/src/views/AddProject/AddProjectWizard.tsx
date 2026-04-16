@@ -6,19 +6,21 @@ import { useProjectsStore } from '../../stores/projects-store'
 import { getProjectClient } from '../../lib/grpc-client'
 import { useToast } from '../../components/ui/Toast'
 import { StepProjectInfo } from './StepProjectInfo'
+import { StepAgent } from './StepAgent'
 import { StepGitConfig } from './StepGitConfig'
 import { StepDefinition } from './StepDefinition'
 
 export interface WizardData {
   path: string
   name: string
+  defaultAgent: string
   autoMerge: boolean
   autoDeleteBranch: boolean
   autoStartTasks: boolean
   definition: string
 }
 
-const STEPS = ['Project', 'Git Config', 'Definition']
+const STEPS = ['Project', 'Agent', 'Git Config', 'Definition']
 
 export function AddProjectWizard() {
   const [step, setStep] = useState(0)
@@ -31,14 +33,17 @@ export function AddProjectWizard() {
   const [data, setData] = useState<WizardData>({
     path: '',
     name: '',
+    defaultAgent: '',
     autoMerge: true,
     autoDeleteBranch: true,
     autoStartTasks: true,
     definition: ''
   })
 
+  const [agentStepValid, setAgentStepValid] = useState(false)
   const update = (partial: Partial<WizardData>) => setData((d) => ({ ...d, ...partial }))
-  const canNext = step === 0 ? data.path !== '' : true
+  const canNext =
+    step === 0 ? data.path !== '' : step === 1 ? agentStepValid : true
 
   const importExistingProject = useCallback(async (path: string) => {
     setCreating(true)
@@ -80,6 +85,12 @@ export function AddProjectWizard() {
         autoStartTasks: data.autoStartTasks,
         definition: data.definition
       })
+      if (data.defaultAgent) {
+        await client.updateProject({
+          projectId: project.projectId,
+          defaultAgent: data.defaultAgent
+        })
+      }
       await fetchProjects()
       toast('Project created', 'success')
       selectProject(project.projectId)
@@ -126,8 +137,15 @@ export function AddProjectWizard() {
 
       <div className="flex-1 overflow-y-auto p-6">
         {step === 0 && <StepProjectInfo data={data} onChange={update} onFolderSelected={handleFolderSelected} />}
-        {step === 1 && <StepGitConfig data={data} onChange={update} />}
-        {step === 2 && <StepDefinition data={data} onChange={update} />}
+        {step === 1 && (
+          <StepAgent
+            data={data}
+            onChange={update}
+            onValidChange={setAgentStepValid}
+          />
+        )}
+        {step === 2 && <StepGitConfig data={data} onChange={update} />}
+        {step === 3 && <StepDefinition data={data} onChange={update} />}
       </div>
 
       <div className="flex items-center justify-between px-6 py-4 border-t border-[var(--wf-border)]">
