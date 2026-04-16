@@ -95,7 +95,7 @@ Watchfire dispatches agent-specific behaviour through a `Backend` interface defi
 | **Interface** | `Backend` in `internal/daemon/agent/backend/` |
 | **Registry** | Process-wide `Register`/`Get`/`List` keyed by `Name()` (e.g. `"claude-code"`, `"codex"`); duplicate registration panics at startup |
 | **Shipped backends** | `claude-code` (Claude Code), `codex` (OpenAI Codex) |
-| **Agent resolution** | Per-project (`project.default_agent`) → global default (`settings.defaults.default_agent`) → `claude-code` fallback. Global default may be the special `"ask"` value, which forces `watchfire init` to prompt every time. No per-task override. |
+| **Agent resolution** | Per-project (`project.default_agent`) → global default (`settings.defaults.default_agent`) → `claude-code` fallback. Global default may be unset (empty string), meaning "Ask per project" — `watchfire init` always prompts for agent selection. No per-task override. |
 | **Prompt pipeline** | `internal/daemon/agent/prompts/` composes one canonical, agent-agnostic prompt. `InstallSystemPrompt(workDir, composedPrompt)` delivers it — Claude Code uses the `--append-system-prompt` flag (no-op install), Codex writes `AGENTS.md` into a per-session `CODEX_HOME` directory |
 | **Transcript ownership** | Each backend owns `LocateTranscript(workDir, started, sessionHint)` and `FormatTranscript(jsonlPath)` — the daemon copies and renders whatever the backend returns |
 | **Sandbox contributions** | `SandboxExtras()` returns writable subpaths/literals, cache patterns, and env vars to strip; the sandbox layer merges these with the base policy |
@@ -955,15 +955,15 @@ Split layout with tabs:
 └── logs/               # Session logs
     └── <project_id>/
         ├── <task_number>-<session>-<timestamp>.log      # PTY scrollback (fallback)
-        └── <task_number>-<session>-<timestamp>.jsonl     # Claude JSONL transcript (preferred)
+        └── <task_number>-<session>-<timestamp>.jsonl     # Agent JSONL transcript (preferred)
 ```
 
 **Log filename examples:**
 - `0001-1-2026-02-03T13-05-00.log` — task 1, session 1 (PTY scrollback)
-- `0001-1-2026-02-03T13-05-00.jsonl` — task 1, session 1 (Claude JSONL transcript)
+- `0001-1-2026-02-03T13-05-00.jsonl` — task 1, session 1 (agent JSONL transcript)
 - `chat-1-2026-02-03T15-00-00.log` — chat mode (no task)
 
-**Transcript discovery:** On agent exit, the daemon finds Claude Code's JSONL transcript at `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl` by matching the `customTitle` field (first line) against the `--name` session name passed to claude. The JSONL is copied to the logs directory. `ReadLog` prefers the `.jsonl` and formats it as readable User/Assistant conversation; falls back to `.log` if no transcript exists.
+**Transcript discovery:** On agent exit, the daemon calls the active backend's `LocateTranscript` to find the session's JSONL file (Claude Code: `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl` matched by `customTitle`; Codex: `<CODEX_HOME>/sessions/**/rollout-*.jsonl`). The JSONL is copied to the logs directory. `ReadLog` prefers the `.jsonl` and dispatches to the backend's `FormatTranscript` for rendering; falls back to `.log` if no transcript exists.
 
 ### Per-Project (`<project>/.watchfire/`)
 
