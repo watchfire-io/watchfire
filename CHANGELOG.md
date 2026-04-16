@@ -7,6 +7,7 @@
 - **opencode backend** — `opencode` (https://opencode.ai) ships as a third first-class backend alongside Claude Code and OpenAI Codex, registered in the backend registry and selectable per project. No wiring changes in the manager, sandbox, or UX surfaces — they already iterate the backend registry generically
 - **Per-session opencode home** — Watchfire gives every opencode session its own `OPENCODE_CONFIG_DIR` + `OPENCODE_DATA_DIR` under `~/.watchfire/opencode-home/<session>/`, symlinking the user's real `~/.config/opencode` entries (auth, providers, agents, commands) for login reuse while keeping the Watchfire system prompt (`AGENTS.md`) and yolo permission config (`opencode.json` with `"permission": "allow"`) isolated per session
 - **opencode transcripts in the log viewer** — after a session completes, opencode's per-message JSON files are collated into a single JSONL and rendered in the same User/Assistant format as the other backends
+- **Agent selector in project settings (GUI)** — Electron settings tab exposes a backend picker populated from the daemon registry via the new `SettingsService.ListAgents` RPC, bringing the GUI to parity with the TUI settings tab
 
 ### Migration
 

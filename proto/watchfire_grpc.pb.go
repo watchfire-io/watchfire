@@ -1960,6 +1960,7 @@ var BranchService_ServiceDesc = grpc.ServiceDesc{
 const (
 	SettingsService_GetSettings_FullMethodName    = "/watchfire.SettingsService/GetSettings"
 	SettingsService_UpdateSettings_FullMethodName = "/watchfire.SettingsService/UpdateSettings"
+	SettingsService_ListAgents_FullMethodName     = "/watchfire.SettingsService/ListAgents"
 )
 
 // SettingsServiceClient is the client API for SettingsService service.
@@ -1970,6 +1971,7 @@ const (
 type SettingsServiceClient interface {
 	GetSettings(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Settings, error)
 	UpdateSettings(ctx context.Context, in *UpdateSettingsRequest, opts ...grpc.CallOption) (*Settings, error)
+	ListAgents(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*AgentList, error)
 }
 
 type settingsServiceClient struct {
@@ -2000,6 +2002,16 @@ func (c *settingsServiceClient) UpdateSettings(ctx context.Context, in *UpdateSe
 	return out, nil
 }
 
+func (c *settingsServiceClient) ListAgents(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*AgentList, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AgentList)
+	err := c.cc.Invoke(ctx, SettingsService_ListAgents_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SettingsServiceServer is the server API for SettingsService service.
 // All implementations must embed UnimplementedSettingsServiceServer
 // for forward compatibility.
@@ -2008,6 +2020,7 @@ func (c *settingsServiceClient) UpdateSettings(ctx context.Context, in *UpdateSe
 type SettingsServiceServer interface {
 	GetSettings(context.Context, *emptypb.Empty) (*Settings, error)
 	UpdateSettings(context.Context, *UpdateSettingsRequest) (*Settings, error)
+	ListAgents(context.Context, *emptypb.Empty) (*AgentList, error)
 	mustEmbedUnimplementedSettingsServiceServer()
 }
 
@@ -2023,6 +2036,9 @@ func (UnimplementedSettingsServiceServer) GetSettings(context.Context, *emptypb.
 }
 func (UnimplementedSettingsServiceServer) UpdateSettings(context.Context, *UpdateSettingsRequest) (*Settings, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateSettings not implemented")
+}
+func (UnimplementedSettingsServiceServer) ListAgents(context.Context, *emptypb.Empty) (*AgentList, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListAgents not implemented")
 }
 func (UnimplementedSettingsServiceServer) mustEmbedUnimplementedSettingsServiceServer() {}
 func (UnimplementedSettingsServiceServer) testEmbeddedByValue()                         {}
@@ -2081,6 +2097,24 @@ func _SettingsService_UpdateSettings_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SettingsService_ListAgents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SettingsServiceServer).ListAgents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SettingsService_ListAgents_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SettingsServiceServer).ListAgents(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SettingsService_ServiceDesc is the grpc.ServiceDesc for SettingsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2095,6 +2129,10 @@ var SettingsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "UpdateSettings",
 			Handler:    _SettingsService_UpdateSettings_Handler,
+		},
+		{
+			MethodName: "ListAgents",
+			Handler:    _SettingsService_ListAgents_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
