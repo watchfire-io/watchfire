@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/watchfire-io/watchfire/internal/config"
 	pb "github.com/watchfire-io/watchfire/proto"
@@ -53,6 +54,6 @@ func (s *logService) GetLog(_ context.Context, req *pb.GetLogRequest) (*pb.LogCo
 			EndedAt:       entry.EndedAt,
 			Status:        entry.Status,
 		},
-		Content: content,
+		Content: strings.ToValidUTF8(content, "\uFFFD"),
 	}, nil
 }
