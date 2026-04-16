@@ -93,10 +93,10 @@ Watchfire dispatches agent-specific behaviour through a `Backend` interface defi
 | Aspect | Behavior |
 |--------|----------|
 | **Interface** | `Backend` in `internal/daemon/agent/backend/` |
-| **Registry** | Process-wide `Register`/`Get`/`List` keyed by `Name()` (e.g. `"claude-code"`, `"codex"`); duplicate registration panics at startup |
-| **Shipped backends** | `claude-code` (Claude Code), `codex` (OpenAI Codex) |
+| **Registry** | Process-wide `Register`/`Get`/`List` keyed by `Name()` (e.g. `"claude-code"`, `"codex"`, `"opencode"`); duplicate registration panics at startup |
+| **Shipped backends** | `claude-code` (Claude Code), `codex` (OpenAI Codex), `opencode` (opencode) |
 | **Agent resolution** | Per-project (`project.default_agent`) → global default (`settings.defaults.default_agent`) → `claude-code` fallback. Global default may be unset (empty string), meaning "Ask per project" — `watchfire init` always prompts for agent selection. No per-task override. |
-| **Prompt pipeline** | `internal/daemon/agent/prompts/` composes one canonical, agent-agnostic prompt. `InstallSystemPrompt(workDir, composedPrompt)` delivers it — Claude Code uses the `--append-system-prompt` flag (no-op install), Codex writes `AGENTS.md` into a per-session `CODEX_HOME` directory |
+| **Prompt pipeline** | `internal/daemon/agent/prompts/` composes one canonical, agent-agnostic prompt. `InstallSystemPrompt(workDir, composedPrompt)` delivers it — Claude Code uses the `--append-system-prompt` flag (no-op install), Codex writes `AGENTS.md` into a per-session `CODEX_HOME` directory, opencode writes `AGENTS.md` into a per-session `OPENCODE_CONFIG_DIR` (with the user's real `~/.config/opencode` entries symlinked in for auth) |
 | **Transcript ownership** | Each backend owns `LocateTranscript(workDir, started, sessionHint)` and `FormatTranscript(jsonlPath)` — the daemon copies and renders whatever the backend returns |
 | **Sandbox contributions** | `SandboxExtras()` returns writable subpaths/literals, cache patterns, and env vars to strip; the sandbox layer merges these with the base policy |
 
@@ -114,6 +114,8 @@ The `Backend` interface methods:
 | `FormatTranscript(jsonlPath)` | Render the JSONL into the plain-text transcript shown in the log viewer |
 
 **`CODEX_HOME` per-session isolation**: Codex's transcript and auth layout sits under `$CODEX_HOME` (default `~/.codex`). To deliver the Watchfire system prompt without mutating the user's real home, `InstallSystemPrompt` creates a per-session directory, writes `AGENTS.md` into it, and `BuildCommand` exports `CODEX_HOME=<that dir>` in the child env. Future agents that discover config via a `HOME`-like env var can use the same trick.
+
+**`OPENCODE_CONFIG_DIR` + `OPENCODE_DATA_DIR` per-session isolation**: opencode applies the same trick with two env vars. `OPENCODE_CONFIG_DIR` points at a per-session directory where Watchfire writes `AGENTS.md` (the composed system prompt) and an `opencode.json` enabling yolo permission mode; the user's real `~/.config/opencode` entries are symlinked in so existing logins continue to work. `OPENCODE_DATA_DIR` points at a sibling directory where opencode writes its per-message JSON files — we own this path, so transcript discovery becomes deterministic. Because opencode stores messages as one JSON file per turn rather than a single JSONL, `LocateTranscript` collates the per-message files into a synthesized `transcript.jsonl` that the existing copy + format pipeline consumes unchanged.
 
 #### Adding a new backend
 
@@ -963,7 +965,7 @@ Split layout with tabs:
 - `0001-1-2026-02-03T13-05-00.jsonl` — task 1, session 1 (agent JSONL transcript)
 - `chat-1-2026-02-03T15-00-00.log` — chat mode (no task)
 
-**Transcript discovery:** On agent exit, the daemon calls the active backend's `LocateTranscript` to find the session's JSONL file (Claude Code: `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl` matched by `customTitle`; Codex: `<CODEX_HOME>/sessions/**/rollout-*.jsonl`). The JSONL is copied to the logs directory. `ReadLog` prefers the `.jsonl` and dispatches to the backend's `FormatTranscript` for rendering; falls back to `.log` if no transcript exists.
+**Transcript discovery:** On agent exit, the daemon calls the active backend's `LocateTranscript` to find the session's JSONL file (Claude Code: `~/.claude/projects/<encoded-cwd>/<sessionId>.jsonl` matched by `customTitle`; Codex: `<CODEX_HOME>/sessions/**/rollout-*.jsonl`; opencode: collates per-message JSON files under `<OPENCODE_DATA_DIR>/storage/message/**/*.json` into a synthesized `transcript.jsonl`). The JSONL is copied to the logs directory. `ReadLog` prefers the `.jsonl` and dispatches to the backend's `FormatTranscript` for rendering; falls back to `.log` if no transcript exists.
 
 ### Per-Project (`<project>/.watchfire/`)
 
