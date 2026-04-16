@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.1.0] Spark
+
+### Added
+
+- **opencode backend** — `opencode` (https://opencode.ai) ships as a third first-class backend alongside Claude Code and OpenAI Codex, registered in the backend registry and selectable per project. No wiring changes in the manager, sandbox, or UX surfaces — they already iterate the backend registry generically
+- **Per-session opencode home** — Watchfire gives every opencode session its own `OPENCODE_CONFIG_DIR` + `OPENCODE_DATA_DIR` under `~/.watchfire/opencode-home/<session>/`, symlinking the user's real `~/.config/opencode` entries (auth, providers, agents, commands) for login reuse while keeping the Watchfire system prompt (`AGENTS.md`) and yolo permission config (`opencode.json` with `"permission": "allow"`) isolated per session
+- **opencode transcripts in the log viewer** — after a session completes, opencode's per-message JSON files are collated into a single JSONL and rendered in the same User/Assistant format as the other backends
+
+### Migration
+
+- Existing Claude Code and Codex projects continue to work unchanged — no action required
+- Custom `opencode` binary paths can be configured via the global settings UI or by hand in `~/.watchfire/settings.yaml`
+
 ## [2.0.0] Spark
 
 ### Added
