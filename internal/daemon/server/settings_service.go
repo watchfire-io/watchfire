@@ -87,3 +87,12 @@ func (s *settingsService) UpdateSettings(_ context.Context, req *pb.UpdateSettin
 	analytics.Track("settings_updated", posthog.NewProperties().Set("origin", req.GetMeta().GetOrigin()))
 	return modelToProtoSettings(settings), nil
 }
+
+func (s *settingsService) ListAgents(_ context.Context, _ *emptypb.Empty) (*pb.AgentList, error) {
+	backends := backend.List()
+	agents := make([]*pb.AgentInfo, 0, len(backends))
+	for _, b := range backends {
+		agents = append(agents, &pb.AgentInfo{Name: b.Name(), DisplayName: b.DisplayName()})
+	}
+	return &pb.AgentList{Agents: agents}, nil
+}

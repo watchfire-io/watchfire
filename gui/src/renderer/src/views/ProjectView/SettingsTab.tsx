@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import type { Project } from '../../generated/watchfire_pb'
-import { getProjectClient } from '../../lib/grpc-client'
+import type { AgentInfo, Project } from '../../generated/watchfire_pb'
+import { getProjectClient, getSettingsClient } from '../../lib/grpc-client'
 import { Input } from '../../components/ui/Input'
+import { Select, type SelectOption } from '../../components/ui/Select'
 import { Toggle } from '../../components/ui/Toggle'
 import { Modal } from '../../components/ui/Modal'
 import { useToast } from '../../components/ui/Toast'
@@ -28,6 +29,9 @@ export function SettingsTab({ projectId, project }: Props) {
   const [autoMerge, setAutoMerge] = useState(project.autoMerge)
   const [autoDelete, setAutoDelete] = useState(project.autoDeleteBranch)
   const [autoStart, setAutoStart] = useState(project.autoStartTasks)
+  const [defaultAgent, setDefaultAgent] = useState(project.defaultAgent)
+  const [agents, setAgents] = useState<AgentInfo[]>([])
+  const [agentsLoaded, setAgentsLoaded] = useState(false)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -36,7 +40,37 @@ export function SettingsTab({ projectId, project }: Props) {
     setAutoMerge(project.autoMerge)
     setAutoDelete(project.autoDeleteBranch)
     setAutoStart(project.autoStartTasks)
+    setDefaultAgent(project.defaultAgent)
   }, [project])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const res = await getSettingsClient().listAgents({})
+        if (!cancelled) {
+          setAgents(res.agents)
+          setAgentsLoaded(true)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setAgentsLoaded(true)
+          toast('Failed to load agent list', 'error')
+        }
+      }
+    })()
+    return () => {
+      cancelled = true
+    }
+  }, [toast])
+
+  const agentOptions: SelectOption[] = agents.map((a) => ({ value: a.name, label: a.displayName }))
+  const resolveSelectedAgent = (): string => {
+    if (defaultAgent && agents.some((a) => a.name === defaultAgent)) return defaultAgent
+    if (agents.some((a) => a.name === 'claude-code')) return 'claude-code'
+    return agents[0]?.name ?? ''
+  }
+  const selectedAgent = resolveSelectedAgent()
 
   const fetchProjects = useProjectsStore((s) => s.fetchProjects)
   const updateProjectLocal = useProjectsStore((s) => s.updateProjectLocal)
@@ -86,6 +120,35 @@ export function SettingsTab({ projectId, project }: Props) {
           ))}
         </div>
       </div>
+
+      {!agentsLoaded ? (
+        <Select
+          label="Agent"
+          disabled
+          value={selectedAgent || 'loading'}
+          options={[{ value: selectedAgent || 'loading', label: defaultAgent || 'Loading…' }]}
+          onChange={() => {}}
+        />
+      ) : agentOptions.length === 0 ? (
+        <Select
+          label="Agent"
+          disabled
+          value=""
+          options={[]}
+          onChange={() => {}}
+          placeholder="No agents available"
+        />
+      ) : (
+        <Select
+          label="Agent"
+          value={selectedAgent}
+          options={agentOptions}
+          onChange={(v) => {
+            setDefaultAgent(v)
+            save({ defaultAgent: v })
+          }}
+        />
+      )}
 
       <div className="space-y-4 pt-2">
         <Toggle

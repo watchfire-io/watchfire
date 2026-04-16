@@ -361,6 +361,15 @@ message UpdateSettingsRequest {
   map<string, AgentConfig> agents = 5;            // Merge into existing
 }
 
+message AgentInfo {
+  string name = 1;                                // Backend name (e.g. "claude-code")
+  string display_name = 2;                        // Human-readable label (e.g. "Claude Code")
+}
+
+message AgentList {
+  repeated AgentInfo agents = 1;
+}
+
 // ============================================================================
 // Services
 // ============================================================================
@@ -469,4 +478,5 @@ service BranchService {
 service SettingsService {
   rpc GetSettings(google.protobuf.Empty) returns (Settings);
   rpc UpdateSettings(UpdateSettingsRequest) returns (Settings);
+  rpc ListAgents(google.protobuf.Empty) returns (AgentList);
 }
