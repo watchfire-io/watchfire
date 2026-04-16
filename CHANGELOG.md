@@ -1,5 +1,18 @@
 # Changelog
 
+## [2.2.0] Spark
+
+### Added
+
+- **Gemini CLI backend** — Google's `gemini` (https://github.com/google-gemini/gemini-cli) ships as a fourth first-class backend alongside Claude Code, OpenAI Codex, and opencode, registered in the backend registry and selectable per project. No wiring changes in the manager, sandbox, or UX surfaces — they already iterate the backend registry generically
+- **Per-session Gemini home** — Watchfire gives every Gemini session its own `GEMINI_SYSTEM_MD` pointing at `~/.watchfire/gemini-home/<session>/system.md`, keeping the Watchfire system prompt isolated per session while the user's real `~/.gemini/` continues to supply auth, settings, and hierarchical `GEMINI.md` context (Gemini has no per-session config-dir env var, so auth is read from the shared global dir)
+- **Gemini transcripts in the log viewer** — after a session completes, Watchfire discovers the session's chat log under `~/.gemini/tmp/<project_hash>/chats/session-*.jsonl` (or the legacy `logs.json` array) and renders it in the same User/Assistant format as the other backends
+
+### Migration
+
+- Existing Claude Code, Codex, and opencode projects continue to work unchanged — no action required
+- Custom `gemini` binary paths can be configured via the global settings UI or by hand in `~/.watchfire/settings.yaml`
+
 ## [2.1.0] Spark
 
 ### Added
