@@ -38,6 +38,7 @@ func modelToProtoTask(t *models.Task, projectID string) *pb.Task {
 		Title:              t.Title,
 		Prompt:             t.Prompt,
 		AcceptanceCriteria: t.AcceptanceCriteria,
+		Agent:              t.Agent,
 		Status:             string(t.Status),
 		Position:           int32(t.Position),
 		AgentSessions:      int32(t.AgentSessions),

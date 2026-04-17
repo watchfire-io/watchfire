@@ -177,10 +177,27 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 		log.Printf("Warning: could not load project config: %v", err)
 	}
 
-	// Resolve which agent backend to use for this project. Falls back to
-	// Claude only when neither the project nor global settings specify one.
+	// Load the task early for task-scoped modes so its Agent override flows
+	// through resolveBackend. Chat and wildfire refine/generate phases have
+	// no task, so taskAgent stays empty and behaviour is unchanged.
+	isTaskScoped := (opts.Mode == ModeTask || opts.Mode == ModeStartAll ||
+		(opts.Mode == ModeWildfire && opts.WildfirePhase == WildfirePhaseExecute)) && opts.TaskNumber > 0
+	var taskModel *models.Task
+	if isTaskScoped {
+		taskMgr := task.NewManager()
+		if t, taskErr := taskMgr.GetTask(opts.ProjectPath, opts.TaskNumber); taskErr == nil && t != nil {
+			taskModel = t
+		}
+	}
+	var taskAgent string
+	if taskModel != nil {
+		taskAgent = taskModel.Agent
+	}
+
+	// Resolve which agent backend to use for this session. Chain:
+	// task override → project default → global default → claude-code.
 	settings, _ := config.LoadSettings()
-	be, err := resolveBackend(project, settings)
+	be, err := resolveBackend(taskAgent, project, settings)
 	if err != nil {
 		m.mu.Unlock()
 		return nil, err
@@ -199,8 +216,7 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 	var taskArgs []string
 	var worktreePath string
 
-	if (opts.Mode == ModeTask || opts.Mode == ModeStartAll ||
-		(opts.Mode == ModeWildfire && opts.WildfirePhase == WildfirePhaseExecute)) && opts.TaskNumber > 0 {
+	if isTaskScoped {
 		// 1. Create git worktree
 		wt, wtErr := EnsureWorktree(opts.ProjectPath, opts.TaskNumber)
 		if wtErr != nil {
@@ -211,14 +227,12 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 		worktreePath = wt
 
 		// 2. Mark task as started
-		taskMgr := task.NewManager()
-		t, taskErr := taskMgr.GetTask(opts.ProjectPath, opts.TaskNumber)
-		if taskErr == nil && t != nil {
-			t.Start() // increments AgentSessions, sets StartedAt
-			if t.Status == models.TaskStatusDraft {
-				t.Status = models.TaskStatusReady
+		if taskModel != nil {
+			taskModel.Start() // increments AgentSessions, sets StartedAt
+			if taskModel.Status == models.TaskStatusDraft {
+				taskModel.Status = models.TaskStatusReady
 			}
-			_ = config.SaveTask(opts.ProjectPath, t)
+			_ = config.SaveTask(opts.ProjectPath, taskModel)
 		}
 
 		// 3. Use task-specific system prompt (includes task details)
@@ -729,18 +743,19 @@ func (m *Manager) persistStateLocked() {
 	}
 }
 
-// resolveBackend picks the agent backend for a project using the chain:
-//  1. project.DefaultAgent (from .watchfire/project.yaml) if non-empty.
-//  2. Global settings.Defaults.DefaultAgent (from ~/.watchfire/settings.yaml)
+// resolveBackend picks the agent backend for a session using the chain:
+//  1. taskAgent (per-task override from the task YAML) if non-empty.
+//  2. project.DefaultAgent (from .watchfire/project.yaml) if non-empty.
+//  3. Global settings.Defaults.DefaultAgent (from ~/.watchfire/settings.yaml)
 //     if non-empty and not the "ask per project" sentinel (empty string).
-//  3. Fallback to the Claude backend for backwards compatibility.
+//  4. Fallback to the Claude backend for backwards compatibility.
 //
 // An unknown agent name returns ErrUnknownBackend rather than silently
 // falling back, so misconfiguration surfaces to the caller instead of
 // spawning a different agent than the user intended.
-func resolveBackend(project *models.Project, settings *models.Settings) (backend.Backend, error) {
-	name := ""
-	if project != nil {
+func resolveBackend(taskAgent string, project *models.Project, settings *models.Settings) (backend.Backend, error) {
+	name := strings.TrimSpace(taskAgent)
+	if name == "" && project != nil {
 		name = strings.TrimSpace(project.DefaultAgent)
 	}
 	if name == "" && settings != nil {

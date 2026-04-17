@@ -43,6 +43,23 @@ func registerFakeBackend(t *testing.T, name string) backend.Backend {
 	return b
 }
 
+func TestResolveBackendTaskTakesPrecedence(t *testing.T) {
+	registerFakeBackend(t, "fake-task-0")
+	registerFakeBackend(t, "fake-proj-0")
+	registerFakeBackend(t, "fake-global-0")
+
+	project := &models.Project{DefaultAgent: "fake-proj-0"}
+	settings := &models.Settings{Defaults: models.DefaultsConfig{DefaultAgent: "fake-global-0"}}
+
+	be, err := resolveBackend("fake-task-0", project, settings)
+	if err != nil {
+		t.Fatalf("resolveBackend: %v", err)
+	}
+	if be.Name() != "fake-task-0" {
+		t.Errorf("got backend %q, want fake-task-0", be.Name())
+	}
+}
+
 func TestResolveBackendProjectTakesPrecedence(t *testing.T) {
 	registerFakeBackend(t, "fake-proj-1")
 	registerFakeBackend(t, "fake-global-1")
@@ -50,7 +67,7 @@ func TestResolveBackendProjectTakesPrecedence(t *testing.T) {
 	project := &models.Project{DefaultAgent: "fake-proj-1"}
 	settings := &models.Settings{Defaults: models.DefaultsConfig{DefaultAgent: "fake-global-1"}}
 
-	be, err := resolveBackend(project, settings)
+	be, err := resolveBackend("", project, settings)
 	if err != nil {
 		t.Fatalf("resolveBackend: %v", err)
 	}
@@ -65,7 +82,7 @@ func TestResolveBackendFallsBackToGlobal(t *testing.T) {
 	project := &models.Project{DefaultAgent: ""}
 	settings := &models.Settings{Defaults: models.DefaultsConfig{DefaultAgent: "fake-global-2"}}
 
-	be, err := resolveBackend(project, settings)
+	be, err := resolveBackend("", project, settings)
 	if err != nil {
 		t.Fatalf("resolveBackend: %v", err)
 	}
@@ -79,7 +96,7 @@ func TestResolveBackendFallsBackToClaudeWhenEverythingEmpty(t *testing.T) {
 	project := &models.Project{DefaultAgent: ""}
 	settings := &models.Settings{Defaults: models.DefaultsConfig{DefaultAgent: ""}}
 
-	be, err := resolveBackend(project, settings)
+	be, err := resolveBackend("", project, settings)
 	if err != nil {
 		t.Fatalf("resolveBackend: %v", err)
 	}
@@ -94,7 +111,7 @@ func TestResolveBackendGlobalAskSentinelFallsThroughToClaude(t *testing.T) {
 	project := &models.Project{DefaultAgent: ""}
 	settings := &models.Settings{Defaults: models.DefaultsConfig{DefaultAgent: ""}}
 
-	be, err := resolveBackend(project, settings)
+	be, err := resolveBackend("", project, settings)
 	if err != nil {
 		t.Fatalf("resolveBackend: %v", err)
 	}
@@ -106,7 +123,7 @@ func TestResolveBackendGlobalAskSentinelFallsThroughToClaude(t *testing.T) {
 func TestResolveBackendNilSettingsFallsBack(t *testing.T) {
 	project := &models.Project{DefaultAgent: ""}
 
-	be, err := resolveBackend(project, nil)
+	be, err := resolveBackend("", project, nil)
 	if err != nil {
 		t.Fatalf("resolveBackend: %v", err)
 	}
@@ -115,9 +132,36 @@ func TestResolveBackendNilSettingsFallsBack(t *testing.T) {
 	}
 }
 
+func TestResolveBackendEmptyTaskAgentFallsThrough(t *testing.T) {
+	// Whitespace-only / empty task override must defer to project default.
+	registerFakeBackend(t, "fake-proj-3")
+	project := &models.Project{DefaultAgent: "fake-proj-3"}
+
+	be, err := resolveBackend("   ", project, nil)
+	if err != nil {
+		t.Fatalf("resolveBackend: %v", err)
+	}
+	if be.Name() != "fake-proj-3" {
+		t.Errorf("got backend %q, want fake-proj-3", be.Name())
+	}
+}
+
+func TestResolveBackendUnknownTaskAgentIsError(t *testing.T) {
+	registerFakeBackend(t, "fake-proj-4")
+	project := &models.Project{DefaultAgent: "fake-proj-4"}
+
+	_, err := resolveBackend("nope-task-backend", project, nil)
+	if err == nil {
+		t.Fatal("expected error for unknown task-level backend, got nil")
+	}
+	if !errors.Is(err, backend.ErrUnknownBackend) {
+		t.Errorf("error %v is not ErrUnknownBackend", err)
+	}
+}
+
 func TestResolveBackendUnknownNameIsError(t *testing.T) {
 	project := &models.Project{DefaultAgent: "nope-does-not-exist"}
-	_, err := resolveBackend(project, nil)
+	_, err := resolveBackend("", project, nil)
 	if err == nil {
 		t.Fatal("expected error for unknown backend, got nil")
 	}
@@ -130,7 +174,7 @@ func TestResolveBackendUnknownGlobalNameIsError(t *testing.T) {
 	project := &models.Project{DefaultAgent: ""}
 	settings := &models.Settings{Defaults: models.DefaultsConfig{DefaultAgent: "also-does-not-exist"}}
 
-	_, err := resolveBackend(project, settings)
+	_, err := resolveBackend("", project, settings)
 	if err == nil {
 		t.Fatal("expected error for unknown global backend, got nil")
 	}
