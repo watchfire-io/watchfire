@@ -110,11 +110,16 @@ func (c *Codex) BuildCommand(opts CommandOpts) (Command, error) {
 }
 
 // SandboxExtras returns the Codex-specific paths the sandbox policy must allow.
+//
+// Codex persists config atomically (temp file + rename) and writes to several
+// sibling files under ~/.codex (history.jsonl, logs_*.sqlite, sessions/, ...),
+// so literal allowlists for auth.json/config.toml aren't enough — the temp
+// files fall outside the literal rule. Granting subpath write on ~/.codex
+// matches the Claude backend's ~/.claude approach and lets atomic writes and
+// Codex's own metadata persistence work under the sandbox.
 func (c *Codex) SandboxExtras() SandboxExtras {
 	return SandboxExtras{
-		WritableSubpaths: []string{"~/.watchfire/codex-home"},
-		WritableLiterals: []string{"~/.codex/auth.json", "~/.codex/config.toml"},
-		CachePatterns:    []string{"~/.codex/log"},
+		WritableSubpaths: []string{"~/.watchfire/codex-home", "~/.codex"},
 	}
 }
 

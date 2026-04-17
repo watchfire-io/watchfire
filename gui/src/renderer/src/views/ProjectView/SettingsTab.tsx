@@ -8,6 +8,7 @@ import { Modal } from '../../components/ui/Modal'
 import { useToast } from '../../components/ui/Toast'
 import { useProjectsStore } from '../../stores/projects-store'
 import { useAppStore } from '../../stores/app-store'
+import { useAgentStore } from '../../stores/agent-store'
 
 const PROJECT_COLORS = [
   '#ef4444', '#f97316', '#eab308', '#22c55e', '#14b8a6',
@@ -74,6 +75,8 @@ export function SettingsTab({ projectId, project }: Props) {
 
   const fetchProjects = useProjectsStore((s) => s.fetchProjects)
   const updateProjectLocal = useProjectsStore((s) => s.updateProjectLocal)
+  const agentStatus = useAgentStore((s) => s.statuses[projectId])
+  const stopAgent = useAgentStore((s) => s.stopAgent)
 
   const save = useCallback(async (updates: Record<string, unknown>) => {
     updateProjectLocal(projectId, updates as Partial<Project>)
@@ -143,9 +146,21 @@ export function SettingsTab({ projectId, project }: Props) {
           label="Agent"
           value={selectedAgent}
           options={agentOptions}
-          onChange={(v) => {
+          onChange={async (v) => {
+            const prev = selectedAgent
             setDefaultAgent(v)
-            save({ defaultAgent: v })
+            await save({ defaultAgent: v })
+            // If a chat session is running with the old backend, stop it so
+            // ChatTab's auto-start restarts the chat with the new backend.
+            // Task/wildfire sessions are left alone — interrupting mid-task
+            // would be destructive.
+            if (v !== prev && agentStatus?.isRunning && agentStatus.mode === 'chat') {
+              try {
+                await stopAgent(projectId)
+              } catch (err) {
+                toast('Failed to restart chat with new agent', 'error')
+              }
+            }
           }}
         />
       )}

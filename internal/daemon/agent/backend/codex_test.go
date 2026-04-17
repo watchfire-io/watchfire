@@ -120,15 +120,12 @@ func TestCodexResolveExecutableNotFound(t *testing.T) {
 func TestCodexSandboxExtras(t *testing.T) {
 	c := &Codex{}
 	e := c.SandboxExtras()
-	if len(e.WritableSubpaths) == 0 || e.WritableSubpaths[0] != "~/.watchfire/codex-home" {
-		t.Errorf("WritableSubpaths = %v, want [~/.watchfire/codex-home]", e.WritableSubpaths)
+	wantSub := map[string]bool{"~/.watchfire/codex-home": true, "~/.codex": true}
+	for _, p := range e.WritableSubpaths {
+		delete(wantSub, p)
 	}
-	wantLit := map[string]bool{"~/.codex/auth.json": true, "~/.codex/config.toml": true}
-	for _, l := range e.WritableLiterals {
-		delete(wantLit, l)
-	}
-	if len(wantLit) != 0 {
-		t.Errorf("WritableLiterals missing entries: %v (got %v)", wantLit, e.WritableLiterals)
+	if len(wantSub) != 0 {
+		t.Errorf("WritableSubpaths missing entries: %v (got %v)", wantSub, e.WritableSubpaths)
 	}
 }
 

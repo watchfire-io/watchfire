@@ -1,50 +1,31 @@
 # Changelog
 
-## [2.2.0] Spark
-
-### Added
-
-- **Gemini CLI backend** — Google's `gemini` (https://github.com/google-gemini/gemini-cli) ships as a fourth first-class backend alongside Claude Code, OpenAI Codex, and opencode, registered in the backend registry and selectable per project. No wiring changes in the manager, sandbox, or UX surfaces — they already iterate the backend registry generically
-- **Per-session Gemini home** — Watchfire gives every Gemini session its own `GEMINI_SYSTEM_MD` pointing at `~/.watchfire/gemini-home/<session>/system.md`, keeping the Watchfire system prompt isolated per session while the user's real `~/.gemini/` continues to supply auth, settings, and hierarchical `GEMINI.md` context (Gemini has no per-session config-dir env var, so auth is read from the shared global dir)
-- **Gemini transcripts in the log viewer** — after a session completes, Watchfire discovers the session's chat log under `~/.gemini/tmp/<project_hash>/chats/session-*.jsonl` (or the legacy `logs.json` array) and renders it in the same User/Assistant format as the other backends
-
-### Migration
-
-- Existing Claude Code, Codex, and opencode projects continue to work unchanged — no action required
-- Custom `gemini` binary paths can be configured via the global settings UI or by hand in `~/.watchfire/settings.yaml`
-
-## [2.1.0] Spark
-
-### Added
-
-- **opencode backend** — `opencode` (https://opencode.ai) ships as a third first-class backend alongside Claude Code and OpenAI Codex, registered in the backend registry and selectable per project. No wiring changes in the manager, sandbox, or UX surfaces — they already iterate the backend registry generically
-- **Per-session opencode home** — Watchfire gives every opencode session its own `OPENCODE_CONFIG_DIR` + `OPENCODE_DATA_DIR` under `~/.watchfire/opencode-home/<session>/`, symlinking the user's real `~/.config/opencode` entries (auth, providers, agents, commands) for login reuse while keeping the Watchfire system prompt (`AGENTS.md`) and yolo permission config (`opencode.json` with `"permission": "allow"`) isolated per session
-- **opencode transcripts in the log viewer** — after a session completes, opencode's per-message JSON files are collated into a single JSONL and rendered in the same User/Assistant format as the other backends
-- **Agent selector in project settings (GUI)** — Electron settings tab exposes a backend picker populated from the daemon registry via the new `SettingsService.ListAgents` RPC, bringing the GUI to parity with the TUI settings tab
-
-### Migration
-
-- Existing Claude Code and Codex projects continue to work unchanged — no action required
-- Custom `opencode` binary paths can be configured via the global settings UI or by hand in `~/.watchfire/settings.yaml`
-
 ## [2.0.0] Spark
 
 ### Added
 
 - **Pluggable agent backend interface** — new `AgentBackend` interface in `internal/daemon/agent/backend/` lets any CLI coding agent be plugged into Watchfire (executable resolution, command construction, sandbox extras, system-prompt delivery, transcript discovery and formatting)
 - **OpenAI Codex backend** — Codex ships as a first-class backend alongside Claude Code, registered in the backend registry and selectable per project
+- **opencode backend** — `opencode` (https://opencode.ai) ships as a first-class backend alongside Claude Code and OpenAI Codex, registered in the backend registry and selectable per project. No wiring changes in the manager, sandbox, or UX surfaces — they already iterate the backend registry generically
+- **Gemini CLI backend** — Google's `gemini` (https://github.com/google-gemini/gemini-cli) ships as a first-class backend alongside Claude Code, OpenAI Codex, and opencode, registered in the backend registry and selectable per project
 - **Agent picker in `watchfire init`** — init wizard prompts for the coding agent to use, seeding `project.default_agent` in `project.yaml`
 - **Agent selector in project settings (TUI)** — settings tab exposes a backend picker so the agent can be switched after init
+- **Agent selector in project settings (GUI)** — Electron settings tab exposes a backend picker populated from the daemon registry via the new `SettingsService.ListAgents` RPC, bringing the GUI to parity with the TUI settings tab
 - **Global settings UI for agent paths** — new settings overlay for registering custom binary paths per backend and choosing the global default agent, including an "Ask per project" option that forces `watchfire init` to prompt every time
 - **Per-task agent override** — each task can now pin itself to a specific backend via a new optional `agent` field in its YAML (`.watchfire/tasks/<n>.yaml`), letting users mix and match agents within a single project (e.g. Claude Code for architecture work, Codex for trivial edits, or rerunning a failed task under a different agent without touching project settings). The field is editable in the TUI task form (new cycling selector below the existing fields) and the GUI task modal (picker populated from the daemon's `SettingsService.ListAgents` RPC); both surfaces include a leading "Project default" entry that maps to the empty string, so the effective agent remains visible at a glance. An empty value defers to the project default, keeping existing tasks behaving exactly as before
 - **Agent badge on task lists** — TUI (`internal/tui/tasklist.go`) and GUI (`gui/src/renderer/src/views/ProjectView/TasksTab/TaskItem.tsx`) render a compact agent badge next to a task's title whenever `task.agent` is set and differs from the project default; tasks that defer to the project default render no badge, keeping the list visually quiet for the common case
+- **Per-session Codex home** — Codex receives the composed Watchfire system prompt via a per-session `CODEX_HOME` directory containing a generated `AGENTS.md`, keeping the user's real `~/.codex` as the source of auth/config that the session can write back to
+- **Per-session opencode home** — Watchfire gives every opencode session its own `OPENCODE_CONFIG_DIR` + `OPENCODE_DATA_DIR` under `~/.watchfire/opencode-home/<session>/`, symlinking the user's real `~/.config/opencode` entries (auth, providers, agents, commands) for login reuse while keeping the Watchfire system prompt (`AGENTS.md`) and yolo permission config (`opencode.json` with `"permission": "allow"`) isolated per session
+- **Per-session Gemini home** — Watchfire gives every Gemini session its own `GEMINI_SYSTEM_MD` pointing at `~/.watchfire/gemini-home/<session>/system.md`, keeping the Watchfire system prompt isolated per session while the user's real `~/.gemini/` continues to supply auth, settings, and hierarchical `GEMINI.md` context (Gemini has no per-session config-dir env var, so auth is read from the shared global dir)
+- **Codex transcripts in the log viewer** — after a session completes, Watchfire discovers Codex's JSONL rollout under the session's `CODEX_HOME/sessions/` tree and renders it in the same User/Assistant format as the other backends
+- **opencode transcripts in the log viewer** — after a session completes, opencode's per-message JSON files are collated into a single JSONL and rendered in the same User/Assistant format as the other backends
+- **Gemini transcripts in the log viewer** — after a session completes, Watchfire discovers the session's chat log under `~/.gemini/tmp/<project_hash>/chats/session-*.jsonl` (or the legacy `logs.json` array) and renders it in the same User/Assistant format as the other backends
 
 ### Changed
 
 - **Agent resolution chain** — the daemon now resolves the backend for each session through a four-step chain in `agent/manager.go:resolveBackend`: `task.agent` → `project.default_agent` → `settings.defaults.default_agent` → `claude-code`. Empty string at any level defers to the next, and chat / wildfire-refine / wildfire-generate sessions (which aren't scoped to a single task) skip the task step and start from the project default
 - **Backend-owned transcript discovery** — JSONL transcript location and formatting moved out of the agent manager and into each backend's `LocateTranscript` / `FormatTranscript` implementation
 - **Backend-contributed sandbox paths** — writable paths, cache patterns, and stripped env vars are now contributed by each backend via `SandboxExtras()` instead of being hardcoded in the sandbox layer
-- **Codex system-prompt isolation** — Codex receives the composed Watchfire system prompt via a per-session `CODEX_HOME` directory containing a generated `AGENTS.md`, keeping the user's real `~/.codex` untouched
 
 ### Fixed
 
@@ -55,7 +36,7 @@
 
 - Existing projects without `default_agent` continue to use Claude Code — no action required
 - Existing tasks without an `agent` field continue to use the project default — no action required
-- Custom `codex` binary paths can be configured via the new global settings UI or by hand in `~/.watchfire/settings.yaml`
+- Custom `codex`, `opencode`, and `gemini` binary paths can be configured via the new global settings UI or by hand in `~/.watchfire/settings.yaml`
 
 ## [1.0.0] Ember
 

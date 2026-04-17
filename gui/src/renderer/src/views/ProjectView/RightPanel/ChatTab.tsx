@@ -6,6 +6,7 @@ import { IssueBanner } from '../../../components/IssueBanner'
 import { AgentBadge } from '../../../components/AgentBadge'
 import { Button } from '../../../components/ui/Button'
 import { useToast } from '../../../components/ui/Toast'
+import { ModesControl } from '../ModesControl'
 
 interface Props {
   projectId: string
@@ -73,12 +74,13 @@ export function ChatTab({ projectId }: Props) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Header — only when running */}
-      {isRunning && (
-        <div className="flex items-center px-3 py-2 border-b border-[var(--wf-border)]">
-          <AgentBadge status={agentStatus} />
+      {/* Modes toolbar + agent badge */}
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--wf-border)]">
+        {isRunning && <AgentBadge status={agentStatus} />}
+        <div className="ml-auto">
+          <ModesControl projectId={projectId} layout="row" />
         </div>
-      )}
+      </div>
 
       {/* Issue banner */}
       {issue && (

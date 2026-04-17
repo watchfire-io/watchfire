@@ -1,15 +1,12 @@
 import { useState, useEffect } from 'react'
-import { ListTodo, FileText, Trash2, Settings, GitBranch, Globe, Circle, PanelRightClose, PanelRight, Square, Flame, Play, Sparkles, KeyRound } from 'lucide-react'
+import { ListTodo, FileText, Trash2, Settings, GitBranch, Globe, Circle, PanelRightClose, PanelRight, KeyRound } from 'lucide-react'
 import { useAppStore } from '../../stores/app-store'
 import { useProjectsStore } from '../../stores/projects-store'
 import { useTasksStore } from '../../stores/tasks-store'
-import { useAgentStore } from '../../stores/agent-store'
 import { useGitStore } from '../../stores/git-store'
 import { StatusDot } from '../../components/StatusDot'
 import { isAgentWorking } from '../../lib/agent-utils'
 import { AgentBadge } from '../../components/AgentBadge'
-import { Button } from '../../components/ui/Button'
-import { useToast } from '../../components/ui/Toast'
 import { cn } from '../../lib/utils'
 import { usePanelResize } from '../../hooks/usePanelResize'
 import { TasksTab } from './TasksTab/TasksTab'
@@ -20,6 +17,7 @@ import { SettingsTab } from './SettingsTab'
 import { RightPanel } from './RightPanel/RightPanel'
 import { BottomPanel } from './BottomPanel/BottomPanel'
 import { useTerminalStore } from '../../stores/terminal-store'
+import { ModesControl } from './ModesControl'
 
 type CenterTab = 'tasks' | 'definition' | 'secrets' | 'trash' | 'settings'
 
@@ -37,11 +35,8 @@ export function ProjectView() {
   const agentStatus = useProjectsStore((s) => s.agentStatuses[projectId || ''])
   const fetchAgentStatus = useProjectsStore((s) => s.fetchAgentStatus)
   const fetchTasks = useTasksStore((s) => s.fetchTasks)
-  const startAgent = useAgentStore((s) => s.startAgent)
-  const stopAgent = useAgentStore((s) => s.stopAgent)
   const gitInfo = useGitStore((s) => s.gitInfo[projectId || ''])
   const fetchGitInfo = useGitStore((s) => s.fetchGitInfo)
-  const { toast } = useToast()
 
   const [centerTab, setCenterTab] = useState<CenterTab>('tasks')
   const [rightPanelOpen, setRightPanelOpen] = useState(() => {
@@ -112,30 +107,6 @@ export function ProjectView() {
     }
   }, [projectId])
 
-  const handleStartAgent = async (mode: string) => {
-    if (!projectId) return
-    try {
-      // If an agent is running (e.g. chat mode), stop it first
-      if (isAgentRunning) {
-        await stopAgent(projectId)
-      }
-      await startAgent(projectId, mode)
-      await fetchAgentStatus(projectId)
-    } catch (err) {
-      toast(String(err), 'error')
-    }
-  }
-
-  const handleStopAgent = async () => {
-    if (!projectId) return
-    try {
-      await stopAgent(projectId)
-      await fetchAgentStatus(projectId)
-    } catch (err) {
-      toast(String(err), 'error')
-    }
-  }
-
   if (!project || !projectId) {
     return (
       <div className="flex-1 flex items-center justify-center text-[var(--wf-text-muted)]">
@@ -155,12 +126,15 @@ export function ProjectView() {
             <h2 className="font-heading text-base font-semibold">{project.name}</h2>
             {isAgentRunning && <AgentBadge status={agentStatus} />}
           </div>
-          <button
-            onClick={() => setRightPanelOpen(!rightPanelOpen)}
-            className="p-1.5 text-[var(--wf-text-muted)] hover:text-[var(--wf-text-primary)] transition-colors"
-          >
-            {rightPanelOpen ? <PanelRightClose size={18} /> : <PanelRight size={18} />}
-          </button>
+          <div className="flex items-center gap-2">
+            {!rightPanelOpen && <ModesControl projectId={projectId} layout="menu" />}
+            <button
+              onClick={() => setRightPanelOpen(!rightPanelOpen)}
+              className="p-1.5 text-[var(--wf-text-muted)] hover:text-[var(--wf-text-primary)] transition-colors"
+            >
+              {rightPanelOpen ? <PanelRightClose size={18} /> : <PanelRight size={18} />}
+            </button>
+          </div>
         </div>
 
         {/* Row 2: Git info */}
@@ -194,29 +168,6 @@ export function ProjectView() {
           )}
         </div>
 
-        {/* Row 3: Action buttons */}
-        <div className="flex items-center gap-1.5">
-          <Button size="sm" variant={isAgentRunning && agentStatus?.mode === 'generate-definition' ? 'primary' : 'ghost'} onClick={() => handleStartAgent('generate-definition')} title="Generate project definition from codebase">
-            <Sparkles size={12} />
-            Generate
-          </Button>
-          <Button size="sm" variant={isAgentRunning && agentStatus?.mode === 'generate-tasks' ? 'primary' : 'ghost'} onClick={() => handleStartAgent('generate-tasks')} title="Generate tasks from project definition">
-            <ListTodo size={12} />
-            Plan
-          </Button>
-          <Button size="sm" variant={isAgentRunning && agentStatus?.mode === 'start-all' ? 'primary' : 'ghost'} onClick={() => handleStartAgent('start-all')} title="Run all ready tasks sequentially">
-            <Play size={12} />
-            Run All
-          </Button>
-          <Button size="sm" variant={isAgentRunning && agentStatus?.mode === 'wildfire' ? 'primary' : 'ghost'} onClick={() => handleStartAgent('wildfire')} title="Autonomous loop: generate, plan, and execute">
-            <Flame size={12} />
-            Wildfire
-          </Button>
-          <Button size="sm" variant="danger" onClick={handleStopAgent} disabled={!isAgentRunning || agentStatus?.mode === 'chat'} title="Stop the running agent">
-            <Square size={12} />
-            Stop
-          </Button>
-        </div>
       </div>
 
       {/* Content area */}

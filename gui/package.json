@@ -1,6 +1,6 @@
 {
   "name": "watchfire",
-  "version": "2.1.0",
+  "version": "2.0.0",
   "description": "Remote control for AI coding agents",
   "homepage": "https://github.com/watchfire-io/watchfire",
   "author": "nunocoracao <nuno@n9o.xyz>",
