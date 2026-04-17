@@ -222,6 +222,48 @@ var confirmKeys = ConfirmKeys{
 	),
 }
 
+// LogKeys are active when the Logs tab is focused.
+type LogKeys struct {
+	Up        key.Binding
+	Down      key.Binding
+	Enter     key.Binding
+	Back      key.Binding
+	PageUp    key.Binding
+	PageDown  key.Binding
+	DeleteLog key.Binding
+}
+
+var logKeys = LogKeys{
+	Up: key.NewBinding(
+		key.WithKeys("up", "k"),
+		key.WithHelp("j/k", "navigate"),
+	),
+	Down: key.NewBinding(
+		key.WithKeys("down", "j"),
+		key.WithHelp("j/k", "navigate"),
+	),
+	Enter: key.NewBinding(
+		key.WithKeys("enter"),
+		key.WithHelp("Enter", "view log"),
+	),
+	Back: key.NewBinding(
+		key.WithKeys("esc"),
+		key.WithHelp("Esc", "back to list"),
+	),
+	PageUp: key.NewBinding(
+		key.WithKeys("pgup"),
+		key.WithHelp("PgUp", "scroll up"),
+	),
+	PageDown: key.NewBinding(
+		key.WithKeys("pgdown"),
+		key.WithHelp("PgDn", "scroll down"),
+	),
+	DeleteLog: key.NewBinding(
+		key.WithKeys("d"),
+		key.WithHelp("d", "delete log"),
+	),
+}
+
 // TerminalKeys for special actions while terminal is focused.
 type TerminalKeys struct {
 	Resume key.Binding

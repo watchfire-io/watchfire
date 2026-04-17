@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -183,6 +184,16 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 
 	case LogContentMsg:
 		m.logViewer.SetLogContent(msg.Entry, msg.Content)
+		return true, nil
+
+	case LogDeletedMsg:
+		m.logViewer.ClearDeleting()
+		if msg.Err != nil {
+			m.err = fmt.Errorf("failed to delete log: %w", msg.Err)
+			cmds = append(cmds, clearErrorAfter(5*time.Second))
+			return true, tea.Batch(cmds...)
+		}
+		m.logViewer.RemoveLog(msg.LogID)
 		return true, nil
 
 	// ── Global settings ────────────────────────────────────────────

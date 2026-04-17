@@ -382,6 +382,20 @@ func getLogCmd(conn *grpc.ClientConn, projectID, logID string) tea.Cmd {
 	}
 }
 
+func deleteLogCmd(conn *grpc.ClientConn, projectID, logID string) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewLogServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		_, err := client.DeleteLog(ctx, &pb.DeleteLogRequest{
+			ProjectId: projectID,
+			LogId:     logID,
+		})
+		return LogDeletedMsg{LogID: logID, Err: err}
+	}
+}
+
 func spinnerTick() tea.Cmd {
 	return tea.Tick(80*time.Millisecond, func(_ time.Time) tea.Msg {
 		return spinnerTickMsg{}

@@ -100,6 +100,12 @@ type LogContentMsg struct {
 	Content string
 }
 
+// LogDeletedMsg signals that a delete-log RPC completed.
+type LogDeletedMsg struct {
+	LogID string
+	Err   error
+}
+
 // UpdateAvailableMsg signals that a daemon update is available.
 type UpdateAvailableMsg struct {
 	Version string
