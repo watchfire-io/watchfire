@@ -66,6 +66,13 @@ func EnsureWorktree(projectPath string, taskNumber int) (string, error) {
 func MergeWorktree(projectPath string, taskNumber int) (bool, error) {
 	padded := fmt.Sprintf("%04d", taskNumber)
 	branchName := fmt.Sprintf("watchfire/%s", padded)
+	worktreePath := filepath.Join(projectPath, ".watchfire", "worktrees", padded)
+
+	// Safety net: some agents (notably Codex) sometimes mark a task done
+	// without running `git commit`. Stage and commit any uncommitted work
+	// in the worktree before the diff check so the edits aren't discarded
+	// when the branch gets auto-deleted.
+	autoCommitUncommittedChanges(worktreePath, branchName)
 
 	// Detect current branch — merge target is always the checked-out branch
 	revParse := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
@@ -192,4 +199,48 @@ func RemoveWorktree(projectPath string, taskNumber int, merged bool) error {
 	}
 
 	return nil
+}
+
+// autoCommitUncommittedChanges stages and commits any uncommitted work in the
+// worktree. Without this, an agent that edits files but forgets to run
+// `git commit` before marking a task done would have all its work silently
+// discarded when MergeWorktree sees no diff on the branch and the branch
+// gets auto-deleted afterwards. Observed with Codex; harmless for agents
+// that already commit (git status --porcelain comes back empty).
+func autoCommitUncommittedChanges(worktreePath, branchName string) {
+	if _, err := os.Stat(worktreePath); err != nil {
+		return
+	}
+
+	status := exec.Command("git", "status", "--porcelain")
+	status.Dir = worktreePath
+	out, err := status.Output()
+	if err != nil {
+		log.Printf("[merge] auto-commit: git status in %s failed: %v", worktreePath, err)
+		return
+	}
+	if len(strings.TrimSpace(string(out))) == 0 {
+		return
+	}
+
+	log.Printf("[merge] auto-commit: %s has uncommitted changes — staging and committing before merge:\n%s",
+		branchName, strings.TrimSpace(string(out)))
+
+	add := exec.Command("git", "add", "-A")
+	add.Dir = worktreePath
+	if addOut, addErr := add.CombinedOutput(); addErr != nil {
+		log.Printf("[merge] auto-commit: git add failed: %s", strings.TrimSpace(string(addOut)))
+		return
+	}
+
+	commit := exec.Command("git", "commit",
+		"-m", fmt.Sprintf("Watchfire: auto-commit uncommitted changes from %s", branchName),
+		"--no-verify",
+	)
+	commit.Dir = worktreePath
+	if cOut, cErr := commit.CombinedOutput(); cErr != nil {
+		log.Printf("[merge] auto-commit: git commit failed: %s", strings.TrimSpace(string(cOut)))
+		return
+	}
+	log.Printf("[merge] auto-commit: captured uncommitted changes on %s", branchName)
 }

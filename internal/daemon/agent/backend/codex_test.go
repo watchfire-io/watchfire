@@ -157,13 +157,16 @@ func TestCodexInstallSystemPrompt(t *testing.T) {
 
 	sessionHome := filepath.Join(home, ".watchfire", "codex-home", "proj:task:#0001")
 
-	// AGENTS.md contents.
+	// AGENTS.md contents — composed prompt followed by the codex commit addendum.
 	got, err := os.ReadFile(filepath.Join(sessionHome, "AGENTS.md"))
 	if err != nil {
 		t.Fatalf("read AGENTS.md: %v", err)
 	}
-	if string(got) != prompt {
-		t.Errorf("AGENTS.md = %q, want %q", got, prompt)
+	if !strings.HasPrefix(string(got), prompt) {
+		t.Errorf("AGENTS.md does not start with composed prompt; got %q", got)
+	}
+	if !strings.Contains(string(got), "CRITICAL: Commit before marking a task done") {
+		t.Errorf("AGENTS.md missing codex commit addendum; got %q", got)
 	}
 
 	// auth.json symlink resolves to the user's real auth file.
@@ -192,8 +195,11 @@ func TestCodexInstallSystemPrompt(t *testing.T) {
 		t.Fatalf("second install: %v", err)
 	}
 	got, _ = os.ReadFile(filepath.Join(sessionHome, "AGENTS.md"))
-	if string(got) != prompt2 {
-		t.Errorf("AGENTS.md after reinstall = %q, want %q", got, prompt2)
+	if !strings.HasPrefix(string(got), prompt2) {
+		t.Errorf("AGENTS.md after reinstall does not start with %q; got %q", prompt2, got)
+	}
+	if !strings.Contains(string(got), "CRITICAL: Commit before marking a task done") {
+		t.Errorf("AGENTS.md after reinstall missing codex commit addendum; got %q", got)
 	}
 }
 

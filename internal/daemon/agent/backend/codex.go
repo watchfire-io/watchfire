@@ -18,6 +18,33 @@ import (
 // CodexBackendName is the registry key for the OpenAI Codex backend.
 const CodexBackendName = "codex"
 
+// codexCommitAddendum is appended to the AGENTS.md every Codex session reads.
+// Codex has been observed marking a task `status: done` without running
+// `git commit`, which causes Watchfire to see no diff on the branch and
+// silently discard the edits when the worktree gets cleaned up. The base
+// Watchfire prompt already says "Commit all changes," but Codex doesn't
+// consistently follow that; this louder, codex-specific addendum repeats
+// the rule at the end where it's least likely to be overlooked. The
+// MergeWorktree auto-commit safety net in worktree.go is the belt; this
+// is the suspenders.
+const codexCommitAddendum = `
+
+---
+
+# CRITICAL: Commit before marking a task done
+
+Before you set ` + "`status: done`" + ` in a task YAML, you MUST run:
+
+` + "```" + `
+git add -A
+git commit -m "<short description of what you did>"
+` + "```" + `
+
+from inside the worktree. If you skip this, Watchfire will try to merge your
+branch, find no new commits, and your file edits will be DISCARDED. This has
+actually happened and lost work. Commit first, mark done second. No exceptions.
+`
+
 // Codex implements Backend for the OpenAI Codex CLI.
 type Codex struct{}
 
@@ -158,7 +185,8 @@ func (c *Codex) installForSession(sessionName, composedPrompt string) error {
 	}
 
 	agentsPath := filepath.Join(sessionHome, "AGENTS.md")
-	if err := os.WriteFile(agentsPath, []byte(composedPrompt), 0o644); err != nil {
+	agentsContent := composedPrompt + codexCommitAddendum
+	if err := os.WriteFile(agentsPath, []byte(agentsContent), 0o644); err != nil {
 		return fmt.Errorf("write AGENTS.md: %w", err)
 	}
 

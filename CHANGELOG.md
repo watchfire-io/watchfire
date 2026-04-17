@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.1] Spark
+
+### Fixed
+
+- **Silently discarded work when Codex (or any agent) forgot to commit** — if an agent edited files in the worktree and set `status: done` without running `git commit`, Watchfire saw no diff on the branch, skipped the merge, and auto-deleted the branch and worktree — losing everything the agent did. `MergeWorktree` now runs `git add -A && git commit --no-verify` inside the worktree as a safety net before the diff check, so uncommitted edits are always captured even when the agent skips the commit step
+- **Codex commit instruction not emphatic enough** — the base Watchfire system prompt already tells agents to commit before marking a task done, but Codex didn't consistently follow it. Codex sessions' per-session `AGENTS.md` now includes an additional, explicit `CRITICAL: Commit before marking a task done` addendum at the end, making the rule the last thing Codex reads before starting work
+
 ## [2.0.0] Spark
 
 ### Added
