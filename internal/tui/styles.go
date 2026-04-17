@@ -67,6 +67,9 @@ var (
 	badgeActiveStyle   = lipgloss.NewStyle().Foreground(colorGreen).Bold(true)
 	badgeWildfireStyle = lipgloss.NewStyle().Foreground(colorOrange).Bold(true)
 	badgeIssueStyle    = lipgloss.NewStyle().Foreground(colorYellow).Bold(true)
+
+	// Per-task agent override badge shown in the task list.
+	agentBadgeStyle = lipgloss.NewStyle().Foreground(colorCyan)
 )
 
 // Overlay styles.

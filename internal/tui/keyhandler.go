@@ -451,8 +451,19 @@ func (m *Model) handleTaskFormKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
+	// Agent cycler: space/enter/right cycles forward, left cycles back.
+	if m.taskForm.FocusIndex() == taskFormFocusAgent {
+		switch msg.Type {
+		case tea.KeySpace, tea.KeyEnter, tea.KeyRight:
+			m.taskForm.CycleAgentNext()
+		case tea.KeyLeft:
+			m.taskForm.CycleAgentPrev()
+		}
+		return nil
+	}
+
 	// Status field: toggle on space/enter
-	if m.taskForm.FocusIndex() == 3 {
+	if m.taskForm.FocusIndex() == taskFormFocusStatus {
 		if msg.Type == tea.KeySpace || msg.Type == tea.KeyEnter {
 			m.taskForm.ToggleStatus()
 		}
@@ -461,15 +472,15 @@ func (m *Model) handleTaskFormKey(msg tea.KeyMsg) tea.Cmd {
 
 	// Forward to active input
 	switch m.taskForm.FocusIndex() {
-	case 0:
+	case taskFormFocusTitle:
 		ti := m.taskForm.TitleInput()
 		newTI, _ := ti.Update(msg)
 		*ti = newTI
-	case 1:
+	case taskFormFocusPrompt:
 		ta := m.taskForm.PromptArea()
 		newTA, _ := ta.Update(msg)
 		*ta = newTA
-	case 2:
+	case taskFormFocusCriteria:
 		ta := m.taskForm.CriteriaArea()
 		newTA, _ := ta.Update(msg)
 		*ta = newTA

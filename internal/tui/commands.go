@@ -227,7 +227,7 @@ func resizeAgentCmd(conn *grpc.ClientConn, projectID string, rows, cols int) tea
 	}
 }
 
-func createTaskCmd(conn *grpc.ClientConn, projectID, title, prompt, criteria, status string) tea.Cmd {
+func createTaskCmd(conn *grpc.ClientConn, projectID, title, prompt, criteria, status, agent string) tea.Cmd {
 	return func() tea.Msg {
 		client := pb.NewTaskServiceClient(conn)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -241,6 +241,9 @@ func createTaskCmd(conn *grpc.ClientConn, projectID, title, prompt, criteria, st
 		}
 		if criteria != "" {
 			req.AcceptanceCriteria = &criteria
+		}
+		if agent != "" {
+			req.Agent = &agent
 		}
 
 		task, err := client.CreateTask(ctx, req)
@@ -276,6 +279,9 @@ func updateTaskCmd(conn *grpc.ClientConn, projectID string, taskNumber int32, up
 		}
 		if v, ok := updates["success"].(bool); ok {
 			req.Success = &v
+		}
+		if v, ok := updates["agent"].(string); ok {
+			req.Agent = &v
 		}
 
 		task, err := client.UpdateTask(ctx, req)

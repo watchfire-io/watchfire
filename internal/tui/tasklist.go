@@ -4,10 +4,12 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"unicode"
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/watchfire-io/watchfire/internal/daemon/agent/backend"
 	pb "github.com/watchfire-io/watchfire/proto"
 )
 
@@ -24,6 +26,10 @@ type TaskList struct {
 	height        int
 	agentStatus   *pb.AgentStatus
 	spinnerFrame  int
+
+	// Project default agent (empty = built-in claude-code). Used to decide
+	// whether a per-task override is shown as a badge.
+	projectDefaultAgent string
 
 	// Search state
 	searchMode  bool
@@ -59,6 +65,12 @@ func (tl *TaskList) SetTasks(tasks []*pb.Task) {
 // SetAgentStatus updates the agent status for active task highlighting.
 func (tl *TaskList) SetAgentStatus(status *pb.AgentStatus) {
 	tl.agentStatus = status
+}
+
+// SetProjectDefaultAgent records the project's default agent so the
+// per-task override badge can decide whether to render.
+func (tl *TaskList) SetProjectDefaultAgent(name string) {
+	tl.projectDefaultAgent = strings.TrimSpace(name)
 }
 
 // SetHeight sets the visible height.
@@ -304,12 +316,31 @@ func (tl *TaskList) View(width int) string {
 		t := item.task
 		badge := tl.taskBadge(t)
 		numStr := lipgloss.NewStyle().Foreground(colorDim).Render(fmt.Sprintf("#%04d", t.TaskNumber))
-		title := fmt.Sprintf("%s %s %s", badge, numStr, t.Title)
+		agentBadge := tl.agentBadge(t)
 
-		// Truncate to fit panel width (2 for indent prefix)
-		maxWidth := width - 2
+		// Compute width budgets: reserve space for the (untruncated) fixed
+		// prefix + agent badge so the title — never the badge — is the part
+		// that gets shortened under pressure.
+		maxWidth := width - 2 // indent prefix
+		prefix := fmt.Sprintf("%s %s ", badge, numStr)
+		prefixWidth := ansi.StringWidth(prefix)
+		agentWidth := ansi.StringWidth(agentBadge)
+		if agentBadge != "" {
+			agentWidth++ // trailing space between badge and title
+		}
+		titleStr := t.Title
 		if maxWidth > 0 {
-			title = ansi.Truncate(title, maxWidth, "…")
+			budget := maxWidth - prefixWidth - agentWidth
+			if budget < 1 {
+				budget = 1
+			}
+			titleStr = ansi.Truncate(titleStr, budget, "…")
+		}
+		var title string
+		if agentBadge != "" {
+			title = prefix + agentBadge + " " + titleStr
+		} else {
+			title = prefix + titleStr
 		}
 
 		var style lipgloss.Style
@@ -379,4 +410,63 @@ func (tl *TaskList) isActiveTask(t *pb.Task) bool {
 		return false
 	}
 	return tl.agentStatus.TaskNumber == t.TaskNumber && t.Status == "ready"
+}
+
+// agentBadge returns a compact rendered badge for a task whose agent
+// override differs from the project default. Empty string means no badge.
+func (tl *TaskList) agentBadge(t *pb.Task) string {
+	override := strings.TrimSpace(t.Agent)
+	if override == "" {
+		return ""
+	}
+	if override == tl.projectDefaultAgent {
+		return ""
+	}
+	return agentBadgeStyle.Render(agentBadgeLabel(override))
+}
+
+// agentBadgeLabel returns the 1-3 character label for a backend name. It
+// uses the backend's DisplayName() when registered, falling back to the
+// raw name so unknown overrides still render something meaningful.
+func agentBadgeLabel(name string) string {
+	display := name
+	if b, ok := backend.Get(name); ok {
+		display = b.DisplayName()
+	}
+	initials := badgeInitials(display)
+	if initials != "" {
+		return initials
+	}
+	// Last resort: first three runes of the raw name, upper-cased.
+	return truncateRunes(strings.ToUpper(name), 3)
+}
+
+// badgeInitials derives up to 3 letters from the provided display name
+// (e.g. "Claude Code" → "CC", "Codex" → "C", "OpenAI Codex" → "OC").
+func badgeInitials(display string) string {
+	fields := strings.FieldsFunc(display, func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
+	})
+	var b strings.Builder
+	for _, f := range fields {
+		for _, r := range f {
+			b.WriteRune(unicode.ToUpper(r))
+			break
+		}
+		if b.Len() >= 3 {
+			break
+		}
+	}
+	return b.String()
+}
+
+func truncateRunes(s string, n int) string {
+	if n <= 0 {
+		return ""
+	}
+	rs := []rune(s)
+	if len(rs) <= n {
+		return s
+	}
+	return string(rs[:n])
 }
