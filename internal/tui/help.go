@@ -58,6 +58,7 @@ var helpSections = []helpSection{
 		keys: []helpKey{
 			{"j/k ↑/↓", "Navigate logs"},
 			{"Enter", "View log content"},
+			{"d", "Delete log"},
 			{"Esc", "Back to list"},
 			{"PgUp/PgDn", "Scroll content"},
 		},

@@ -47,6 +47,7 @@ type Model struct {
 	// Confirm mode
 	confirmMode    int
 	confirmTaskNum int32
+	confirmLogID   string
 
 	// Status display
 	err       error

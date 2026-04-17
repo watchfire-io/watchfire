@@ -9,10 +9,11 @@ import (
 
 // confirmMode values.
 const (
-	confirmNone   = 0
-	confirmDelete = 1
-	confirmQuit   = 2
-	confirmStop   = 3
+	confirmNone      = 0
+	confirmDelete    = 1
+	confirmQuit      = 2
+	confirmStop      = 3
+	confirmDeleteLog = 4
 )
 
 func renderStatusBar(m *Model, width int) string {
@@ -32,6 +33,12 @@ func renderStatusBar(m *Model, width int) string {
 	if m.confirmMode == confirmStop {
 		return renderConfirmBar(
 			"Stop agent? (y/n)",
+			width,
+		)
+	}
+	if m.confirmMode == confirmDeleteLog {
+		return renderConfirmBar(
+			"Delete this session log? (y/n)",
 			width,
 		)
 	}
@@ -129,7 +136,7 @@ func getKeyHints(m *Model) string {
 		case 0: // Chat/Terminal
 			context = []hint{{"", "(input goes to agent)"}}
 		case 1: // Logs
-			context = []hint{{"Enter", "view"}, {"Esc", "back"}}
+			context = []hint{{"Enter", "view"}, {"d", "delete"}, {"Esc", "back"}}
 		}
 	}
 

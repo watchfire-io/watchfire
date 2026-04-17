@@ -21,7 +21,8 @@ type LogViewer struct {
 	scrollOffset  int
 	logContent    string
 	logEntry      *pb.LogEntry
-	loaded        bool // whether logs have been fetched at least once
+	loaded        bool   // whether logs have been fetched at least once
+	deletingID    string // non-empty while a delete RPC is in flight
 }
 
 // NewLogViewer creates a new log viewer.
@@ -122,6 +123,61 @@ func (l *LogViewer) GoBack() {
 // Loaded returns whether logs have been fetched at least once.
 func (l *LogViewer) Loaded() bool {
 	return l.loaded
+}
+
+// IsDeleting reports whether a delete RPC is currently in flight.
+func (l *LogViewer) IsDeleting() bool {
+	return l.deletingID != ""
+}
+
+// DeletingID returns the log_id of the in-flight delete, or "".
+func (l *LogViewer) DeletingID() string {
+	return l.deletingID
+}
+
+// MarkDeleting records that a delete RPC is in flight for the given log.
+func (l *LogViewer) MarkDeleting(logID string) {
+	l.deletingID = logID
+}
+
+// ClearDeleting clears the in-flight delete marker.
+func (l *LogViewer) ClearDeleting() {
+	l.deletingID = ""
+}
+
+// RemoveLog removes a log entry by id and keeps selectedIndex in range.
+// If the detail view was showing the removed entry, it returns to the list.
+// Returns true if an entry was removed.
+func (l *LogViewer) RemoveLog(logID string) bool {
+	idx := -1
+	for i, e := range l.logs {
+		if e.LogId == logID {
+			idx = i
+			break
+		}
+	}
+	if idx < 0 {
+		return false
+	}
+
+	l.logs = append(l.logs[:idx], l.logs[idx+1:]...)
+
+	if l.selectedIndex >= len(l.logs) {
+		l.selectedIndex = len(l.logs) - 1
+	}
+	if l.selectedIndex < 0 {
+		l.selectedIndex = 0
+	}
+	if l.scrollOffset > l.selectedIndex {
+		l.scrollOffset = l.selectedIndex
+	}
+
+	if l.viewing && l.logEntry != nil && l.logEntry.LogId == logID {
+		l.viewing = false
+		l.logContent = ""
+		l.logEntry = nil
+	}
+	return true
 }
 
 func (l *LogViewer) ensureVisible() {

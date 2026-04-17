@@ -335,6 +335,10 @@ func (m *Model) handleLogKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
+	if key.Matches(msg, logKeys.DeleteLog) {
+		return m.confirmDeleteLog()
+	}
+
 	switch msg.String() {
 	case "k":
 		m.logViewer.MoveUp()
@@ -357,9 +361,19 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) tea.Cmd {
 		case confirmStop:
 			m.confirmMode = confirmNone
 			return stopAgentCmd(m.conn, m.projectID)
+		case confirmDeleteLog:
+			m.confirmMode = confirmNone
+			logID := m.confirmLogID
+			m.confirmLogID = ""
+			if logID == "" || m.conn == nil {
+				return nil
+			}
+			m.logViewer.MarkDeleting(logID)
+			return deleteLogCmd(m.conn, m.projectID, logID)
 		}
 	case key.Matches(msg, confirmKeys.No), key.Matches(msg, confirmKeys.Cancel):
 		m.confirmMode = confirmNone
+		m.confirmLogID = ""
 	}
 	return nil
 }

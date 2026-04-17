@@ -115,6 +115,21 @@ func (m *Model) confirmDeleteTask() tea.Cmd {
 	return nil
 }
 
+// confirmDeleteLog arms the confirmation prompt for deleting the selected log.
+// Returns nil if no log is selected or if a delete is already in flight.
+func (m *Model) confirmDeleteLog() tea.Cmd {
+	if m.logViewer.IsDeleting() {
+		return nil
+	}
+	entry := m.logViewer.SelectedLog()
+	if entry == nil {
+		return nil
+	}
+	m.confirmMode = confirmDeleteLog
+	m.confirmLogID = entry.LogId
+	return nil
+}
+
 // doQuit performs clean shutdown: cancel streams, clear program ref, close connection, quit.
 func (m *Model) doQuit() tea.Cmd {
 	m.streamCancel()
