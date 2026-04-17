@@ -34,3 +34,24 @@ export function AgentBadge({ status, className }: AgentBadgeProps) {
     </span>
   )
 }
+
+interface AgentOverrideBadgeProps {
+  label: string
+  title?: string
+  className?: string
+}
+
+export function AgentOverrideBadge({ label, title, className }: AgentOverrideBadgeProps) {
+  return (
+    <span
+      title={title}
+      className={cn(
+        'inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium uppercase tracking-wider',
+        'bg-fire-500/10 text-fire-400 border border-fire-500/30',
+        className
+      )}
+    >
+      {label}
+    </span>
+  )
+}

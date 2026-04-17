@@ -1,9 +1,12 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Play, MoreHorizontal, ArrowUp, ArrowDown, Trash2, CheckCircle } from 'lucide-react'
 import type { Task } from '../../../generated/watchfire_pb'
 import { useTasksStore } from '../../../stores/tasks-store'
 import { useAgentStore } from '../../../stores/agent-store'
+import { useAgentsStore } from '../../../stores/agents-store'
+import { useProjectsStore } from '../../../stores/projects-store'
 import { TaskStatusBadge } from '../../../components/TaskStatusBadge'
+import { AgentOverrideBadge } from '../../../components/AgentBadge'
 import { formatTaskNumber, cn } from '../../../lib/utils'
 import { useToast } from '../../../components/ui/Toast'
 import { TaskModal } from './TaskModal'
@@ -18,9 +21,25 @@ export function TaskItem({ task, projectId }: Props) {
   const deleteTask = useTasksStore((s) => s.deleteTask)
   const startAgent = useAgentStore((s) => s.startAgent)
   const agentStatus = useAgentStore((s) => s.statuses[projectId])
+  const project = useProjectsStore((s) =>
+    s.projects.find((p) => p.projectId === projectId)
+  )
+  const agents = useAgentsStore((s) => s.agents)
+  const ensureAgentsLoaded = useAgentsStore((s) => s.ensureLoaded)
   const { toast } = useToast()
   const [showMenu, setShowMenu] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
+
+  const override = (task.agent ?? '').trim()
+  const projectDefault = (project?.defaultAgent ?? '').trim()
+  const showBadge = override !== '' && override !== projectDefault
+
+  useEffect(() => {
+    if (showBadge) ensureAgentsLoaded()
+  }, [showBadge, ensureAgentsLoaded])
+
+  const overrideDisplayName =
+    agents.find((a) => a.name === override)?.displayName || override
 
   const isAgentOnTask = agentStatus?.isRunning && agentStatus?.taskNumber === task.taskNumber
 
@@ -66,6 +85,13 @@ export function TaskItem({ task, projectId }: Props) {
         <span className="flex-1 text-sm truncate">{task.title}</span>
         {isAgentOnTask && (
           <span className="w-1.5 h-1.5 rounded-full bg-fire-500 animate-pulse shrink-0" />
+        )}
+        {showBadge && (
+          <AgentOverrideBadge
+            label={overrideDisplayName}
+            title={`Running on ${overrideDisplayName} (override)`}
+            className="shrink-0"
+          />
         )}
         <TaskStatusBadge status={task.status} success={task.success} />
 

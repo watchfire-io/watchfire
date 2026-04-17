@@ -2,7 +2,10 @@ import { useState, useEffect } from 'react'
 import { SlidePanel } from '../../../components/ui/SlidePanel'
 import { Button } from '../../../components/ui/Button'
 import { Input } from '../../../components/ui/Input'
+import { Select, type SelectOption } from '../../../components/ui/Select'
 import { useTasksStore } from '../../../stores/tasks-store'
+import { useProjectsStore } from '../../../stores/projects-store'
+import { useAgentsStore } from '../../../stores/agents-store'
 import { useToast } from '../../../components/ui/Toast'
 import type { Task } from '../../../generated/watchfire_pb'
 import { formatTaskNumber } from '../../../lib/utils'
@@ -17,15 +20,26 @@ interface Props {
 export function TaskModal({ open, onClose, projectId, task }: Props) {
   const createTask = useTasksStore((s) => s.createTask)
   const updateTask = useTasksStore((s) => s.updateTask)
+  const project = useProjectsStore((s) =>
+    s.projects.find((p) => p.projectId === projectId)
+  )
+  const agents = useAgentsStore((s) => s.agents)
+  const agentsLoaded = useAgentsStore((s) => s.loaded)
+  const ensureAgentsLoaded = useAgentsStore((s) => s.ensureLoaded)
   const { toast } = useToast()
 
   const [title, setTitle] = useState('')
   const [prompt, setPrompt] = useState('')
   const [criteria, setCriteria] = useState('')
   const [status, setStatus] = useState<'draft' | 'ready'>('draft')
+  const [agent, setAgent] = useState('')
   const [saving, setSaving] = useState(false)
 
   const isEdit = !!task
+
+  useEffect(() => {
+    if (open) ensureAgentsLoaded()
+  }, [open, ensureAgentsLoaded])
 
   // Initialize form state when the modal opens — use task?.taskNumber as a stable
   // dependency instead of the full task object, which changes reference on every poll.
@@ -35,11 +49,13 @@ export function TaskModal({ open, onClose, projectId, task }: Props) {
       setPrompt(task.prompt)
       setCriteria(task.acceptanceCriteria)
       setStatus(task.status === 'ready' ? 'ready' : 'draft')
+      setAgent(task.agent ?? '')
     } else if (!open) {
       setTitle('')
       setPrompt('')
       setCriteria('')
       setStatus('draft')
+      setAgent('')
     }
   }, [task?.taskNumber, open])
 
@@ -52,13 +68,15 @@ export function TaskModal({ open, onClose, projectId, task }: Props) {
           title: title.trim(),
           prompt: prompt.trim(),
           acceptanceCriteria: criteria.trim(),
-          status
+          status,
+          agent
         })
         toast('Task updated', 'success')
       } else {
         await createTask(projectId, title.trim(), prompt.trim(), {
           acceptanceCriteria: criteria.trim(),
-          status
+          status,
+          agent
         })
         toast('Task created', 'success')
       }
@@ -69,6 +87,14 @@ export function TaskModal({ open, onClose, projectId, task }: Props) {
       setSaving(false)
     }
   }
+
+  const projectDefault = (project?.defaultAgent ?? '').trim()
+  const projectDefaultAgent = agents.find((a) => a.name === projectDefault)
+  const projectDefaultLabel = projectDefaultAgent?.displayName || projectDefault || 'unspecified'
+  const agentOptions: SelectOption[] = [
+    { value: '', label: `Project default (${projectDefaultLabel})` },
+    ...agents.map((a) => ({ value: a.name, label: a.displayName }))
+  ]
 
   return (
     <SlidePanel
@@ -138,6 +164,14 @@ export function TaskModal({ open, onClose, projectId, task }: Props) {
             ))}
           </div>
         </div>
+
+        <Select
+          label="Agent"
+          value={agent}
+          options={agentOptions}
+          onChange={setAgent}
+          disabled={!agentsLoaded}
+        />
       </div>
     </SlidePanel>
   )

@@ -12,6 +12,7 @@ interface TasksState {
     acceptanceCriteria?: string
     status?: string
     position?: number
+    agent?: string
   }) => Promise<Task>
   updateTask: (projectId: string, taskNumber: number, updates: {
     title?: string
@@ -19,6 +20,7 @@ interface TasksState {
     acceptanceCriteria?: string
     status?: string
     position?: number
+    agent?: string
   }) => Promise<void>
   deleteTask: (projectId: string, taskNumber: number) => Promise<void>
   restoreTask: (projectId: string, taskNumber: number) => Promise<void>
@@ -53,7 +55,8 @@ export const useTasksStore = create<TasksState>((set, get) => ({
       prompt,
       status: opts.status || 'draft',
       acceptanceCriteria: opts.acceptanceCriteria,
-      position: opts.position
+      position: opts.position,
+      agent: opts.agent
     })
     get().fetchTasks(projectId)
     return task
