@@ -36,10 +36,12 @@
 - **Agent picker in `watchfire init`** — init wizard prompts for the coding agent to use, seeding `project.default_agent` in `project.yaml`
 - **Agent selector in project settings (TUI)** — settings tab exposes a backend picker so the agent can be switched after init
 - **Global settings UI for agent paths** — new settings overlay for registering custom binary paths per backend and choosing the global default agent, including an "Ask per project" option that forces `watchfire init` to prompt every time
+- **Per-task agent override** — each task can now pin itself to a specific backend via a new optional `agent` field in its YAML (`.watchfire/tasks/<n>.yaml`), letting users mix and match agents within a single project (e.g. Claude Code for architecture work, Codex for trivial edits, or rerunning a failed task under a different agent without touching project settings). The field is editable in the TUI task form (new cycling selector below the existing fields) and the GUI task modal (picker populated from the daemon's `SettingsService.ListAgents` RPC); both surfaces include a leading "Project default" entry that maps to the empty string, so the effective agent remains visible at a glance. An empty value defers to the project default, keeping existing tasks behaving exactly as before
+- **Agent badge on task lists** — TUI (`internal/tui/tasklist.go`) and GUI (`gui/src/renderer/src/views/ProjectView/TasksTab/TaskItem.tsx`) render a compact agent badge next to a task's title whenever `task.agent` is set and differs from the project default; tasks that defer to the project default render no badge, keeping the list visually quiet for the common case
 
 ### Changed
 
-- **Per-project agent resolution** — the daemon now resolves the agent per project: `project.default_agent` → global `settings.defaults.default_agent` → `claude-code`
+- **Agent resolution chain** — the daemon now resolves the backend for each session through a four-step chain in `agent/manager.go:resolveBackend`: `task.agent` → `project.default_agent` → `settings.defaults.default_agent` → `claude-code`. Empty string at any level defers to the next, and chat / wildfire-refine / wildfire-generate sessions (which aren't scoped to a single task) skip the task step and start from the project default
 - **Backend-owned transcript discovery** — JSONL transcript location and formatting moved out of the agent manager and into each backend's `LocateTranscript` / `FormatTranscript` implementation
 - **Backend-contributed sandbox paths** — writable paths, cache patterns, and stripped env vars are now contributed by each backend via `SandboxExtras()` instead of being hardcoded in the sandbox layer
 - **Codex system-prompt isolation** — Codex receives the composed Watchfire system prompt via a per-session `CODEX_HOME` directory containing a generated `AGENTS.md`, keeping the user's real `~/.codex` untouched
@@ -52,6 +54,7 @@
 ### Migration
 
 - Existing projects without `default_agent` continue to use Claude Code — no action required
+- Existing tasks without an `agent` field continue to use the project default — no action required
 - Custom `codex` binary paths can be configured via the new global settings UI or by hand in `~/.watchfire/settings.yaml`
 
 ## [1.0.0] Ember
