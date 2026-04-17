@@ -111,6 +111,7 @@ message Task {
   optional google.protobuf.Timestamp completed_at = 14;
   google.protobuf.Timestamp updated_at = 15;
   optional google.protobuf.Timestamp deleted_at = 16;  // Soft delete
+  string agent = 17;                            // Backend name override; empty = use project default
 }
 
 message TaskId {
@@ -138,6 +139,7 @@ message CreateTaskRequest {
   optional string acceptance_criteria = 5;
   string status = 6;                            // "draft" | "ready"
   optional int32 position = 7;                  // Position in list
+  optional string agent = 8;                    // Backend name override; empty = use project default
 }
 
 message UpdateTaskRequest {
@@ -151,6 +153,7 @@ message UpdateTaskRequest {
   optional bool success = 8;
   optional string failure_reason = 9;
   optional int32 position = 10;
+  optional string agent = 11;                   // Backend name override; empty = use project default
 }
 
 message BulkUpdateStatusRequest {

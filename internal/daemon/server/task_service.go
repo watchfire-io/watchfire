@@ -66,6 +66,9 @@ func (s *taskService) CreateTask(_ context.Context, req *pb.CreateTaskRequest) (
 	if req.AcceptanceCriteria != nil {
 		opts.AcceptanceCriteria = *req.AcceptanceCriteria
 	}
+	if req.Agent != nil {
+		opts.Agent = *req.Agent
+	}
 	if req.Position != nil {
 		pos := int(*req.Position)
 		opts.Position = &pos
@@ -93,6 +96,9 @@ func (s *taskService) UpdateTask(_ context.Context, req *pb.UpdateTaskRequest) (
 	}
 	if req.AcceptanceCriteria != nil {
 		opts.AcceptanceCriteria = req.AcceptanceCriteria
+	}
+	if req.Agent != nil {
+		opts.Agent = req.Agent
 	}
 	if req.Status != nil {
 		opts.Status = req.Status

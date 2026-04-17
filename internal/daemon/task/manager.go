@@ -29,6 +29,7 @@ type CreateOptions struct {
 	Title              string
 	Prompt             string
 	AcceptanceCriteria string
+	Agent              string
 	Status             string
 	Position           *int
 }
@@ -39,6 +40,7 @@ type UpdateOptions struct {
 	Title              *string
 	Prompt             *string
 	AcceptanceCriteria *string
+	Agent              *string
 	Status             *string
 	Success            *bool
 	FailureReason      *string
@@ -114,6 +116,7 @@ func (m *Manager) CreateTask(projectPath string, opts CreateOptions) (*models.Ta
 	// Create task
 	task := models.NewTask(taskID, taskNumber, opts.Title, opts.Prompt)
 	task.AcceptanceCriteria = opts.AcceptanceCriteria
+	task.Agent = opts.Agent
 
 	// Set status
 	if opts.Status != "" {
@@ -161,6 +164,9 @@ func (m *Manager) UpdateTask(projectPath string, opts UpdateOptions) (*models.Ta
 	}
 	if opts.AcceptanceCriteria != nil {
 		task.AcceptanceCriteria = *opts.AcceptanceCriteria
+	}
+	if opts.Agent != nil {
+		task.Agent = *opts.Agent
 	}
 	if opts.Status != nil {
 		task.Status = models.TaskStatus(*opts.Status)

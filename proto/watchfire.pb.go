@@ -706,6 +706,7 @@ type Task struct {
 	CompletedAt        *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=completed_at,json=completedAt,proto3,oneof" json:"completed_at,omitempty"`
 	UpdatedAt          *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	DeletedAt          *timestamppb.Timestamp `protobuf:"bytes,16,opt,name=deleted_at,json=deletedAt,proto3,oneof" json:"deleted_at,omitempty"` // Soft delete
+	Agent              string                 `protobuf:"bytes,17,opt,name=agent,proto3" json:"agent,omitempty"`                                // Backend name override; empty = use project default
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -850,6 +851,13 @@ func (x *Task) GetDeletedAt() *timestamppb.Timestamp {
 		return x.DeletedAt
 	}
 	return nil
+}
+
+func (x *Task) GetAgent() string {
+	if x != nil {
+		return x.Agent
+	}
+	return ""
 }
 
 type TaskId struct {
@@ -1033,6 +1041,7 @@ type CreateTaskRequest struct {
 	AcceptanceCriteria *string                `protobuf:"bytes,5,opt,name=acceptance_criteria,json=acceptanceCriteria,proto3,oneof" json:"acceptance_criteria,omitempty"`
 	Status             string                 `protobuf:"bytes,6,opt,name=status,proto3" json:"status,omitempty"`            // "draft" | "ready"
 	Position           *int32                 `protobuf:"varint,7,opt,name=position,proto3,oneof" json:"position,omitempty"` // Position in list
+	Agent              *string                `protobuf:"bytes,8,opt,name=agent,proto3,oneof" json:"agent,omitempty"`        // Backend name override; empty = use project default
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -1116,6 +1125,13 @@ func (x *CreateTaskRequest) GetPosition() int32 {
 	return 0
 }
 
+func (x *CreateTaskRequest) GetAgent() string {
+	if x != nil && x.Agent != nil {
+		return *x.Agent
+	}
+	return ""
+}
+
 type UpdateTaskRequest struct {
 	state              protoimpl.MessageState `protogen:"open.v1"`
 	Meta               *RequestMeta           `protobuf:"bytes,1,opt,name=meta,proto3" json:"meta,omitempty"`
@@ -1128,6 +1144,7 @@ type UpdateTaskRequest struct {
 	Success            *bool                  `protobuf:"varint,8,opt,name=success,proto3,oneof" json:"success,omitempty"`
 	FailureReason      *string                `protobuf:"bytes,9,opt,name=failure_reason,json=failureReason,proto3,oneof" json:"failure_reason,omitempty"`
 	Position           *int32                 `protobuf:"varint,10,opt,name=position,proto3,oneof" json:"position,omitempty"`
+	Agent              *string                `protobuf:"bytes,11,opt,name=agent,proto3,oneof" json:"agent,omitempty"` // Backend name override; empty = use project default
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -1230,6 +1247,13 @@ func (x *UpdateTaskRequest) GetPosition() int32 {
 		return *x.Position
 	}
 	return 0
+}
+
+func (x *UpdateTaskRequest) GetAgent() string {
+	if x != nil && x.Agent != nil {
+		return *x.Agent
+	}
+	return ""
 }
 
 type BulkUpdateStatusRequest struct {
@@ -3593,7 +3617,7 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\bis_dirty\x18\x03 \x01(\bR\aisDirty\x12+\n" +
 	"\x11uncommitted_count\x18\x04 \x01(\x05R\x10uncommittedCount\x12\x14\n" +
 	"\x05ahead\x18\x05 \x01(\x05R\x05ahead\x12\x16\n" +
-	"\x06behind\x18\x06 \x01(\x05R\x06behind\"\xec\x05\n" +
+	"\x06behind\x18\x06 \x01(\x05R\x06behind\"\x82\x06\n" +
 	"\x04Task\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1f\n" +
 	"\vtask_number\x18\x02 \x01(\x05R\n" +
@@ -3617,7 +3641,8 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12>\n" +
 	"\n" +
-	"deleted_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampH\x04R\tdeletedAt\x88\x01\x01B\n" +
+	"deleted_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampH\x04R\tdeletedAt\x88\x01\x01\x12\x14\n" +
+	"\x05agent\x18\x11 \x01(\tR\x05agentB\n" +
 	"\n" +
 	"\b_successB\x11\n" +
 	"\x0f_failure_reasonB\r\n" +
@@ -3638,7 +3663,7 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x1b\n" +
 	"\x06status\x18\x03 \x01(\tH\x00R\x06status\x88\x01\x01\x12'\n" +
 	"\x0finclude_deleted\x18\x04 \x01(\bR\x0eincludeDeletedB\t\n" +
-	"\a_status\"\xa0\x02\n" +
+	"\a_status\"\xc5\x02\n" +
 	"\x11CreateTaskRequest\x12*\n" +
 	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\x12\x1d\n" +
 	"\n" +
@@ -3647,9 +3672,11 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\x06prompt\x18\x04 \x01(\tR\x06prompt\x124\n" +
 	"\x13acceptance_criteria\x18\x05 \x01(\tH\x00R\x12acceptanceCriteria\x88\x01\x01\x12\x16\n" +
 	"\x06status\x18\x06 \x01(\tR\x06status\x12\x1f\n" +
-	"\bposition\x18\a \x01(\x05H\x01R\bposition\x88\x01\x01B\x16\n" +
+	"\bposition\x18\a \x01(\x05H\x01R\bposition\x88\x01\x01\x12\x19\n" +
+	"\x05agent\x18\b \x01(\tH\x02R\x05agent\x88\x01\x01B\x16\n" +
 	"\x14_acceptance_criteriaB\v\n" +
-	"\t_position\"\xda\x03\n" +
+	"\t_positionB\b\n" +
+	"\x06_agent\"\xff\x03\n" +
 	"\x11UpdateTaskRequest\x12*\n" +
 	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\x12\x1d\n" +
 	"\n" +
@@ -3663,7 +3690,8 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\asuccess\x18\b \x01(\bH\x04R\asuccess\x88\x01\x01\x12*\n" +
 	"\x0efailure_reason\x18\t \x01(\tH\x05R\rfailureReason\x88\x01\x01\x12\x1f\n" +
 	"\bposition\x18\n" +
-	" \x01(\x05H\x06R\bposition\x88\x01\x01B\b\n" +
+	" \x01(\x05H\x06R\bposition\x88\x01\x01\x12\x19\n" +
+	"\x05agent\x18\v \x01(\tH\aR\x05agent\x88\x01\x01B\b\n" +
 	"\x06_titleB\t\n" +
 	"\a_promptB\x16\n" +
 	"\x14_acceptance_criteriaB\t\n" +
@@ -3671,7 +3699,8 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\n" +
 	"\b_successB\x11\n" +
 	"\x0f_failure_reasonB\v\n" +
-	"\t_position\"\xa6\x01\n" +
+	"\t_positionB\b\n" +
+	"\x06_agent\"\xa6\x01\n" +
 	"\x17BulkUpdateStatusRequest\x12*\n" +
 	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\x12\x1d\n" +
 	"\n" +

@@ -21,6 +21,7 @@ type Task struct {
 	Title              string     `yaml:"title"`
 	Prompt             string     `yaml:"prompt"`
 	AcceptanceCriteria string     `yaml:"acceptance_criteria,omitempty"`
+	Agent              string     `yaml:"agent,omitempty"`          // Backend name override; empty = use project default
 	Status             TaskStatus `yaml:"status"`                   // draft | ready | done
 	Success            *bool      `yaml:"success,omitempty"`        // Only when status=done
 	FailureReason      string     `yaml:"failure_reason,omitempty"` // Only when success=false
