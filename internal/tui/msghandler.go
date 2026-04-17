@@ -62,12 +62,14 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 		m.project = msg.Project
 		m.definitionView.SetContent(msg.Project.Definition)
 		m.settingsForm.LoadFromProject(msg.Project)
+		m.taskList.SetProjectDefaultAgent(msg.Project.DefaultAgent)
 		return true, nil
 
 	case ProjectSavedMsg:
 		m.project = msg.Project
 		m.definitionView.SetContent(msg.Project.Definition)
 		m.settingsForm.LoadFromProject(msg.Project)
+		m.taskList.SetProjectDefaultAgent(msg.Project.DefaultAgent)
 		m.showSaved = true
 		cmds = append(cmds, clearSavedAfter(clearSavedTimeout))
 		return true, tea.Batch(cmds...)

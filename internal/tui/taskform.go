@@ -6,6 +6,18 @@ import (
 	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/watchfire-io/watchfire/internal/daemon/agent/backend"
+)
+
+// Task form focus indexes.
+const (
+	taskFormFocusTitle    = 0
+	taskFormFocusPrompt   = 1
+	taskFormFocusCriteria = 2
+	taskFormFocusAgent    = 3
+	taskFormFocusStatus   = 4
+	taskFormFieldCount    = 5
 )
 
 // TaskForm is the add/edit task overlay form.
@@ -18,7 +30,13 @@ type TaskForm struct {
 	criteriaArea textarea.Model
 	status       string // "draft" or "ready"
 
-	focusIndex int // 0=title, 1=prompt, 2=criteria, 3=status
+	// Agent override: empty string means "use project default".
+	agentOptions         []CycleOption // First entry is the project-default sentinel.
+	agentIndex           int
+	projectDefaultAgent  string // Effective project default (used for display only).
+	projectDefaultLabel  string // Pretty label for the project default.
+
+	focusIndex int // 0=title, 1=prompt, 2=criteria, 3=agent, 4=status
 	width      int
 }
 
@@ -47,6 +65,7 @@ func NewTaskForm(mode string, width int) *TaskForm {
 		status:       "draft",
 		width:        width,
 	}
+	tf.rebuildAgentOptions("")
 
 	// Focus title first
 	tf.titleInput.Focus()
@@ -54,8 +73,55 @@ func NewTaskForm(mode string, width int) *TaskForm {
 	return tf
 }
 
+// SetProjectDefaultAgent informs the form of the project's default agent so
+// the "Project default" entry can display the resolved name.
+func (tf *TaskForm) SetProjectDefaultAgent(name string) {
+	tf.projectDefaultAgent = name
+	tf.rebuildAgentOptions(tf.Agent())
+}
+
+// rebuildAgentOptions constructs the agent cycle options, placing a
+// "Project default (<name>)" entry (Value == "") at index 0, followed by
+// every registered backend. It preserves the currently-selected value
+// across rebuilds when possible.
+func (tf *TaskForm) rebuildAgentOptions(preserve string) {
+	label := "Project default"
+	if disp := displayNameForBackend(tf.projectDefaultAgent); disp != "" {
+		label = "Project default (" + disp + ")"
+	}
+	tf.projectDefaultLabel = label
+
+	opts := make([]CycleOption, 0, 1+len(backend.List()))
+	opts = append(opts, CycleOption{Value: "", Display: label})
+	for _, b := range backend.List() {
+		opts = append(opts, CycleOption{Value: b.Name(), Display: b.DisplayName()})
+	}
+	tf.agentOptions = opts
+
+	tf.agentIndex = 0
+	for i, o := range opts {
+		if o.Value == preserve {
+			tf.agentIndex = i
+			break
+		}
+	}
+}
+
+// displayNameForBackend returns the backend's DisplayName() or falls back
+// to the raw name (or "Claude Code" for the built-in default when empty).
+func displayNameForBackend(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		name = "claude-code"
+	}
+	if b, ok := backend.Get(name); ok {
+		return b.DisplayName()
+	}
+	return name
+}
+
 // PreFill fills the form with existing task data for editing.
-func (tf *TaskForm) PreFill(taskNumber int32, title, prompt, criteria, status string) {
+func (tf *TaskForm) PreFill(taskNumber int32, title, prompt, criteria, status, agent string) {
 	tf.taskNumber = taskNumber
 	tf.titleInput.SetValue(title)
 	tf.promptArea.SetValue(prompt)
@@ -63,12 +129,13 @@ func (tf *TaskForm) PreFill(taskNumber int32, title, prompt, criteria, status st
 	if status == "draft" || status == "ready" {
 		tf.status = status
 	}
+	tf.rebuildAgentOptions(strings.TrimSpace(agent))
 }
 
 // FocusNext moves to the next field.
 func (tf *TaskForm) FocusNext() {
 	tf.blurAll()
-	tf.focusIndex = (tf.focusIndex + 1) % 4
+	tf.focusIndex = (tf.focusIndex + 1) % taskFormFieldCount
 	tf.focusCurrent()
 }
 
@@ -77,7 +144,7 @@ func (tf *TaskForm) FocusPrev() {
 	tf.blurAll()
 	tf.focusIndex--
 	if tf.focusIndex < 0 {
-		tf.focusIndex = 3
+		tf.focusIndex = taskFormFieldCount - 1
 	}
 	tf.focusCurrent()
 }
@@ -90,14 +157,12 @@ func (tf *TaskForm) blurAll() {
 
 func (tf *TaskForm) focusCurrent() {
 	switch tf.focusIndex {
-	case 0:
+	case taskFormFocusTitle:
 		tf.titleInput.Focus()
-	case 1:
+	case taskFormFocusPrompt:
 		tf.promptArea.Focus()
-	case 2:
+	case taskFormFocusCriteria:
 		tf.criteriaArea.Focus()
-	case 3:
-		// Status field — no input to focus
 	}
 }
 
@@ -107,6 +172,25 @@ func (tf *TaskForm) ToggleStatus() {
 		tf.status = "ready"
 	} else {
 		tf.status = "draft"
+	}
+}
+
+// CycleAgentNext advances the agent selector by one option.
+func (tf *TaskForm) CycleAgentNext() {
+	if len(tf.agentOptions) == 0 {
+		return
+	}
+	tf.agentIndex = (tf.agentIndex + 1) % len(tf.agentOptions)
+}
+
+// CycleAgentPrev steps the agent selector back by one option.
+func (tf *TaskForm) CycleAgentPrev() {
+	if len(tf.agentOptions) == 0 {
+		return
+	}
+	tf.agentIndex--
+	if tf.agentIndex < 0 {
+		tf.agentIndex = len(tf.agentOptions) - 1
 	}
 }
 
@@ -128,6 +212,14 @@ func (tf *TaskForm) Criteria() string {
 // Status returns the current status value.
 func (tf *TaskForm) Status() string {
 	return tf.status
+}
+
+// Agent returns the current agent override value (empty = project default).
+func (tf *TaskForm) Agent() string {
+	if tf.agentIndex < 0 || tf.agentIndex >= len(tf.agentOptions) {
+		return ""
+	}
+	return tf.agentOptions[tf.agentIndex].Value
 }
 
 // FocusIndex returns the currently focused field index.
@@ -165,12 +257,12 @@ func (tf *TaskForm) View() string {
 		formWidth = 30
 	}
 
-	parts := make([]string, 0, 16)
+	parts := make([]string, 0, 20)
 	parts = append(parts, overlayTitleStyle.Render(title))
 
 	// Title field
 	label := lipgloss.NewStyle().Bold(true).Render("Title:")
-	if tf.titleInput.Value() == "" && tf.focusIndex != 0 {
+	if tf.titleInput.Value() == "" && tf.focusIndex != taskFormFocusTitle {
 		label += lipgloss.NewStyle().Foreground(colorDim).Render(" (required)")
 	}
 	parts = append(parts, label, tf.titleInput.View(), "")
@@ -183,19 +275,28 @@ func (tf *TaskForm) View() string {
 	label = lipgloss.NewStyle().Bold(true).Render("Acceptance Criteria:")
 	parts = append(parts, label, tf.criteriaArea.View(), "")
 
+	// Agent field
+	label = lipgloss.NewStyle().Bold(true).Render("Agent:")
+	agentDisplay := ""
+	if len(tf.agentOptions) > 0 {
+		agentDisplay = settingsValueStyle.Render(tf.agentOptions[tf.agentIndex].Display)
+	}
+	agentLine := label + " " + agentDisplay
+	if tf.focusIndex == taskFormFocusAgent {
+		agentLine += lipgloss.NewStyle().Foreground(colorDim).Render("  (←/→ or Enter to cycle)")
+	}
+	parts = append(parts, agentLine, "")
+
 	// Status
 	label = lipgloss.NewStyle().Bold(true).Render("Status:")
 	var statusDisplay string
 	if tf.status == "draft" {
 		statusDisplay = taskDraftStyle.Render("Draft")
-		if tf.focusIndex == 3 {
-			statusDisplay += lipgloss.NewStyle().Foreground(colorDim).Render("  (Space/Enter to toggle)")
-		}
 	} else {
 		statusDisplay = taskReadyStyle.Render("Ready")
-		if tf.focusIndex == 3 {
-			statusDisplay += lipgloss.NewStyle().Foreground(colorDim).Render("  (Space/Enter to toggle)")
-		}
+	}
+	if tf.focusIndex == taskFormFocusStatus {
+		statusDisplay += lipgloss.NewStyle().Foreground(colorDim).Render("  (Space/Enter to toggle)")
 	}
 	parts = append(parts, label+" "+statusDisplay, "")
 

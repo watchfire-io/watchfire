@@ -14,6 +14,7 @@ func (m *Model) openAddTaskForm() {
 		formWidth = 70
 	}
 	m.taskForm = NewTaskForm("add", formWidth)
+	m.taskForm.SetProjectDefaultAgent(m.projectDefaultAgent())
 	m.activeOverlay = overlayAddTask
 }
 
@@ -27,8 +28,16 @@ func (m *Model) openEditTaskForm() {
 		formWidth = 70
 	}
 	m.taskForm = NewTaskForm("edit", formWidth)
-	m.taskForm.PreFill(t.TaskNumber, t.Title, t.Prompt, t.AcceptanceCriteria, t.Status)
+	m.taskForm.SetProjectDefaultAgent(m.projectDefaultAgent())
+	m.taskForm.PreFill(t.TaskNumber, t.Title, t.Prompt, t.AcceptanceCriteria, t.Status, t.Agent)
 	m.activeOverlay = overlayEditTask
+}
+
+func (m *Model) projectDefaultAgent() string {
+	if m.project == nil {
+		return ""
+	}
+	return m.project.DefaultAgent
 }
 
 func (m *Model) saveTaskForm() tea.Cmd {
@@ -49,15 +58,19 @@ func (m *Model) saveTaskForm() tea.Cmd {
 			m.taskForm.Prompt(),
 			m.taskForm.Criteria(),
 			m.taskForm.Status(),
+			m.taskForm.Agent(),
 		)
 	}
 
-	// Edit mode
+	// Edit mode. Always include agent so clearing the override (empty string)
+	// is transmitted.
+	agent := m.taskForm.Agent()
 	updates := map[string]interface{}{
 		"title":    title,
 		"prompt":   m.taskForm.Prompt(),
 		"criteria": m.taskForm.Criteria(),
 		"status":   m.taskForm.Status(),
+		"agent":    agent,
 	}
 	return updateTaskCmd(m.conn, m.projectID, m.taskForm.taskNumber, updates)
 }
