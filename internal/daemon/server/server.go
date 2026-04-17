@@ -281,7 +281,7 @@ func New(port int) (*Server, error) {
 	pb.RegisterTaskServiceServer(grpcServer, &taskService{manager: taskMgr})
 	pb.RegisterDaemonServiceServer(grpcServer, &daemonService{server: srv})
 	pb.RegisterAgentServiceServer(grpcServer, &agentService{manager: agentMgr, watcher: w})
-	pb.RegisterLogServiceServer(grpcServer, &logService{})
+	pb.RegisterLogServiceServer(grpcServer, &logService{projectMgr: projectMgr})
 	pb.RegisterBranchServiceServer(grpcServer, &branchService{})
 	pb.RegisterSettingsServiceServer(grpcServer, &settingsService{})
 

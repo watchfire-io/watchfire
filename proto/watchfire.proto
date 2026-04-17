@@ -414,6 +414,7 @@ service DaemonService {
 service LogService {
   rpc ListLogs(ListLogsRequest) returns (LogList);
   rpc GetLog(GetLogRequest) returns (LogContent);
+  rpc DeleteLog(DeleteLogRequest) returns (google.protobuf.Empty);
 }
 
 // ============================================================================
@@ -450,6 +451,12 @@ message GetLogRequest {
 message LogContent {
   LogEntry entry = 1;
   string content = 2;
+}
+
+message DeleteLogRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+  string log_id = 3;
 }
 
 // AgentService handles agent lifecycle and terminal interaction
