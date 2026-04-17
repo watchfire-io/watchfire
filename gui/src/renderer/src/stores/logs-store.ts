@@ -10,6 +10,7 @@ interface LogsState {
 
   fetchLogs: (projectId: string) => Promise<void>
   getLogContent: (projectId: string, logId: string) => Promise<string>
+  deleteLog: (projectId: string, logId: string) => Promise<void>
 }
 
 export const useLogsStore = create<LogsState>((set) => ({
@@ -46,6 +47,26 @@ export const useLogsStore = create<LogsState>((set) => ({
       return content
     } catch (err) {
       console.error(`[logs-store] getLogContent failed for ${projectId}/${logId}:`, err)
+      throw err
+    }
+  },
+
+  deleteLog: async (projectId, logId) => {
+    try {
+      const client = getLogClient()
+      await client.deleteLog({ projectId, logId })
+      set((s) => ({
+        logs: {
+          ...s.logs,
+          [projectId]: (s.logs[projectId] ?? []).filter((l) => l.logId !== logId)
+        },
+        error: { ...s.error, [projectId]: null }
+      }))
+    } catch (err) {
+      console.error(`[logs-store] deleteLog failed for ${projectId}/${logId}:`, err)
+      set((s) => ({
+        error: { ...s.error, [projectId]: String(err) }
+      }))
       throw err
     }
   }

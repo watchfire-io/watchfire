@@ -248,6 +248,30 @@ func parseLogHeaderLine(entry *models.LogEntry, line string) {
 	}
 }
 
+// DeleteLog removes a session log's .log file and its optional .jsonl
+// transcript sibling. Returns an error if the .log file is missing or any
+// other filesystem error occurs. Missing .jsonl files are tolerated.
+func DeleteLog(projectID, logID string) error {
+	logsDir, err := GlobalLogsDir()
+	if err != nil {
+		return err
+	}
+
+	projectLogsDir := filepath.Join(logsDir, projectID)
+	logPath := filepath.Join(projectLogsDir, logID+".log")
+	jsonlPath := filepath.Join(projectLogsDir, logID+".jsonl")
+
+	if err := os.Remove(logPath); err != nil {
+		return fmt.Errorf("failed to delete log file: %w", err)
+	}
+
+	if err := os.Remove(jsonlPath); err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("failed to delete transcript file: %w", err)
+	}
+
+	return nil
+}
+
 // CopyTranscript copies a JSONL transcript file to the watchfire logs directory.
 func CopyTranscript(projectID, logID, srcPath string) error {
 	logsDir, err := GlobalLogsDir()

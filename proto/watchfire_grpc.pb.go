@@ -1022,8 +1022,9 @@ var DaemonService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	LogService_ListLogs_FullMethodName = "/watchfire.LogService/ListLogs"
-	LogService_GetLog_FullMethodName   = "/watchfire.LogService/GetLog"
+	LogService_ListLogs_FullMethodName  = "/watchfire.LogService/ListLogs"
+	LogService_GetLog_FullMethodName    = "/watchfire.LogService/GetLog"
+	LogService_DeleteLog_FullMethodName = "/watchfire.LogService/DeleteLog"
 )
 
 // LogServiceClient is the client API for LogService service.
@@ -1034,6 +1035,7 @@ const (
 type LogServiceClient interface {
 	ListLogs(ctx context.Context, in *ListLogsRequest, opts ...grpc.CallOption) (*LogList, error)
 	GetLog(ctx context.Context, in *GetLogRequest, opts ...grpc.CallOption) (*LogContent, error)
+	DeleteLog(ctx context.Context, in *DeleteLogRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
 
 type logServiceClient struct {
@@ -1064,6 +1066,16 @@ func (c *logServiceClient) GetLog(ctx context.Context, in *GetLogRequest, opts .
 	return out, nil
 }
 
+func (c *logServiceClient) DeleteLog(ctx context.Context, in *DeleteLogRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, LogService_DeleteLog_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // LogServiceServer is the server API for LogService service.
 // All implementations must embed UnimplementedLogServiceServer
 // for forward compatibility.
@@ -1072,6 +1084,7 @@ func (c *logServiceClient) GetLog(ctx context.Context, in *GetLogRequest, opts .
 type LogServiceServer interface {
 	ListLogs(context.Context, *ListLogsRequest) (*LogList, error)
 	GetLog(context.Context, *GetLogRequest) (*LogContent, error)
+	DeleteLog(context.Context, *DeleteLogRequest) (*emptypb.Empty, error)
 	mustEmbedUnimplementedLogServiceServer()
 }
 
@@ -1087,6 +1100,9 @@ func (UnimplementedLogServiceServer) ListLogs(context.Context, *ListLogsRequest)
 }
 func (UnimplementedLogServiceServer) GetLog(context.Context, *GetLogRequest) (*LogContent, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetLog not implemented")
+}
+func (UnimplementedLogServiceServer) DeleteLog(context.Context, *DeleteLogRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteLog not implemented")
 }
 func (UnimplementedLogServiceServer) mustEmbedUnimplementedLogServiceServer() {}
 func (UnimplementedLogServiceServer) testEmbeddedByValue()                    {}
@@ -1145,6 +1161,24 @@ func _LogService_GetLog_Handler(srv interface{}, ctx context.Context, dec func(i
 	return interceptor(ctx, in, info, handler)
 }
 
+func _LogService_DeleteLog_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteLogRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(LogServiceServer).DeleteLog(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: LogService_DeleteLog_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(LogServiceServer).DeleteLog(ctx, req.(*DeleteLogRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // LogService_ServiceDesc is the grpc.ServiceDesc for LogService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1159,6 +1193,10 @@ var LogService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetLog",
 			Handler:    _LogService_GetLog_Handler,
+		},
+		{
+			MethodName: "DeleteLog",
+			Handler:    _LogService_DeleteLog_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
