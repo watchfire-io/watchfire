@@ -139,9 +139,9 @@ func runTaskListDeleted(projectPath string) error {
 		return nil
 	}
 
-	// Sort by task number
+	// Canonical order: newest first.
 	sort.Slice(tasks, func(i, j int) bool {
-		return tasks[i].TaskNumber < tasks[j].TaskNumber
+		return tasks[i].TaskNumber > tasks[j].TaskNumber
 	})
 
 	fmt.Println(styleLabel.Render("Deleted Tasks:"))
@@ -325,12 +325,9 @@ func printTaskGroup(name string, tasks []*models.Task) {
 		return
 	}
 
-	// Sort by position, then by task number
+	// Canonical order: newest first.
 	sort.Slice(tasks, func(i, j int) bool {
-		if tasks[i].Position != tasks[j].Position {
-			return tasks[i].Position < tasks[j].Position
-		}
-		return tasks[i].TaskNumber < tasks[j].TaskNumber
+		return tasks[i].TaskNumber > tasks[j].TaskNumber
 	})
 
 	fmt.Printf("\n%s (%d):\n", name, len(tasks))

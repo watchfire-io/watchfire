@@ -72,12 +72,11 @@ func (m *Manager) ListTasks(projectPath string, opts ListOptions) ([]*models.Tas
 		tasks = filtered
 	}
 
-	// Sort by position, then by task number
+	// Canonical order: newest first (descending by task_number). Applied here
+	// at the task manager so every caller — TUI, GUI, any gRPC consumer — sees
+	// the same ordering without re-sorting.
 	sort.Slice(tasks, func(i, j int) bool {
-		if tasks[i].Position != tasks[j].Position {
-			return tasks[i].Position < tasks[j].Position
-		}
-		return tasks[i].TaskNumber < tasks[j].TaskNumber
+		return tasks[i].TaskNumber > tasks[j].TaskNumber
 	})
 
 	return tasks, nil

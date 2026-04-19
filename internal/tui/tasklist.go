@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"unicode"
 
@@ -209,7 +208,9 @@ func (tl *TaskList) ensureVisible() {
 func (tl *TaskList) rebuild() {
 	items := make([]taskItem, 0, len(tl.tasks)+3)
 
-	// Group tasks by status
+	// Group tasks by status. Preserve the order the task manager gave us
+	// (canonical: descending by task_number) so within-group order remains
+	// newest-first without re-sorting.
 	groups := map[string][]*pb.Task{
 		"draft": {},
 		"ready": {},
@@ -217,16 +218,6 @@ func (tl *TaskList) rebuild() {
 	}
 	for _, t := range tl.tasks {
 		groups[t.Status] = append(groups[t.Status], t)
-	}
-
-	// Sort within each group by position, then task number
-	for _, g := range groups {
-		sort.Slice(g, func(i, j int) bool {
-			if g[i].Position != g[j].Position {
-				return g[i].Position < g[j].Position
-			}
-			return g[i].TaskNumber < g[j].TaskNumber
-		})
 	}
 
 	// Build flat list: Draft, Ready, Done
