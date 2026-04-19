@@ -88,11 +88,31 @@ func (s *settingsService) UpdateSettings(_ context.Context, req *pb.UpdateSettin
 	return modelToProtoSettings(settings), nil
 }
 
+// ListAgents always returns every registered backend. Availability is reported
+// as a per-agent `available` hint computed from ResolveExecutable with the
+// user's current settings, but a missing binary NEVER removes an agent from
+// the list. This is a deliberate architectural choice: filtering by binary
+// availability at list time is what caused issue #29 (user installs Codex,
+// it doesn't appear in the picker until the daemon restarts, or at all if
+// Fedora's install path isn't in the resolver's fallback list). Pickers must
+// surface every backend immediately so a freshly-installed CLI is selectable;
+// the `available` hint lets the UI render a "(not installed)" badge rather
+// than silently hide the option.
+//
+// Settings failures (and ResolveExecutable errors) are non-fatal here: we
+// still enumerate the registry with available=false rather than break the
+// picker because settings.yaml is unreadable.
 func (s *settingsService) ListAgents(_ context.Context, _ *emptypb.Empty) (*pb.AgentList, error) {
+	settings, _ := config.LoadSettings()
 	backends := backend.List()
 	agents := make([]*pb.AgentInfo, 0, len(backends))
 	for _, b := range backends {
-		agents = append(agents, &pb.AgentInfo{Name: b.Name(), DisplayName: b.DisplayName()})
+		_, resolveErr := b.ResolveExecutable(settings)
+		agents = append(agents, &pb.AgentInfo{
+			Name:        b.Name(),
+			DisplayName: b.DisplayName(),
+			Available:   resolveErr == nil,
+		})
 	}
 	return &pb.AgentList{Agents: agents}, nil
 }

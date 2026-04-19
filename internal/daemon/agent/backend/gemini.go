@@ -103,7 +103,10 @@ func (g *Gemini) ResolveExecutable(s *models.Settings) (string, error) {
 			"/usr/local/bin/gemini",
 		)
 	} else {
-		fallbacks = append(fallbacks, "/usr/local/bin/gemini")
+		fallbacks = append(fallbacks,
+			"/usr/local/bin/gemini",
+			"/usr/bin/gemini",
+		)
 	}
 	for _, p := range fallbacks {
 		if _, err := os.Stat(p); err == nil {

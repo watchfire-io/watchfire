@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/watchfire-io/watchfire/internal/config"
 	"github.com/watchfire-io/watchfire/internal/daemon/agent/backend"
 	pb "github.com/watchfire-io/watchfire/proto"
 )
@@ -75,14 +76,25 @@ func (s *SettingsForm) LoadFromProject(project *pb.Project) {
 // field, derived from the backend registry. When no backend is registered
 // (tests, stripped builds) it falls back to a single "claude-code" option so
 // the UI remains stable.
+//
+// Every registered backend appears — agents whose binary does not resolve on
+// the host are still listed with a "(not installed)" suffix rather than being
+// hidden. Hiding them was the root cause of issue #29, where a freshly
+// installed Codex CLI didn't appear until the picker was re-enumerated on the
+// host that happened to have the right fallback path.
 func buildAgentCycleOptions() []CycleOption {
 	backends := backend.List()
 	if len(backends) == 0 {
 		return []CycleOption{{Value: "claude-code", Display: "Claude Code"}}
 	}
+	settings, _ := config.LoadSettings()
 	opts := make([]CycleOption, 0, len(backends))
 	for _, b := range backends {
-		opts = append(opts, CycleOption{Value: b.Name(), Display: b.DisplayName()})
+		display := b.DisplayName()
+		if _, err := b.ResolveExecutable(settings); err != nil {
+			display = display + " (not installed)"
+		}
+		opts = append(opts, CycleOption{Value: b.Name(), Display: display})
 	}
 	return opts
 }

@@ -65,7 +65,10 @@ export function SettingsTab({ projectId, project }: Props) {
     }
   }, [toast])
 
-  const agentOptions: SelectOption[] = agents.map((a) => ({ value: a.name, label: a.displayName }))
+  const agentOptions: SelectOption[] = agents.map((a) => ({
+    value: a.name,
+    label: a.available ? a.displayName : `${a.displayName} (not installed)`,
+  }))
   const resolveSelectedAgent = (): string => {
     if (defaultAgent && agents.some((a) => a.name === defaultAgent)) return defaultAgent
     if (agents.some((a) => a.name === 'claude-code')) return 'claude-code'

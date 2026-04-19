@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/watchfire-io/watchfire/internal/config"
 	"github.com/watchfire-io/watchfire/internal/daemon/agent/backend"
 	pb "github.com/watchfire-io/watchfire/proto"
 )
@@ -37,6 +38,7 @@ type agentPathRow struct {
 	Name        string // backend name (e.g. "claude-code")
 	DisplayName string
 	Path        string // empty = "auto"
+	Available   bool   // binary resolves on this host; display-time hint only
 }
 
 // NewGlobalSettingsForm builds the form with rows derived from the
@@ -46,18 +48,25 @@ func NewGlobalSettingsForm() *GlobalSettingsForm {
 	ti.CharLimit = 500
 
 	backends := backend.List()
+	settings, _ := config.LoadSettings()
 	rows := make([]agentPathRow, 0, len(backends))
 	for _, b := range backends {
+		_, err := b.ResolveExecutable(settings)
 		rows = append(rows, agentPathRow{
 			Name:        b.Name(),
 			DisplayName: b.DisplayName(),
+			Available:   err == nil,
 		})
 	}
 
 	opts := make([]CycleOption, 0, len(backends)+1)
 	opts = append(opts, CycleOption{Value: askPerProjectValue, Display: "Ask per project"})
 	for _, b := range backends {
-		opts = append(opts, CycleOption{Value: b.Name(), Display: b.DisplayName()})
+		display := b.DisplayName()
+		if _, err := b.ResolveExecutable(settings); err != nil {
+			display = display + " (not installed)"
+		}
+		opts = append(opts, CycleOption{Value: b.Name(), Display: display})
 	}
 
 	return &GlobalSettingsForm{
@@ -233,7 +242,11 @@ func (g *GlobalSettingsForm) View() string {
 		if g.editing && g.cursor == i {
 			val = g.input.View()
 		} else if r.Path == "" {
-			val = lipgloss.NewStyle().Foreground(colorDim).Render("(auto)")
+			if r.Available {
+				val = lipgloss.NewStyle().Foreground(colorDim).Render("(auto)")
+			} else {
+				val = lipgloss.NewStyle().Foreground(colorYellow).Render("(not installed)")
+			}
 		} else {
 			val = settingsValueStyle.Render(r.Path)
 		}

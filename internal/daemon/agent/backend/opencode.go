@@ -92,6 +92,7 @@ func (o *Opencode) ResolveExecutable(s *models.Settings) (string, error) {
 	fallbacks := []string{
 		filepath.Join(homeDir, ".opencode", "bin", "opencode"),
 		filepath.Join(homeDir, ".local", "bin", "opencode"),
+		filepath.Join(homeDir, ".npm-global", "bin", "opencode"),
 	}
 	if runtime.GOOS == "darwin" {
 		fallbacks = append(fallbacks,
@@ -99,7 +100,10 @@ func (o *Opencode) ResolveExecutable(s *models.Settings) (string, error) {
 			"/usr/local/bin/opencode",
 		)
 	} else {
-		fallbacks = append(fallbacks, "/usr/local/bin/opencode")
+		fallbacks = append(fallbacks,
+			"/usr/local/bin/opencode",
+			"/usr/bin/opencode",
+		)
 	}
 	for _, p := range fallbacks {
 		if _, err := os.Stat(p); err == nil {
