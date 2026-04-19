@@ -48,6 +48,9 @@ interface WatchfireAPI {
   offPtyOutput(): void
   onPtyExit(callback: (data: { id: string; exitCode: number }) => void): void
   offPtyExit(): void
+
+  // Open a project path in an external IDE / file manager
+  openInIDE(ide: string, projectPath: string): Promise<{ ok: boolean; error?: string }>
 }
 
 declare global {

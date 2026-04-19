@@ -1,9 +1,93 @@
-import { ipcMain, dialog } from 'electron'
+import { ipcMain, dialog, shell } from 'electron'
 import { existsSync } from 'fs'
 import { join } from 'path'
+import { spawn } from 'child_process'
 import { getDaemonInfo, ensureDaemon } from './daemon'
 import { installCLI, needsInstall } from './cli-installer'
 import * as ptyManager from './pty-manager'
+
+// IDE launch command specs. Each entry resolves to an (argv, options) tuple for child_process.spawn.
+// Commands are looked up on PATH via shell: true so common installer-provided shims work cross-platform.
+type IDESpec =
+  | { kind: 'cli'; cmd: string; extraArgs?: string[] }
+  | { kind: 'open-with-app'; app: string } // macOS-only: `open -a <App>`
+  | { kind: 'reveal' } // Open the folder in the OS file manager
+
+const IDE_COMMANDS: Record<string, IDESpec> = {
+  vscode: { kind: 'cli', cmd: 'code' },
+  cursor: { kind: 'cli', cmd: 'cursor' },
+  windsurf: { kind: 'cli', cmd: 'windsurf' },
+  zed: { kind: 'cli', cmd: 'zed' },
+  webstorm: { kind: 'cli', cmd: 'webstorm' },
+  idea: { kind: 'cli', cmd: 'idea' },
+  sublime: { kind: 'cli', cmd: 'subl' },
+  fleet: { kind: 'cli', cmd: 'fleet' },
+  xcode: { kind: 'open-with-app', app: 'Xcode' },
+  finder: { kind: 'reveal' }
+}
+
+async function openInIDE(ide: string, projectPath: string): Promise<{ ok: boolean; error?: string }> {
+  const spec = IDE_COMMANDS[ide]
+  if (!spec) return { ok: false, error: `Unknown IDE: ${ide}` }
+  if (!existsSync(projectPath)) return { ok: false, error: `Path does not exist: ${projectPath}` }
+
+  try {
+    if (spec.kind === 'reveal') {
+      const err = await shell.openPath(projectPath)
+      if (err) return { ok: false, error: err }
+      return { ok: true }
+    }
+
+    if (spec.kind === 'open-with-app') {
+      if (process.platform !== 'darwin') {
+        return { ok: false, error: `${spec.app} is only available on macOS` }
+      }
+      const child = spawn('open', ['-a', spec.app, projectPath], {
+        detached: true,
+        stdio: 'ignore'
+      })
+      child.on('error', () => {})
+      child.unref()
+      return { ok: true }
+    }
+
+    // CLI mode: rely on the IDE's shell helper being on PATH.
+    // shell: true is required because Electron's inherited PATH on macOS GUI launches
+    // is minimal — the shell will load the user's login PATH via their profile.
+    const args = [...(spec.extraArgs ?? []), projectPath]
+    const child = spawn(spec.cmd, args, {
+      detached: true,
+      stdio: 'ignore',
+      shell: true
+    })
+    return await new Promise((resolve) => {
+      let settled = false
+      child.on('error', (err) => {
+        if (settled) return
+        settled = true
+        resolve({ ok: false, error: `${spec.cmd}: ${err.message}` })
+      })
+      // With shell: true, a missing IDE binary surfaces as a quick non-zero exit
+      // (sh prints "command not found" and exits 127). Wait briefly to catch that
+      // before treating the launch as successful.
+      child.on('exit', (code) => {
+        if (settled) return
+        if (code !== 0) {
+          settled = true
+          resolve({ ok: false, error: `${spec.cmd} failed to launch (exit ${code}). Is it installed and on PATH?` })
+        }
+      })
+      setTimeout(() => {
+        if (settled) return
+        settled = true
+        child.unref()
+        resolve({ ok: true })
+      }, 500)
+    })
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) }
+  }
+}
 
 export function setupIpc(): void {
   // PTY handlers
@@ -43,5 +127,9 @@ export function setupIpc(): void {
 
   ipcMain.handle('check-cli-status', () => {
     return needsInstall()
+  })
+
+  ipcMain.handle('open-in-ide', (_event, ide: string, projectPath: string) => {
+    return openInIDE(ide, projectPath)
   })
 }

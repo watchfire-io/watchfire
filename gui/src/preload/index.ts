@@ -87,7 +87,11 @@ const api = {
   },
   offPtyExit: (): void => {
     ipcRenderer.removeAllListeners('pty-exit')
-  }
+  },
+
+  // Open a project path in an external IDE / file manager
+  openInIDE: (ide: string, projectPath: string): Promise<{ ok: boolean; error?: string }> =>
+    ipcRenderer.invoke('open-in-ide', ide, projectPath)
 }
 
 contextBridge.exposeInMainWorld('watchfire', api)
