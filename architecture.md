@@ -93,8 +93,8 @@ Watchfire dispatches agent-specific behaviour through a `Backend` interface defi
 | Aspect | Behavior |
 |--------|----------|
 | **Interface** | `Backend` in `internal/daemon/agent/backend/` |
-| **Registry** | Process-wide `Register`/`Get`/`List` keyed by `Name()` (e.g. `"claude-code"`, `"codex"`, `"opencode"`); duplicate registration panics at startup |
-| **Shipped backends** | `claude-code` (Claude Code), `codex` (OpenAI Codex), `opencode` (opencode) |
+| **Registry** | Process-wide `Register`/`Get`/`List` keyed by `Name()` (e.g. `"claude-code"`, `"codex"`, `"opencode"`, `"gemini"`, `"copilot"`); duplicate registration panics at startup |
+| **Shipped backends** | `claude-code` (Claude Code), `codex` (OpenAI Codex), `opencode` (opencode), `gemini` (Gemini CLI), `copilot` (GitHub Copilot CLI) |
 | **Agent resolution** | Four-step chain resolved in `agent/manager.go:resolveBackend`: per-task (`task.agent`) → per-project (`project.default_agent`) → global default (`settings.defaults.default_agent`) → `claude-code` fallback. Empty string at any level defers to the next. Global default may be unset (empty string), meaning "Ask per project" — `watchfire init` always prompts for agent selection. Chat / wildfire-refine / wildfire-generate sessions aren't scoped to a single task, so they skip the task step and start from the project default. |
 | **Prompt pipeline** | `internal/daemon/agent/prompts/` composes one canonical, agent-agnostic prompt. `InstallSystemPrompt(workDir, composedPrompt)` delivers it — Claude Code uses the `--append-system-prompt` flag (no-op install), Codex writes `AGENTS.md` into a per-session `CODEX_HOME` directory, opencode writes `AGENTS.md` into a per-session `OPENCODE_CONFIG_DIR` (with the user's real `~/.config/opencode` entries symlinked in for auth) |
 | **Transcript ownership** | Each backend owns `LocateTranscript(workDir, started, sessionHint)` and `FormatTranscript(jsonlPath)` — the daemon copies and renders whatever the backend returns |

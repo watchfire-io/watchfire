@@ -1,5 +1,17 @@
 # Changelog
 
+## [3.0.0] Blaze
+
+### Added
+
+- **GitHub Copilot CLI backend** — `copilot` (https://github.com/github/copilot-cli) ships as a first-class backend alongside Claude Code, OpenAI Codex, opencode, and Gemini CLI. Selectable per-project at `watchfire init`, in project settings, and as a per-task override. Sessions run with `--allow-all` (yolo mode) and receive the Watchfire system prompt via a per-session `COPILOT_HOME` directory (AGENTS.md plus symlinked auth / config / session-store). Transcripts discovered under `<COPILOT_HOME>/session-state/**/events.jsonl` and rendered in the same User/Assistant format as the other backends
+
+### Fixed
+
+### Migration
+
+- Existing projects and tasks are unaffected — Copilot is purely additive. To opt a project into Copilot, switch `project.default_agent` (or a specific task's `agent` field) to `copilot`. A custom Copilot binary path can be set via the global settings UI or by hand in `~/.watchfire/settings.yaml`
+
 ## [2.0.1] Spark
 
 ### Fixed
