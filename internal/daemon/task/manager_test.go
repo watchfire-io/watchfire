@@ -135,6 +135,78 @@ func TestUpdateTaskClearsAgentWithExplicitEmptyString(t *testing.T) {
 	}
 }
 
+// TestListTasksDescendingByTaskNumber is a regression test for #28. When a
+// project has many tasks with mixed statuses, the task list must come back in
+// a single canonical order — descending by task_number — regardless of the
+// order files are read from disk or the legacy `position` field. Before the
+// fix, sorting by `position` first caused status-grouped consumers (TUI,
+// GUI) to render a rotated list like 0017→0047 followed by 0001→0016.
+func TestListTasksDescendingByTaskNumber(t *testing.T) {
+	projectPath := setupTempProject(t)
+	now := time.Now().UTC()
+
+	// Write 25 task YAMLs directly to disk in a non-sequential order so the
+	// test exercises the manager's sort rather than filesystem iteration
+	// order. Alternate statuses so a status-grouped consumer would scramble
+	// the list if the manager ever stopped returning a canonical order.
+	order := []int{13, 1, 25, 7, 20, 2, 19, 8, 14, 3, 24, 9, 15, 4, 23, 10, 16, 5, 22, 11, 17, 6, 21, 12, 18}
+	for _, n := range order {
+		status := models.TaskStatusReady
+		switch n % 3 {
+		case 0:
+			status = models.TaskStatusDone
+		case 1:
+			status = models.TaskStatusDraft
+		}
+		task := &models.Task{
+			Version:    1,
+			TaskID:     "id",
+			TaskNumber: n,
+			Title:      "t",
+			Prompt:     "p",
+			Status:     status,
+			Position:   n, // Legacy field; must not influence ordering.
+			CreatedAt:  now,
+			UpdatedAt:  now,
+		}
+		if err := config.SaveTask(projectPath, task); err != nil {
+			t.Fatalf("SaveTask %d: %v", n, err)
+		}
+	}
+
+	listed, err := NewManager().ListTasks(projectPath, ListOptions{})
+	if err != nil {
+		t.Fatalf("ListTasks: %v", err)
+	}
+	if len(listed) != 25 {
+		t.Fatalf("expected 25 tasks, got %d", len(listed))
+	}
+
+	for i, got := range listed {
+		want := 25 - i
+		if got.TaskNumber != want {
+			t.Errorf("listed[%d].TaskNumber = %d, want %d (expected strictly descending)", i, got.TaskNumber, want)
+		}
+	}
+
+	// Confirm position values don't sneak back in as a tiebreaker: bump the
+	// Position of the highest-numbered task to the lowest value and re-list.
+	// With a canonical task_number-descending sort the order must be
+	// unchanged.
+	highest := listed[0]
+	highest.Position = -1
+	if err := config.SaveTask(projectPath, highest); err != nil {
+		t.Fatalf("SaveTask highest: %v", err)
+	}
+	relisted, err := NewManager().ListTasks(projectPath, ListOptions{})
+	if err != nil {
+		t.Fatalf("ListTasks (relisted): %v", err)
+	}
+	if relisted[0].TaskNumber != 25 {
+		t.Errorf("after reshuffling position, first task = %d, want 25 (position must not affect order)", relisted[0].TaskNumber)
+	}
+}
+
 func TestUpdateTaskNilAgentLeavesUnchanged(t *testing.T) {
 	projectPath := setupTempProject(t)
 	m := NewManager()
