@@ -16,11 +16,12 @@ interface Props {
   projectId: string
   color: string
   collapsible?: boolean
+  defaultCollapsed?: boolean
   moveTargets?: MoveTarget[]
 }
 
-export function TaskGroup({ title, tasks, projectId, color, collapsible, moveTargets }: Props) {
-  const [collapsed, setCollapsed] = useState(false)
+export function TaskGroup({ title, tasks, projectId, color, collapsible, defaultCollapsed, moveTargets }: Props) {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed ?? false)
   const [menuOpen, setMenuOpen] = useState(false)
   const bulkUpdateStatus = useTasksStore((s) => s.bulkUpdateStatus)
   const { toast } = useToast()
