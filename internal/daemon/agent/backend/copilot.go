@@ -104,6 +104,11 @@ func (c *Copilot) ResolveExecutable(s *models.Settings) (string, error) {
 			"/opt/homebrew/bin/copilot",
 			"/usr/local/bin/copilot",
 		)
+	} else {
+		fallbacks = append(fallbacks,
+			"/usr/local/bin/copilot",
+			"/usr/bin/copilot",
+		)
 	}
 	for _, p := range fallbacks {
 		if _, err := os.Stat(p); err == nil {

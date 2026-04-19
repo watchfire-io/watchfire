@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/watchfire-io/watchfire/internal/config"
 	"github.com/watchfire-io/watchfire/internal/daemon/agent/backend"
 )
 
@@ -91,10 +92,16 @@ func (tf *TaskForm) rebuildAgentOptions(preserve string) {
 	}
 	tf.projectDefaultLabel = label
 
-	opts := make([]CycleOption, 0, 1+len(backend.List()))
+	backends := backend.List()
+	settings, _ := config.LoadSettings()
+	opts := make([]CycleOption, 0, 1+len(backends))
 	opts = append(opts, CycleOption{Value: "", Display: label})
-	for _, b := range backend.List() {
-		opts = append(opts, CycleOption{Value: b.Name(), Display: b.DisplayName()})
+	for _, b := range backends {
+		display := b.DisplayName()
+		if _, err := b.ResolveExecutable(settings); err != nil {
+			display = display + " (not installed)"
+		}
+		opts = append(opts, CycleOption{Value: b.Name(), Display: display})
 	}
 	tf.agentOptions = opts
 

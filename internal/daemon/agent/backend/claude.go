@@ -44,11 +44,17 @@ func (c *Claude) ResolveExecutable(s *models.Settings) (string, error) {
 	fallbacks := []string{
 		filepath.Join(homeDir, ".claude", "local", "claude"),
 		filepath.Join(homeDir, ".local", "bin", "claude"),
+		filepath.Join(homeDir, ".npm-global", "bin", "claude"),
 	}
 	if runtime.GOOS == "darwin" {
 		fallbacks = append(fallbacks,
 			"/opt/homebrew/bin/claude",
 			"/usr/local/bin/claude",
+		)
+	} else {
+		fallbacks = append(fallbacks,
+			"/usr/local/bin/claude",
+			"/usr/bin/claude",
 		)
 	}
 	for _, p := range fallbacks {

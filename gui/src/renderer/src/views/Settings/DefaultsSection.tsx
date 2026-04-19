@@ -22,7 +22,10 @@ export function DefaultsSection({ settings, agents, agentsLoaded }: Props) {
 
   const agentOptions: SelectOption[] = [
     { value: '', label: 'Ask per project' },
-    ...agents.map((a) => ({ value: a.name, label: a.displayName }))
+    ...agents.map((a) => ({
+      value: a.name,
+      label: a.available ? a.displayName : `${a.displayName} (not installed)`,
+    }))
   ]
   if (currentAgent && !knownAgent) {
     agentOptions.push({ value: currentAgent, label: `${currentAgent} (unknown)` })

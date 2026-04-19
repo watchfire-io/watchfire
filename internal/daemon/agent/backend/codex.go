@@ -71,11 +71,20 @@ func (c *Codex) ResolveExecutable(s *models.Settings) (string, error) {
 	homeDir, _ := os.UserHomeDir()
 	fallbacks := []string{
 		filepath.Join(homeDir, ".local", "bin", "codex"),
+		filepath.Join(homeDir, ".npm-global", "bin", "codex"),
 	}
 	if runtime.GOOS == "darwin" {
 		fallbacks = append(fallbacks,
 			"/opt/homebrew/bin/codex",
 			"/usr/local/bin/codex",
+		)
+	} else {
+		// Linux distro packages (Fedora dnf, Debian apt) land in /usr/bin;
+		// manual/universal installers land in /usr/local/bin. Fixes #29
+		// where a Fedora install was invisible to the picker.
+		fallbacks = append(fallbacks,
+			"/usr/local/bin/codex",
+			"/usr/bin/codex",
 		)
 	}
 	for _, p := range fallbacks {

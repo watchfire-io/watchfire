@@ -150,6 +150,11 @@ export function StepAgent({ data, onChange, onValidChange }: Props) {
                       (global default)
                     </span>
                   )}
+                  {!agent.available && (
+                    <span className="text-[10px] uppercase tracking-wider text-amber-400">
+                      (not installed)
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs text-[var(--wf-text-muted)] mt-0.5">
                   {description}

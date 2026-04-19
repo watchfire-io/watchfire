@@ -3124,6 +3124,7 @@ type AgentInfo struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`                                  // Backend name (e.g. "claude-code")
 	DisplayName   string                 `protobuf:"bytes,2,opt,name=display_name,json=displayName,proto3" json:"display_name,omitempty"` // Human-readable label (e.g. "Claude Code")
+	Available     bool                   `protobuf:"varint,3,opt,name=available,proto3" json:"available,omitempty"`                       // Binary resolves on this host (display-time hint only — never used to filter the registry)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3170,6 +3171,13 @@ func (x *AgentInfo) GetDisplayName() string {
 		return x.DisplayName
 	}
 	return ""
+}
+
+func (x *AgentInfo) GetAvailable() bool {
+	if x != nil {
+		return x.Available
+	}
+	return false
 }
 
 type AgentList struct {
@@ -3948,10 +3956,11 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\t_defaultsB\n" +
 	"\n" +
 	"\b_updatesB\r\n" +
-	"\v_appearance\"B\n" +
+	"\v_appearance\"`\n" +
 	"\tAgentInfo\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12!\n" +
-	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\"9\n" +
+	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x1c\n" +
+	"\tavailable\x18\x03 \x01(\bR\tavailable\"9\n" +
 	"\tAgentList\x12,\n" +
 	"\x06agents\x18\x01 \x03(\v2\x14.watchfire.AgentInfoR\x06agents\"\\\n" +
 	"\x0fListLogsRequest\x12*\n" +

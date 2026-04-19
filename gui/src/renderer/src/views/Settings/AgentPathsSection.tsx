@@ -45,15 +45,29 @@ export function AgentPathsSection({ settings, agents, agentsLoaded }: Props) {
         <div className="space-y-5">
           {agents.map((agent) => {
             const path = settings.agents?.[agent.name]?.path || ''
+            // Badge states:
+            //   - path set: show the configured path (neutral)
+            //   - no path + available: auto-detected on PATH/fallbacks (success)
+            //   - no path + !available: binary missing; still listed so the
+            //     user can install it and pick it — see issue #29 for the
+            //     regression this avoids.
+            const badgeLabel = path
+              ? path
+              : agent.available
+                ? 'Auto-detected via PATH'
+                : 'Not installed'
+            const badgeVariant: 'default' | 'success' | 'warning' = path
+              ? 'default'
+              : agent.available
+                ? 'success'
+                : 'warning'
             return (
               <div key={agent.name} className="space-y-2">
                 <div className="flex items-center justify-between gap-3">
                   <span className="text-sm font-medium text-[var(--wf-text-primary)]">
                     {agent.displayName}
                   </span>
-                  <Badge variant={path ? 'default' : 'success'}>
-                    {path || 'Auto-detected via PATH'}
-                  </Badge>
+                  <Badge variant={badgeVariant}>{badgeLabel}</Badge>
                 </div>
                 <Input
                   value={path}

@@ -37,8 +37,13 @@ func TestTaskFormAgentOptionsIncludeProjectDefault(t *testing.T) {
 		if got.Value != b.Name() {
 			t.Errorf("option %d: expected value %q, got %q", i+1, b.Name(), got.Value)
 		}
-		if got.Display != b.DisplayName() {
-			t.Errorf("option %d: expected display %q, got %q", i+1, b.DisplayName(), got.Display)
+		// Display starts with DisplayName but may be suffixed with
+		// " (not installed)" on hosts where the binary can't be resolved.
+		// The presence of the suffix is a display-time hint only; the
+		// option is still in the list either way (issue #29 regression
+		// guard — missing binaries must never hide an agent).
+		if !strings.HasPrefix(got.Display, b.DisplayName()) {
+			t.Errorf("option %d: expected display to start with %q, got %q", i+1, b.DisplayName(), got.Display)
 		}
 	}
 }

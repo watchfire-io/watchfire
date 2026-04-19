@@ -367,6 +367,7 @@ message UpdateSettingsRequest {
 message AgentInfo {
   string name = 1;                                // Backend name (e.g. "claude-code")
   string display_name = 2;                        // Human-readable label (e.g. "Claude Code")
+  bool available = 3;                             // Binary resolves on this host (display-time hint only — never used to filter the registry)
 }
 
 message AgentList {
