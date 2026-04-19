@@ -207,6 +207,93 @@ func TestListTasksDescendingByTaskNumber(t *testing.T) {
 	}
 }
 
+func TestBulkUpdateStatusMovesAllAndSkipsNoops(t *testing.T) {
+	projectPath := setupTempProject(t)
+	m := NewManager()
+
+	// Create three draft tasks and one already-ready task.
+	var drafts []int
+	for i := 0; i < 3; i++ {
+		created, err := m.CreateTask(projectPath, CreateOptions{
+			Title:  "draft",
+			Prompt: "p",
+			Status: string(models.TaskStatusDraft),
+		})
+		if err != nil {
+			t.Fatalf("CreateTask: %v", err)
+		}
+		drafts = append(drafts, created.TaskNumber)
+	}
+	already, err := m.CreateTask(projectPath, CreateOptions{
+		Title:  "already ready",
+		Prompt: "p",
+		Status: string(models.TaskStatusReady),
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	nums := append([]int{}, drafts...)
+	nums = append(nums, already.TaskNumber)
+
+	updated, err := m.BulkUpdateStatus(projectPath, nums, string(models.TaskStatusReady))
+	if err != nil {
+		t.Fatalf("BulkUpdateStatus: %v", err)
+	}
+	// Only the 3 drafts should be touched; the already-ready task is a no-op.
+	if len(updated) != 3 {
+		t.Fatalf("expected 3 updated tasks, got %d", len(updated))
+	}
+	// Canonical order: newest first.
+	for i := 0; i < len(updated)-1; i++ {
+		if updated[i].TaskNumber <= updated[i+1].TaskNumber {
+			t.Errorf("expected newest-first order, got %d before %d", updated[i].TaskNumber, updated[i+1].TaskNumber)
+		}
+	}
+	// Verify persisted status.
+	for _, n := range drafts {
+		loaded, err := config.LoadTask(projectPath, n)
+		if err != nil {
+			t.Fatalf("LoadTask %d: %v", n, err)
+		}
+		if loaded.Status != models.TaskStatusReady {
+			t.Errorf("task %d: got status %s, want ready", n, loaded.Status)
+		}
+	}
+}
+
+func TestBulkUpdateStatusRejectsInvalidStatus(t *testing.T) {
+	projectPath := setupTempProject(t)
+	m := NewManager()
+	created, _ := m.CreateTask(projectPath, CreateOptions{
+		Title: "t", Prompt: "p", Status: string(models.TaskStatusDraft),
+	})
+	if _, err := m.BulkUpdateStatus(projectPath, []int{created.TaskNumber}, "bogus"); err == nil {
+		t.Fatal("expected error for invalid status, got nil")
+	}
+}
+
+func TestBulkUpdateStatusToDoneSetsSuccess(t *testing.T) {
+	projectPath := setupTempProject(t)
+	m := NewManager()
+	created, _ := m.CreateTask(projectPath, CreateOptions{
+		Title: "t", Prompt: "p", Status: string(models.TaskStatusReady),
+	})
+	updated, err := m.BulkUpdateStatus(projectPath, []int{created.TaskNumber}, string(models.TaskStatusDone))
+	if err != nil {
+		t.Fatalf("BulkUpdateStatus: %v", err)
+	}
+	if len(updated) != 1 {
+		t.Fatalf("expected 1 updated task, got %d", len(updated))
+	}
+	if updated[0].Success == nil || !*updated[0].Success {
+		t.Errorf("expected Success=true, got %v", updated[0].Success)
+	}
+	if updated[0].CompletedAt == nil {
+		t.Errorf("expected CompletedAt to be set")
+	}
+}
+
 func TestUpdateTaskNilAgentLeavesUnchanged(t *testing.T) {
 	projectPath := setupTempProject(t)
 	m := NewManager()

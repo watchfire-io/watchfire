@@ -58,6 +58,10 @@ export function TasksTab({ projectId }: Props) {
             tasks={ready}
             projectId={projectId}
             color="var(--wf-warning)"
+            moveTargets={[
+              { status: 'draft', label: 'Todo' },
+              { status: 'done', label: 'Done' }
+            ]}
           />
         )}
         {draft.length > 0 && (
@@ -66,6 +70,10 @@ export function TasksTab({ projectId }: Props) {
             tasks={draft}
             projectId={projectId}
             color="var(--wf-text-muted)"
+            moveTargets={[
+              { status: 'ready', label: 'In Development' },
+              { status: 'done', label: 'Done' }
+            ]}
           />
         )}
         {failed.length > 0 && (
@@ -75,6 +83,10 @@ export function TasksTab({ projectId }: Props) {
             projectId={projectId}
             color="var(--wf-error)"
             collapsible
+            moveTargets={[
+              { status: 'draft', label: 'Todo' },
+              { status: 'ready', label: 'In Development' }
+            ]}
           />
         )}
         {done.length > 0 && (
@@ -84,6 +96,10 @@ export function TasksTab({ projectId }: Props) {
             projectId={projectId}
             color="var(--wf-success)"
             collapsible
+            moveTargets={[
+              { status: 'draft', label: 'Todo' },
+              { status: 'ready', label: 'In Development' }
+            ]}
           />
         )}
         {activeTasks.length === 0 && (

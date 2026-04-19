@@ -228,6 +228,53 @@ func (m *Manager) RestoreTask(projectPath string, taskNumber int) (*models.Task,
 	return task, nil
 }
 
+// BulkUpdateStatus sets the same status on every task in taskNumbers.
+// Tasks whose status already matches are skipped. Missing tasks are silently
+// ignored so a partially stale UI selection doesn't fail the whole request.
+// Returns the updated tasks in the canonical newest-first order.
+func (m *Manager) BulkUpdateStatus(projectPath string, taskNumbers []int, newStatus string) ([]*models.Task, error) {
+	if newStatus != string(models.TaskStatusDraft) &&
+		newStatus != string(models.TaskStatusReady) &&
+		newStatus != string(models.TaskStatusDone) {
+		return nil, fmt.Errorf("invalid status: %s", newStatus)
+	}
+
+	status := models.TaskStatus(newStatus)
+	updated := make([]*models.Task, 0, len(taskNumbers))
+	now := time.Now().UTC()
+	for _, n := range taskNumbers {
+		t, err := config.LoadTask(projectPath, n)
+		if err != nil {
+			return nil, err
+		}
+		if t == nil || t.IsDeleted() || t.Status == status {
+			continue
+		}
+		t.Status = status
+		t.UpdatedAt = now
+		if status == models.TaskStatusDone {
+			success := true
+			t.Success = &success
+			t.CompletedAt = &now
+		} else {
+			// Moving back out of done: clear terminal-only fields so future
+			// rereads don't see a stale success/failure trace.
+			t.Success = nil
+			t.FailureReason = ""
+			t.CompletedAt = nil
+		}
+		if err := config.SaveTask(projectPath, t); err != nil {
+			return nil, err
+		}
+		updated = append(updated, t)
+	}
+
+	sort.Slice(updated, func(i, j int) bool {
+		return updated[i].TaskNumber > updated[j].TaskNumber
+	})
+	return updated, nil
+}
+
 // EmptyTrash permanently deletes all soft-deleted tasks.
 func (m *Manager) EmptyTrash(projectPath string) error {
 	tasks, err := config.LoadDeletedTasks(projectPath)
