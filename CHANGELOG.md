@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.0.0] Blaze
+
+### Added
+
+- **GitHub Copilot CLI backend** — `copilot` (https://github.com/github/copilot-cli) ships as a fifth first-class backend alongside Claude Code, OpenAI Codex, opencode, and Gemini CLI, registered in the backend registry and selectable per project or per task. The session runs with `--allow-all` (yolo mode) and receives the composed Watchfire system prompt as `AGENTS.md` in a per-session `COPILOT_HOME` directory referenced via `COPILOT_CUSTOM_INSTRUCTIONS_DIRS`, while the user's real `~/.copilot/{config.json,mcp-config.json,session-store.db}` are symlinked in so existing GitHub login, MCP config, and session history are reused. Transcript discovery walks the per-session `session-state/**/events.jsonl` tree and renders events into the same User/Assistant/Tool format as the other backends. No wiring changes in the manager, sandbox, proto, or UX surfaces — they already iterate the backend registry generically
+
 ## [2.0.1] Spark
 
 ### Fixed
