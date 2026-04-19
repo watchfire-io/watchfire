@@ -8,6 +8,8 @@
 
 ### Fixed
 
+- **GUI prompted to update CLI on every launch (#30)** — the `cli-installer` version check compared the installed CLI's version string against `app.getVersion()` with strict `!==`, which tripped on trailing whitespace, pre-release suffixes, and ANSI hyperlinks that escaped the old CSI-only stripper; on Linux it also read the wrong binary because the search-dir order (`/usr/local/bin` → `~/.local/bin`) put the system path ahead of the user path that `installCLI()` actually writes to, so a stale 2.0.0 binary in `/usr/local/bin` kept re-triggering the prompt even after the user clicked Install. Version parsing now lives in a pure `gui/src/main/version.ts` module with a broader ANSI stripper (CSI + OSC + other ESC), a proper semver-aware comparator (trims whitespace, drops leading `v`, ignores build metadata), and the Linux/macOS search order now matches the install target with a PATH fallback (`command -v`) for rpm/deb/Linuxbrew installs. Regression tests in `gui/src/main/version.test.mjs` cover the representative Linux and macOS outputs (run with `node --test`)
+
 ### Migration
 
 - Existing projects and tasks are unaffected — Copilot is purely additive. To opt a project into Copilot, switch `project.default_agent` (or a specific task's `agent` field) to `copilot`. A custom Copilot binary path can be set via the global settings UI or by hand in `~/.watchfire/settings.yaml`
