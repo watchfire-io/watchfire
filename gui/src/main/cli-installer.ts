@@ -3,14 +3,20 @@ import { join } from 'path'
 import { execSync } from 'child_process'
 import { app, dialog } from 'electron'
 import { stopDaemon } from './daemon'
+import { parseCLIVersion, compareSemver } from './version'
 
 const IS_MAC = process.platform === 'darwin'
 const IS_WIN = process.platform === 'win32'
 const IS_LINUX = process.platform === 'linux'
 
-// Platform-specific install directories
-const MAC_INSTALL_DIRS = ['/opt/homebrew/bin', '/usr/local/bin']
-const LINUX_INSTALL_DIRS = ['/usr/local/bin', join(process.env.HOME || '', '.local', 'bin')]
+// Platform-specific install directories.
+// User-owned paths come first so that when the GUI installs to ~/.local/bin,
+// the next launch's version check reads that same binary (not a stale
+// /usr/local/bin copy left over from a prior manual install — the root cause
+// of #30 on Linux: install target and lookup order disagreed, so every launch
+// re-prompted against an older system binary).
+const MAC_INSTALL_DIRS = ['/usr/local/bin', '/opt/homebrew/bin']
+const LINUX_INSTALL_DIRS = [join(process.env.HOME || '', '.local', 'bin'), '/usr/local/bin']
 const WIN_INSTALL_DIR = join(
   process.env.LOCALAPPDATA || join(process.env.USERPROFILE || '', 'AppData', 'Local'),
   'Watchfire'
@@ -31,21 +37,21 @@ function getSearchDirs(): string[] {
   return [WIN_INSTALL_DIR]
 }
 
-/** Find an installed binary in known paths. */
+/** Find an installed binary in known paths, falling back to PATH lookup. */
 function findInstalledPath(binary: string): string | null {
   for (const dir of getSearchDirs()) {
     const p = join(dir, binary)
     if (existsSync(p)) return p
   }
-  // Also check PATH on Windows
-  if (IS_WIN) {
-    try {
-      const result = execSync(`where ${binary}`, { encoding: 'utf-8', timeout: 5000 })
-      const firstLine = result.trim().split('\n')[0]
-      if (firstLine && existsSync(firstLine)) return firstLine
-    } catch {
-      // not found in PATH
-    }
+  // Fall back to PATH lookup so system-package installs (rpm/deb to /usr/bin)
+  // or Linuxbrew installs are also recognized.
+  try {
+    const cmd = IS_WIN ? `where ${binary}` : `command -v ${binary}`
+    const result = execSync(cmd, { encoding: 'utf-8', timeout: 5000 })
+    const firstLine = result.trim().split('\n')[0]
+    if (firstLine && existsSync(firstLine)) return firstLine
+  } catch {
+    // not found in PATH
   }
   return null
 }
@@ -64,23 +70,42 @@ export function needsInstall(): InstallStatus {
     return { needed: true, reason: 'missing' }
   }
 
-  // Check version of installed binary
+  const appVersion = app.getVersion()
+
   try {
     const rawOutput = execSync(`"${cliPath}" version`, { encoding: 'utf-8', timeout: 5000 })
-    // Strip ANSI escape codes (lipgloss may emit them even in non-TTY on some platforms)
-    const output = rawOutput.replace(/\x1b\[[0-9;]*[a-zA-Z]/g, '')
-    const match = output.match(/Watchfire\s+([\d.]+)/)
-    if (match) {
-      const installedVersion = match[1]
-      const appVersion = app.getVersion()
-      if (installedVersion !== appVersion) {
-        return { needed: true, reason: 'outdated' }
-      }
+    const installedVersion = parseCLIVersion(rawOutput)
+    if (!installedVersion) {
+      // Couldn't extract a version (e.g. dev build printing "Watchfire dev").
+      // Fall through without prompting — the user is running something
+      // unofficial and shouldn't be nagged about it.
+      console.warn(
+        `[cli-installer] Could not parse version from ${cliPath} output; skipping update check`
+      )
+      return { needed: false, reason: 'none' }
     }
+
+    const cmp = compareSemver(installedVersion, appVersion)
+    if (cmp === null) {
+      console.warn(
+        `[cli-installer] Non-semver versions — installed=${installedVersion} app=${appVersion}; skipping update check`
+      )
+      return { needed: false, reason: 'none' }
+    }
+    if (cmp < 0) {
+      console.log(
+        `[cli-installer] Installed CLI is older — installed=${installedVersion} app=${appVersion}`
+      )
+      return { needed: true, reason: 'outdated' }
+    }
+    // Equal or newer — nothing to do.
   } catch (err) {
     // If we can't run the binary, treat as needing install.
     // Log the actual error for debugging (e.g., wrong platform binary, missing libs).
-    console.error('[cli-installer] Failed to check CLI version:', err instanceof Error ? err.message : err)
+    console.error(
+      '[cli-installer] Failed to check CLI version:',
+      err instanceof Error ? err.message : err
+    )
     return { needed: true, reason: 'outdated' }
   }
 
