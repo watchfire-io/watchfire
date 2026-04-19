@@ -201,6 +201,45 @@ func RemoveWorktree(projectPath string, taskNumber int, merged bool) error {
 	return nil
 }
 
+// CommitDirtyMain stages and commits any uncommitted changes in the main
+// worktree before a task-scoped agent mode starts. A dirty main tree causes
+// the subsequent auto-merge (when the agent finishes a task) to fail with
+// "your local changes would be overwritten by merge", which in turn kills
+// run-all/wildfire chaining silently. Committing the user's in-flight edits
+// locally is a safer default than stashing (no surprise restore step) and
+// than blocking the run (the user already said "go").
+func CommitDirtyMain(projectPath string) error {
+	status := exec.Command("git", "status", "--porcelain")
+	status.Dir = projectPath
+	out, err := status.Output()
+	if err != nil {
+		return fmt.Errorf("git status failed: %w", err)
+	}
+	if len(strings.TrimSpace(string(out))) == 0 {
+		return nil
+	}
+
+	log.Printf("[pre-run] main has uncommitted changes — auto-committing before agent start:\n%s",
+		strings.TrimSpace(string(out)))
+
+	add := exec.Command("git", "add", "-A")
+	add.Dir = projectPath
+	if addOut, addErr := add.CombinedOutput(); addErr != nil {
+		return fmt.Errorf("git add -A failed: %s: %w", strings.TrimSpace(string(addOut)), addErr)
+	}
+
+	commit := exec.Command("git", "commit",
+		"-m", "Watchfire: auto-commit uncommitted changes before agent run",
+		"--no-verify",
+	)
+	commit.Dir = projectPath
+	if cOut, cErr := commit.CombinedOutput(); cErr != nil {
+		return fmt.Errorf("git commit failed: %s: %w", strings.TrimSpace(string(cOut)), cErr)
+	}
+	log.Printf("[pre-run] captured uncommitted changes on main")
+	return nil
+}
+
 // autoCommitUncommittedChanges stages and commits any uncommitted work in the
 // worktree. Without this, an agent that edits files but forgets to run
 // `git commit` before marking a task done would have all its work silently

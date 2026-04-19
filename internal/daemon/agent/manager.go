@@ -217,6 +217,13 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 	var worktreePath string
 
 	if isTaskScoped {
+		// 0. Auto-commit any uncommitted changes on main. A dirty main blocks
+		//    the post-task merge and silently halts chaining — commit upfront
+		//    so the merge path always has a clean target.
+		if err := CommitDirtyMain(opts.ProjectPath); err != nil {
+			log.Printf("Warning: pre-run auto-commit of main failed: %v", err)
+		}
+
 		// 1. Create git worktree
 		wt, wtErr := EnsureWorktree(opts.ProjectPath, opts.TaskNumber)
 		if wtErr != nil {
