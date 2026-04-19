@@ -52,22 +52,11 @@ var updateCmd = &cobra.Command{
 			}
 		}
 
-		// Download new binaries
-		fmt.Printf("Downloading CLI (%s)...\n", cliAsset.Name)
-		cliTmpPath, err := updater.DownloadAsset(cliAsset)
-		if err != nil {
-			return fmt.Errorf("failed to download CLI: %w", err)
-		}
-		defer func() { _ = os.Remove(cliTmpPath) }()
-
-		fmt.Printf("Downloading daemon (%s)...\n", daemonAsset.Name)
-		daemonTmpPath, err := updater.DownloadAsset(daemonAsset)
-		if err != nil {
-			return fmt.Errorf("failed to download daemon: %w", err)
-		}
-		defer func() { _ = os.Remove(daemonTmpPath) }()
-
-		// Replace CLI binary (self)
+		// Resolve install paths up front so the downloads can be staged
+		// inside their target install directories — keeps the final rename
+		// same-filesystem and sidesteps the EXDEV error (#25) that happens
+		// when os.TempDir() and the install dir live on different
+		// filesystems (e.g. tmpfs /tmp vs ext4 ~/.local/bin on Fedora/Ubuntu).
 		selfPath, err := os.Executable()
 		if err != nil {
 			return fmt.Errorf("failed to find self: %w", err)
@@ -76,16 +65,35 @@ var updateCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to resolve self: %w", err)
 		}
+		cliInstallDir := filepath.Dir(selfPath)
+
+		daemonBinPath, err := findDaemonBinary()
+		if err != nil {
+			return fmt.Errorf("failed to find daemon binary: %w", err)
+		}
+		if resolved, symErr := filepath.EvalSymlinks(daemonBinPath); symErr == nil {
+			daemonBinPath = resolved
+		}
+		daemonInstallDir := filepath.Dir(daemonBinPath)
+
+		// Download new binaries
+		fmt.Printf("Downloading CLI (%s)...\n", cliAsset.Name)
+		cliTmpPath, err := updater.DownloadAsset(cliAsset, cliInstallDir)
+		if err != nil {
+			return fmt.Errorf("failed to download CLI: %w", err)
+		}
+		defer func() { _ = os.Remove(cliTmpPath) }()
+
+		fmt.Printf("Downloading daemon (%s)...\n", daemonAsset.Name)
+		daemonTmpPath, err := updater.DownloadAsset(daemonAsset, daemonInstallDir)
+		if err != nil {
+			return fmt.Errorf("failed to download daemon: %w", err)
+		}
+		defer func() { _ = os.Remove(daemonTmpPath) }()
 
 		fmt.Println("Installing CLI...")
 		if replaceErr := updater.ReplaceBinary(selfPath, cliTmpPath); replaceErr != nil {
 			return fmt.Errorf("failed to update CLI: %w", replaceErr)
-		}
-
-		// Replace daemon binary
-		daemonBinPath, err := findDaemonBinary()
-		if err != nil {
-			return fmt.Errorf("failed to find daemon binary: %w", err)
 		}
 
 		fmt.Println("Installing daemon...")
