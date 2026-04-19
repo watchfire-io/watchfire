@@ -26,6 +26,7 @@ interface TasksState {
   restoreTask: (projectId: string, taskNumber: number) => Promise<void>
   emptyTrash: (projectId: string) => Promise<void>
   reorderTasks: (projectId: string, taskNumbers: number[]) => Promise<void>
+  bulkUpdateStatus: (projectId: string, taskNumbers: number[], newStatus: string) => Promise<void>
 }
 
 export const useTasksStore = create<TasksState>((set, get) => ({
@@ -93,6 +94,13 @@ export const useTasksStore = create<TasksState>((set, get) => ({
   reorderTasks: async (projectId, taskNumbers) => {
     const client = getTaskClient()
     await client.reorderTasks({ projectId, taskNumbers })
+    get().fetchTasks(projectId)
+  },
+
+  bulkUpdateStatus: async (projectId, taskNumbers, newStatus) => {
+    if (taskNumbers.length === 0) return
+    const client = getTaskClient()
+    await client.bulkUpdateStatus({ projectId, taskNumbers, newStatus })
     get().fetchTasks(projectId)
   }
 }))

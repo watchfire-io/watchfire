@@ -147,6 +147,29 @@ func (s *taskService) RestoreTask(_ context.Context, req *pb.TaskId) (*pb.Task, 
 	return modelToProtoTask(t, req.ProjectId), nil
 }
 
+func (s *taskService) BulkUpdateStatus(_ context.Context, req *pb.BulkUpdateStatusRequest) (*pb.TaskList, error) {
+	projectPath, err := getProjectPath(req.ProjectId)
+	if err != nil {
+		return nil, err
+	}
+
+	nums := make([]int, 0, len(req.TaskNumbers))
+	for _, n := range req.TaskNumbers {
+		nums = append(nums, int(n))
+	}
+
+	tasks, err := s.manager.BulkUpdateStatus(projectPath, nums, req.NewStatus)
+	if err != nil {
+		return nil, err
+	}
+
+	list := &pb.TaskList{Tasks: make([]*pb.Task, 0, len(tasks))}
+	for _, t := range tasks {
+		list.Tasks = append(list.Tasks, modelToProtoTask(t, req.ProjectId))
+	}
+	return list, nil
+}
+
 func (s *taskService) EmptyTrash(_ context.Context, req *pb.ProjectId) (*emptypb.Empty, error) {
 	projectPath, err := getProjectPath(req.ProjectId)
 	if err != nil {
