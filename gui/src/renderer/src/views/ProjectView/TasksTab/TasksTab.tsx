@@ -96,6 +96,7 @@ export function TasksTab({ projectId }: Props) {
             projectId={projectId}
             color="var(--wf-success)"
             collapsible
+            defaultCollapsed
             moveTargets={[
               { status: 'draft', label: 'Todo' },
               { status: 'ready', label: 'In Development' }
