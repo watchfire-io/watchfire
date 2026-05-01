@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Activity, AlertTriangle, Clock, Folder, GitBranch, ChevronRight, CheckCircle2, Code2, ListTodo, X } from 'lucide-react'
+import { Activity, AlertTriangle, Clock, Flame, Folder, GitBranch, ChevronRight, CheckCircle2, Code2, ListTodo, X } from 'lucide-react'
 import type { Project } from '../../generated/watchfire_pb'
 import { useProjectsStore } from '../../stores/projects-store'
 import { useAppStore } from '../../stores/app-store'
@@ -71,6 +71,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
 
   // Find next upcoming task
   const nextTask = tasks?.find((t) => t.status === 'draft' && !t.deletedAt)
+  const runningTaskTitle = isAgentRunning ? agentStatus?.taskTitle?.trim() : ''
 
   // Most recent activity: latest non-deleted task updated_at.
   // When the agent is running we always show "Active now", so the agent's
@@ -201,12 +202,17 @@ export function ProjectCard({ project }: ProjectCardProps) {
               <div className="bg-[var(--wf-border)]" style={{ width: `${(taskCounts.draft / total) * 100}%` }} />
             )}
           </div>
-          {/* Next up */}
-          {nextTask && (
+          {/* Working / Next up */}
+          {runningTaskTitle ? (
+            <p className="flex items-center gap-1 text-[11px] text-[var(--wf-text-muted)] mt-2 truncate">
+              <Flame size={11} className="shrink-0 text-[var(--wf-fire)]" />
+              <span className="truncate">Working: {runningTaskTitle}</span>
+            </p>
+          ) : nextTask ? (
             <p className="text-[11px] text-[var(--wf-text-muted)] mt-2 truncate">
               Next: {nextTask.title}
             </p>
-          )}
+          ) : null}
           {isAgentRunning && ptyPreview && (
             <p className="font-mono text-[10px] text-[var(--wf-text-muted)] mt-2 truncate">
               {ptyPreview}
