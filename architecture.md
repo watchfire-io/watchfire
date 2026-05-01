@@ -904,7 +904,7 @@ Split layout with tabs:
 
 **Bottom Panel (footer bar, expands upward):**
 
-- **Integrated terminal** — Always-visible footer bar at the bottom of the project view. Clicking it or pressing Cmd+` spawns a shell session via node-pty (runs in Electron main process, not the daemon). Supports up to 5 tabbed sessions per project with resizable panel height. Sessions are cleaned up on project switch or app quit.
+- **Integrated terminal** — Always-visible footer bar at the bottom of the project view. Clicking it or pressing Cmd+` spawns a shell session via node-pty (runs in Electron main process, not the daemon). Supports up to 5 tabbed sessions per project with resizable panel height. Sessions persist across project switches and panel collapse, and remain accessible when the user returns to the project. They are cleaned up only when the user closes the tab (X button) or quits the app.
 
 #### Global Settings
 

@@ -84,29 +84,26 @@ export function ProjectView() {
     return () => clearInterval(interval)
   }, [projectId])
 
-  // Cmd+` / Ctrl+` to toggle terminal
+  // Cmd+` / Ctrl+` to toggle terminal panel.
+  // Sessions persist across panel collapse — we only flip visibility, never destroy.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === '`') {
         e.preventDefault()
         const state = useTerminalStore.getState()
-        if (state.sessions.length === 0 && project) {
+        const projectSessions = state.sessions.filter((s) => s.projectId === projectId)
+        if (projectSessions.length === 0 && project) {
           state.createSession(projectId!, project.path)
-        } else if (state.sessions.length > 0) {
-          state.destroyAllSessions()
+        } else if (state.panelOpen) {
+          state.collapsePanel()
+        } else {
+          state.expandPanel()
         }
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [projectId, project])
-
-  // Cleanup terminal sessions on project switch
-  useEffect(() => {
-    return () => {
-      useTerminalStore.getState().destroyAllSessions()
-    }
-  }, [projectId])
 
   if (!project || !projectId) {
     return (

@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import type { Project, AgentStatus } from '../generated/watchfire_pb'
 import { getProjectClient, getAgentClient } from '../lib/grpc-client'
 import { agentStatusEqual } from '../lib/agent-utils'
+import { useTerminalStore } from './terminal-store'
 
 interface ProjectsState {
   projects: Project[]
@@ -92,6 +93,9 @@ export const useProjectsStore = create<ProjectsState>((set, get) => ({
     try {
       const client = getProjectClient()
       await client.deleteProject({ projectId })
+      // Destroy any terminal sessions tied to this project so they don't
+      // linger as orphans in the global pool with a stale projectId.
+      await useTerminalStore.getState().destroyProjectSessions(projectId)
       await get().fetchProjects()
     } catch (err) {
       set({ error: String(err) })
