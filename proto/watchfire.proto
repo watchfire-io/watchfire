@@ -210,6 +210,7 @@ message AgentStatus {
   bool is_running = 6;
   string wildfire_phase = 7;                    // "execute" | "refine" | "generate" | "" (wildfire only)
   optional AgentIssue issue = 8;                // Current blocking issue, if any
+  optional google.protobuf.Timestamp started_at = 9; // When the current session started
 }
 
 message StartAgentRequest {
