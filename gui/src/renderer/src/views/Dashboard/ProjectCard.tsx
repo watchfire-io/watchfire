@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Folder, GitBranch, ChevronRight, CheckCircle2, Code2, ListTodo, X } from 'lucide-react'
+import { Activity, Folder, GitBranch, ChevronRight, CheckCircle2, Code2, ListTodo, X } from 'lucide-react'
 import type { Project } from '../../generated/watchfire_pb'
 import { useProjectsStore } from '../../stores/projects-store'
 import { useAppStore } from '../../stores/app-store'
@@ -7,6 +7,7 @@ import { useTasksStore } from '../../stores/tasks-store'
 import { useGitStore } from '../../stores/git-store'
 import { StatusDot } from '../../components/StatusDot'
 import { isAgentWorking } from '../../lib/agent-utils'
+import { relativeTime, timestampToMs } from '../../lib/relative-time'
 import { AgentBadge } from '../../components/AgentBadge'
 import { Modal } from '../../components/ui/Modal'
 import { useAgentPreview } from '../../hooks/useAgentPreview'
@@ -42,6 +43,20 @@ export function ProjectCard({ project }: ProjectCardProps) {
   // Find next upcoming task
   const nextTask = tasks?.find((t) => t.status === 'draft' && !t.deletedAt)
 
+  // Most recent activity: latest non-deleted task updated_at.
+  // When the agent is running we always show "Active now", so the agent's
+  // start time only matters as a tiebreaker we don't need to compute here.
+  const lastActivityMs = (() => {
+    if (!tasks || tasks.length === 0) return null
+    let latest = -Infinity
+    for (const t of tasks) {
+      if (t.deletedAt) continue
+      const ms = timestampToMs(t.updatedAt)
+      if (ms !== null && ms > latest) latest = ms
+    }
+    return latest === -Infinity ? null : latest
+  })()
+
   return (
     <>
     <div
@@ -69,7 +84,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
         <ChevronRight size={14} className="text-[var(--wf-text-muted)] shrink-0 group-hover:opacity-0 transition-opacity" />
       </div>
 
-      {/* Meta: branch + folder */}
+      {/* Meta: branch + folder + last activity */}
       <div className="flex items-center gap-3 text-xs text-[var(--wf-text-muted)] mb-3">
         <span className="flex items-center gap-1">
           <GitBranch size={11} className="shrink-0" />
@@ -79,6 +94,16 @@ export function ProjectCard({ project }: ProjectCardProps) {
           <Folder size={11} className="shrink-0" />
           <span className="truncate">{project.path?.split('/').pop()}</span>
         </span>
+        {lastActivityMs !== null && (
+          <span className="flex items-center gap-1 shrink-0">
+            <Activity size={11} className="shrink-0" />
+            {isAgentRunning ? (
+              <span className="text-[var(--wf-success)]">Active now</span>
+            ) : (
+              <span>Active {relativeTime(lastActivityMs)}</span>
+            )}
+          </span>
+        )}
       </div>
 
       {/* Agent badge */}
