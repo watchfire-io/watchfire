@@ -9,6 +9,7 @@ import { StatusDot } from '../../components/StatusDot'
 import { isAgentWorking } from '../../lib/agent-utils'
 import { AgentBadge } from '../../components/AgentBadge'
 import { Modal } from '../../components/ui/Modal'
+import { useAgentPreview } from '../../hooks/useAgentPreview'
 
 interface ProjectCardProps {
   project: Project
@@ -23,6 +24,8 @@ export function ProjectCard({ project }: ProjectCardProps) {
   const gitInfo = useGitStore((s) => s.gitInfo[project.projectId])
   const fetchGitInfo = useGitStore((s) => s.fetchGitInfo)
   const [showConfirm, setShowConfirm] = useState(false)
+  const isAgentRunning = !!agentStatus?.isRunning
+  const ptyPreview = useAgentPreview(project.projectId, isAgentRunning)
 
   useEffect(() => {
     fetchTasks(project.projectId)
@@ -79,7 +82,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
       </div>
 
       {/* Agent badge */}
-      {agentStatus?.isRunning && (
+      {isAgentRunning && (
         <div className="mb-3">
           <AgentBadge status={agentStatus} />
         </div>
@@ -120,10 +123,20 @@ export function ProjectCard({ project }: ProjectCardProps) {
               Next: {nextTask.title}
             </p>
           )}
+          {isAgentRunning && ptyPreview && (
+            <p className="font-mono text-[10px] text-[var(--wf-text-muted)] mt-2 truncate">
+              {ptyPreview}
+            </p>
+          )}
         </div>
       ) : (
         <div className="mt-auto pt-3 border-t border-[var(--wf-border)]">
           <p className="text-xs text-[var(--wf-text-muted)]">No tasks yet</p>
+          {isAgentRunning && ptyPreview && (
+            <p className="font-mono text-[10px] text-[var(--wf-text-muted)] mt-2 truncate">
+              {ptyPreview}
+            </p>
+          )}
         </div>
       )}
     </div>
