@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react'
-import { Activity, AlertTriangle, Clock, Flame, Folder, GitBranch, ChevronRight, CheckCircle2, Code2, ListTodo, X } from 'lucide-react'
+import { Activity, AlertTriangle, Clock, Flame, Folder, GitBranch, ChevronRight, CheckCircle2, Code2, ListTodo, Terminal, X } from 'lucide-react'
 import type { Project } from '../../generated/watchfire_pb'
 import { useProjectsStore } from '../../stores/projects-store'
 import { useAppStore } from '../../stores/app-store'
 import { useTasksStore } from '../../stores/tasks-store'
 import { useGitStore } from '../../stores/git-store'
+import { useTerminalStore } from '../../stores/terminal-store'
 import { StatusDot } from '../../components/StatusDot'
 import { isAgentWorking } from '../../lib/agent-utils'
 import { relativeTime, timestampToMs } from '../../lib/relative-time'
@@ -13,6 +14,7 @@ import { Modal } from '../../components/ui/Modal'
 import { useAgentPreview } from '../../hooks/useAgentPreview'
 
 const STALE_THRESHOLD_MS = 30 * 60 * 1000
+const SHELL_PULSE_WINDOW_MS = 2000
 
 function formatElapsed(ms: number): string {
   const sec = Math.max(0, Math.floor(ms / 1000))
@@ -36,24 +38,35 @@ export function ProjectCard({ project }: ProjectCardProps) {
   const fetchTasks = useTasksStore((s) => s.fetchTasks)
   const gitInfo = useGitStore((s) => s.gitInfo[project.projectId])
   const fetchGitInfo = useGitStore((s) => s.fetchGitInfo)
+  const allSessions = useTerminalStore((s) => s.sessions)
+  const expandPanel = useTerminalStore((s) => s.expandPanel)
   const [showConfirm, setShowConfirm] = useState(false)
   const isAgentRunning = !!agentStatus?.isRunning
   const ptyPreview = useAgentPreview(project.projectId, isAgentRunning)
   const [now, setNow] = useState(() => Date.now())
+
+  const liveShells = allSessions.filter(
+    (s) => s.projectId === project.projectId && !s.exited
+  )
+  const shellCount = liveShells.length
+  const shellsPulsing = liveShells.some(
+    (s) => now - s.lastOutputAt < SHELL_PULSE_WINDOW_MS
+  )
+  const needsTicker = isAgentRunning || shellCount > 0
 
   useEffect(() => {
     fetchTasks(project.projectId)
     fetchGitInfo(project.projectId)
   }, [project.projectId])
 
-  // Tick once a second only while the agent is running, so idle cards
-  // don't burn renders.
+  // Tick once a second only while the agent is running or shells are live,
+  // so idle cards don't burn renders.
   useEffect(() => {
-    if (!isAgentRunning) return
+    if (!needsTicker) return
     setNow(Date.now())
     const id = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(id)
-  }, [isAgentRunning])
+  }, [needsTicker])
 
   const startedAtMs = isAgentRunning ? timestampToMs(agentStatus?.startedAt) : null
   const elapsedMs = startedAtMs !== null ? Math.max(0, now - startedAtMs) : null
@@ -144,6 +157,20 @@ export function ProjectCard({ project }: ProjectCardProps) {
               <span>Active {relativeTime(lastActivityMs)}</span>
             )}
           </span>
+        )}
+        {shellCount > 0 && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              selectProject(project.projectId)
+              expandPanel()
+            }}
+            className={`flex items-center gap-1 shrink-0 px-1.5 py-0.5 rounded-[var(--wf-radius-sm)] bg-[var(--wf-bg-elevated)] text-[var(--wf-text-secondary)] text-[10px] font-medium leading-none hover:text-[var(--wf-text-primary)] transition-colors ${shellsPulsing ? 'animate-pulse' : ''}`}
+            title={`${shellCount} active shell${shellCount === 1 ? '' : 's'}`}
+          >
+            <Terminal size={10} className="shrink-0" />
+            <span>{shellCount}</span>
+          </button>
         )}
       </div>
 
