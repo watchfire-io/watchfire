@@ -1,5 +1,13 @@
 # Changelog
 
+## [4.0.0] Beacon
+
+### Added
+
+### Fixed
+
+### Changed
+
 ## [3.0.0] Blaze
 
 ### Added
