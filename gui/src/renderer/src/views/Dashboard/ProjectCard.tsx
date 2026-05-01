@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Activity, Folder, GitBranch, ChevronRight, CheckCircle2, Code2, ListTodo, X } from 'lucide-react'
+import { Activity, AlertTriangle, Folder, GitBranch, ChevronRight, CheckCircle2, Code2, ListTodo, X } from 'lucide-react'
 import type { Project } from '../../generated/watchfire_pb'
 import { useProjectsStore } from '../../stores/projects-store'
 import { useAppStore } from '../../stores/app-store'
@@ -36,9 +36,12 @@ export function ProjectCard({ project }: ProjectCardProps) {
   const taskCounts = {
     draft: tasks?.filter((t) => t.status === 'draft' && !t.deletedAt).length || 0,
     ready: tasks?.filter((t) => t.status === 'ready' && !t.deletedAt).length || 0,
-    done: tasks?.filter((t) => t.status === 'done' && !t.deletedAt).length || 0
+    done: tasks?.filter((t) => t.status === 'done' && t.success !== false && !t.deletedAt).length || 0,
+    failed:
+      tasks?.filter((t) => t.status === 'done' && t.success === false && !t.deletedAt).length || 0
   }
-  const total = taskCounts.draft + taskCounts.ready + taskCounts.done
+  const total = taskCounts.draft + taskCounts.ready + taskCounts.done + taskCounts.failed
+  const hasFailed = taskCounts.failed > 0
 
   // Find next upcoming task
   const nextTask = tasks?.find((t) => t.status === 'draft' && !t.deletedAt)
@@ -61,7 +64,9 @@ export function ProjectCard({ project }: ProjectCardProps) {
     <>
     <div
       onClick={() => selectProject(project.projectId)}
-      className="group relative h-56 flex flex-col bg-[var(--wf-bg-secondary)] border border-[var(--wf-border)] rounded-[var(--wf-radius-lg)] p-4 transition-all hover:border-[var(--wf-fire)] hover:-translate-y-0.5 cursor-pointer"
+      className={`group relative h-56 flex flex-col bg-[var(--wf-bg-secondary)] border rounded-[var(--wf-radius-lg)] p-4 transition-all hover:border-[var(--wf-fire)] hover:-translate-y-0.5 cursor-pointer ${
+        hasFailed ? 'border-[var(--wf-error)]/50' : 'border-[var(--wf-border)]'
+      }`}
     >
       {/* Remove button (visible on hover) */}
       <button
@@ -80,6 +85,15 @@ export function ProjectCard({ project }: ProjectCardProps) {
             pulsing={isAgentWorking(agentStatus)}
           />
           <h3 className="font-heading font-semibold text-sm truncate">{project.name}</h3>
+          {hasFailed && (
+            <span
+              className="flex items-center gap-0.5 shrink-0 px-1.5 py-0.5 rounded-[var(--wf-radius-sm)] bg-[var(--wf-error)]/15 text-[var(--wf-error)] text-[10px] font-semibold leading-none"
+              title={`${taskCounts.failed} failed task${taskCounts.failed === 1 ? '' : 's'}`}
+            >
+              <AlertTriangle size={10} className="shrink-0" />
+              <span>{taskCounts.failed}</span>
+            </span>
+          )}
         </div>
         <ChevronRight size={14} className="text-[var(--wf-text-muted)] shrink-0 group-hover:opacity-0 transition-opacity" />
       </div>
@@ -129,9 +143,18 @@ export function ProjectCard({ project }: ProjectCardProps) {
               <CheckCircle2 size={12} className="shrink-0" />
               {taskCounts.done} done
             </span>
+            {taskCounts.failed > 0 && (
+              <span className="flex items-center gap-1 text-[var(--wf-error)]">
+                <AlertTriangle size={12} className="shrink-0" />
+                {taskCounts.failed} failed
+              </span>
+            )}
           </div>
           {/* Progress bar */}
           <div className="h-1 rounded-full bg-[var(--wf-bg-elevated)] overflow-hidden flex">
+            {taskCounts.failed > 0 && (
+              <div className="bg-[var(--wf-error)]" style={{ width: `${(taskCounts.failed / total) * 100}%` }} />
+            )}
             {taskCounts.done > 0 && (
               <div className="bg-[var(--wf-success)]" style={{ width: `${(taskCounts.done / total) * 100}%` }} />
             )}
