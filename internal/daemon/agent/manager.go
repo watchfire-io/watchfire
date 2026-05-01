@@ -60,7 +60,8 @@ type RunningAgent struct {
 	TaskTitle     string
 	SessionName   string // --name value passed to agent (used for transcript lookup)
 	WorktreePath  string
-	BackendName   string // resolved agent backend name (e.g. "claude-code", "codex")
+	BackendName   string    // resolved agent backend name (e.g. "claude-code", "codex")
+	StartedAt     time.Time // when the current session started (UTC)
 	Process       *Process
 	userStopped   bool // set by StopAgentByUser to prevent chaining in wildfire/start-all
 }
@@ -350,6 +351,7 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 		SessionName:   sessionName,
 		WorktreePath:  worktreePath,
 		BackendName:   be.Name(),
+		StartedAt:     time.Now().UTC(),
 		Process:       proc,
 	}
 

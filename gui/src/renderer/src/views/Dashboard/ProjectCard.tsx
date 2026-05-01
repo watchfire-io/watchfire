@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Activity, AlertTriangle, Folder, GitBranch, ChevronRight, CheckCircle2, Code2, ListTodo, X } from 'lucide-react'
+import { Activity, AlertTriangle, Clock, Folder, GitBranch, ChevronRight, CheckCircle2, Code2, ListTodo, X } from 'lucide-react'
 import type { Project } from '../../generated/watchfire_pb'
 import { useProjectsStore } from '../../stores/projects-store'
 import { useAppStore } from '../../stores/app-store'
@@ -11,6 +11,18 @@ import { relativeTime, timestampToMs } from '../../lib/relative-time'
 import { AgentBadge } from '../../components/AgentBadge'
 import { Modal } from '../../components/ui/Modal'
 import { useAgentPreview } from '../../hooks/useAgentPreview'
+
+const STALE_THRESHOLD_MS = 30 * 60 * 1000
+
+function formatElapsed(ms: number): string {
+  const sec = Math.max(0, Math.floor(ms / 1000))
+  if (sec < 60) return `${sec}s`
+  const min = Math.floor(sec / 60)
+  if (min < 60) return `${min}m`
+  const hr = Math.floor(min / 60)
+  const remMin = min % 60
+  return `${hr}h ${remMin}m`
+}
 
 interface ProjectCardProps {
   project: Project
@@ -27,11 +39,25 @@ export function ProjectCard({ project }: ProjectCardProps) {
   const [showConfirm, setShowConfirm] = useState(false)
   const isAgentRunning = !!agentStatus?.isRunning
   const ptyPreview = useAgentPreview(project.projectId, isAgentRunning)
+  const [now, setNow] = useState(() => Date.now())
 
   useEffect(() => {
     fetchTasks(project.projectId)
     fetchGitInfo(project.projectId)
   }, [project.projectId])
+
+  // Tick once a second only while the agent is running, so idle cards
+  // don't burn renders.
+  useEffect(() => {
+    if (!isAgentRunning) return
+    setNow(Date.now())
+    const id = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(id)
+  }, [isAgentRunning])
+
+  const startedAtMs = isAgentRunning ? timestampToMs(agentStatus?.startedAt) : null
+  const elapsedMs = startedAtMs !== null ? Math.max(0, now - startedAtMs) : null
+  const elapsedStale = elapsedMs !== null && elapsedMs > STALE_THRESHOLD_MS
 
   const taskCounts = {
     draft: tasks?.filter((t) => t.status === 'draft' && !t.deletedAt).length || 0,
@@ -122,8 +148,18 @@ export function ProjectCard({ project }: ProjectCardProps) {
 
       {/* Agent badge */}
       {isAgentRunning && (
-        <div className="mb-3">
+        <div className="mb-3 flex items-center gap-2">
           <AgentBadge status={agentStatus} />
+          {elapsedMs !== null && (
+            <span
+              className="inline-flex items-center gap-1 text-[11px] font-medium tabular-nums"
+              style={{ color: elapsedStale ? 'var(--wf-warning)' : 'var(--wf-text-muted)' }}
+              title={elapsedStale ? 'Long-running session (over 30m)' : 'Elapsed time'}
+            >
+              <Clock size={10} className="shrink-0" />
+              {formatElapsed(elapsedMs)}
+            </span>
+          )}
         </div>
       )}
 

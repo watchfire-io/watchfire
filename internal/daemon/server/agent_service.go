@@ -100,15 +100,7 @@ func (s *agentService) StartAgent(_ context.Context, req *pb.StartAgentRequest) 
 		_ = s.watcher.WatchProject(req.ProjectId, entry.Path)
 	}
 
-	return &pb.AgentStatus{
-		ProjectId:     running.ProjectID,
-		ProjectName:   running.ProjectName,
-		Mode:          string(running.Mode),
-		TaskNumber:    int32(running.TaskNumber),
-		TaskTitle:     running.TaskTitle,
-		IsRunning:     true,
-		WildfirePhase: string(running.WildfirePhase),
-	}, nil
+	return buildAgentStatus(running), nil
 }
 
 func (s *agentService) setupTaskMode(projectPath string, proj *models.Project, reqTaskNumber int32) (taskNumber int32, taskTitle, taskPrompt, taskSystemPrompt string, err error) {
@@ -207,15 +199,7 @@ func (s *agentService) startWildfireMode(req *pb.StartAgentRequest, projectPath 
 		_ = s.watcher.WatchProject(req.ProjectId, projectPath)
 	}
 
-	return &pb.AgentStatus{
-		ProjectId:     running.ProjectID,
-		ProjectName:   running.ProjectName,
-		Mode:          string(running.Mode),
-		TaskNumber:    int32(running.TaskNumber),
-		TaskTitle:     running.TaskTitle,
-		IsRunning:     true,
-		WildfirePhase: string(running.WildfirePhase),
-	}, nil
+	return buildAgentStatus(running), nil
 }
 
 func (s *agentService) startGenerateMode(req *pb.StartAgentRequest, projectPath string, proj *models.Project, mode agent.Mode) (*pb.AgentStatus, error) {
@@ -249,12 +233,7 @@ func (s *agentService) startGenerateMode(req *pb.StartAgentRequest, projectPath 
 		_ = s.watcher.WatchProject(req.ProjectId, projectPath)
 	}
 
-	return &pb.AgentStatus{
-		ProjectId:   running.ProjectID,
-		ProjectName: running.ProjectName,
-		Mode:        string(running.Mode),
-		IsRunning:   true,
-	}, nil
+	return buildAgentStatus(running), nil
 }
 
 func (s *agentService) StopAgent(_ context.Context, req *pb.ProjectId) (*emptypb.Empty, error) {
@@ -286,6 +265,10 @@ func buildAgentStatus(running *agent.RunningAgent) *pb.AgentStatus {
 		TaskTitle:     running.TaskTitle,
 		IsRunning:     true,
 		WildfirePhase: string(running.WildfirePhase),
+	}
+
+	if !running.StartedAt.IsZero() {
+		status.StartedAt = timestamppb.New(running.StartedAt)
 	}
 
 	if issue := running.Process.GetIssue(); issue != nil {
