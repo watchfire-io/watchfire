@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   DndContext,
   closestCenter,
@@ -16,10 +16,15 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { LayoutGrid, Rows3 } from 'lucide-react'
 import { useProjectsStore } from '../../stores/projects-store'
+import { useTasksStore } from '../../stores/tasks-store'
 import { ProjectCard } from './ProjectCard'
 import { ProjectRow } from './ProjectRow'
 import { EmptyState } from './EmptyState'
 import { cn } from '../../lib/utils'
+import {
+  projectOrderDiffers,
+  sortProjectsByActivity
+} from '../../lib/dashboard-filters'
 import type { Project } from '../../generated/watchfire_pb'
 
 type DashboardLayout = 'grid' | 'list'
@@ -45,9 +50,20 @@ function saveLayout(layout: DashboardLayout): void {
 
 export function Dashboard() {
   const projects = useProjectsStore((s) => s.projects)
+  const agentStatuses = useProjectsStore((s) => s.agentStatuses)
   const loading = useProjectsStore((s) => s.loading)
   const reorderProjects = useProjectsStore((s) => s.reorderProjects)
+  const tasksByProjectId = useTasksStore((s) => s.tasks)
   const [layout, setLayout] = useState<DashboardLayout>(readSavedLayout)
+
+  // Filter chips (task 0037) will plug in here as `filteredProjects`.
+  // Auto-sort runs on whatever the filter step produced — for now that is
+  // simply the unfiltered project list.
+  const sortedProjects = useMemo(
+    () => sortProjectsByActivity(projects, tasksByProjectId, agentStatuses),
+    [projects, tasksByProjectId, agentStatuses]
+  )
+  const orderChanged = projectOrderDiffers(projects, sortedProjects)
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -99,19 +115,27 @@ export function Dashboard() {
           </div>
           <LayoutToggle layout={layout} onChange={updateLayout} />
         </div>
+        {orderChanged && (
+          <p
+            className="mb-2 text-[11px] text-[var(--wf-text-muted)] italic"
+            title="Needs attention → working → ready → idle"
+          >
+            Sorted by activity
+          </p>
+        )}
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           {layout === 'grid' ? (
-            <SortableContext items={projects.map((p) => p.projectId)} strategy={rectSortingStrategy}>
+            <SortableContext items={sortedProjects.map((p) => p.projectId)} strategy={rectSortingStrategy}>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {projects.map((p) => (
+                {sortedProjects.map((p) => (
                   <SortableProjectCard key={p.projectId} project={p} />
                 ))}
               </div>
             </SortableContext>
           ) : (
-            <SortableContext items={projects.map((p) => p.projectId)} strategy={verticalListSortingStrategy}>
+            <SortableContext items={sortedProjects.map((p) => p.projectId)} strategy={verticalListSortingStrategy}>
               <div className="flex flex-col gap-2">
-                {projects.map((p) => (
+                {sortedProjects.map((p) => (
                   <SortableProjectRow key={p.projectId} project={p} />
                 ))}
               </div>
