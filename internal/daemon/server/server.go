@@ -101,52 +101,14 @@ func New(port int) (*Server, error) {
 	}
 
 	// Wire on-task-done callback for git merge + worktree cleanup.
+	// v7.0 Relay extends the merge path with an opt-in GitHub auto-PR flow:
+	// when the project is in `IntegrationsConfig.GitHub.AutoPRApplies`, the
+	// task branch is pushed and a PR is opened via `gh api` instead of being
+	// merged silently. See `internal/daemon/agent/taskdone.go` for the
+	// decision logic and the silent-merge fallback semantics.
 	// Returns true if chaining should continue, false to stop (e.g. merge conflict).
 	agentMgr.SetOnTaskDoneFn(func(projectPath string, taskNumber int, worktreePath string) bool {
-		if taskNumber == 0 || worktreePath == "" {
-			log.Printf("[merge] Skipping merge: taskNumber=%d worktreePath=%q", taskNumber, worktreePath)
-			return true
-		}
-		proj, err := config.LoadProject(projectPath)
-		if err != nil {
-			log.Printf("[merge] Failed to load project for task #%04d: %v", taskNumber, err)
-			return false
-		}
-
-		t, err := config.LoadTask(projectPath, taskNumber)
-		if err != nil || t == nil {
-			log.Printf("[merge] Failed to load task #%04d: %v", taskNumber, err)
-			return false
-		}
-		if t.Status != models.TaskStatusDone {
-			log.Printf("[merge] Task #%04d not done (status: %s), skipping merge", taskNumber, t.Status)
-			return true
-		}
-		log.Printf("[merge] Task #%04d done, proceeding with merge (auto_merge=%v, auto_delete=%v)", taskNumber, proj.AutoMerge, proj.AutoDeleteBranch)
-
-		var merged bool
-		mergeFailed := false
-		if proj.AutoMerge {
-			var mergeErr error
-			merged, mergeErr = agent.MergeWorktree(projectPath, taskNumber)
-			switch {
-			case mergeErr != nil:
-				log.Printf("[merge] Auto-merge failed for task #%04d: %v", taskNumber, mergeErr)
-				mergeFailed = true
-			case merged:
-				log.Printf("[merge] Auto-merged task #%04d into current branch", taskNumber)
-			default:
-				log.Printf("[merge] Task #%04d has no file differences — skipped merge", taskNumber)
-			}
-		}
-		if proj.AutoDeleteBranch && !mergeFailed {
-			if err := agent.RemoveWorktree(projectPath, taskNumber, merged); err != nil {
-				log.Printf("[merge] Failed to remove worktree for task #%04d: %v", taskNumber, err)
-			} else {
-				log.Printf("[merge] Removed worktree for task #%04d", taskNumber)
-			}
-		}
-		return !mergeFailed
+		return agent.HandleTaskDone(projectPath, taskNumber, worktreePath, notifyBus)
 	})
 
 	// Wire watch-project callback so chained agents re-watch the project

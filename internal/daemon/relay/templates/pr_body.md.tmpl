@@ -1,0 +1,23 @@
+_Auto-opened by Watchfire from task {{ printf "%04d" .TaskNumber }}._
+
+## Task
+**{{ .TaskTitle }}**
+
+## Prompt
+{{ .TaskPrompt }}
+
+## Acceptance criteria
+{{ .AcceptanceCriteria }}
+
+## Agent
+`{{ .Agent }}` · run completed {{ rfc3339 .CompletedAt }}
+
+## Files changed ({{ len .Files }})
+{{- range .Files }}
+- `{{ .Path }}` · +{{ .Additions }} −{{ .Deletions }}
+{{- end }}
+
+Total: **+{{ .TotalAdditions }} −{{ .TotalDeletions }}**{{ if .Truncated }} _(diff truncated)_{{ end }}
+
+---
+_View this run in Watchfire: `watchfire://project/{{ .ProjectID }}/task/{{ printf "%04d" .TaskNumber }}`_
