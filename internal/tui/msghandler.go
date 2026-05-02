@@ -248,6 +248,23 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 		cmds = append(cmds, clearSavedAfter(clearSavedTimeout))
 		return true, tea.Batch(cmds...)
 
+	// ── v7.0 Relay integrations ───────────────────────────────────
+	case IntegrationsLoadedMsg:
+		if m.integrationsForm != nil {
+			m.integrationsForm.Load(msg.Config)
+		}
+		return true, nil
+
+	case IntegrationTestedMsg:
+		if m.integrationsForm != nil {
+			if msg.OK {
+				m.integrationsForm.SetStatus("Test ✓ " + msg.Message)
+			} else {
+				m.integrationsForm.SetStatus("Test ✗ " + msg.Message)
+			}
+		}
+		return true, nil
+
 	// ── Editor finished ────────────────────────────────────────────
 	case EditorFinishedMsg:
 		if msg.Err != nil {

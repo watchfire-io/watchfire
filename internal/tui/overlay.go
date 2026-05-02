@@ -18,6 +18,7 @@ const (
 	overlayFleetInsights   = 6 // v6.0 Ember fleet rollup overlay
 	overlayProjectInsights = 7 // v6.0 Ember per-project insights overlay
 	overlayTaskDiff        = 8 // v6.0 Ember inline diff viewer overlay
+	overlayIntegrations    = 9 // v7.0 Relay integrations settings overlay
 )
 
 // renderOverlay renders an overlay centered on top of the base view.

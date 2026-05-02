@@ -10,6 +10,7 @@ type GlobalKeys struct {
 	GlobalSettings key.Binding
 	Export         key.Binding
 	FleetInsights  key.Binding
+	Integrations   key.Binding
 }
 
 var globalKeys = GlobalKeys{
@@ -36,6 +37,10 @@ var globalKeys = GlobalKeys{
 	FleetInsights: key.NewBinding(
 		key.WithKeys("ctrl+f"),
 		key.WithHelp("Ctrl+f", "fleet insights"),
+	),
+	Integrations: key.NewBinding(
+		key.WithKeys("ctrl+i"),
+		key.WithHelp("Ctrl+i", "integrations"),
 	),
 }
 

@@ -531,3 +531,74 @@ func isConnectionLost(err error) bool {
 	code := status.Code(err)
 	return code == codes.Unavailable || code == codes.Canceled
 }
+
+// listIntegrationsCmd loads the IntegrationsConfig for the overlay.
+// v7.0 Relay.
+func listIntegrationsCmd(conn *grpc.ClientConn) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewIntegrationsServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		cfg, err := client.ListIntegrations(ctx, &pb.ListIntegrationsRequest{})
+		if err != nil {
+			return ErrorMsg{Err: fmt.Errorf("list integrations: %w", err)}
+		}
+		return IntegrationsLoadedMsg{Config: cfg}
+	}
+}
+
+// saveIntegrationCmd dispatches a SaveIntegration RPC. The caller
+// chooses the oneof body via the `payload` arg.
+func saveIntegrationCmd(conn *grpc.ClientConn, payload interface{}) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewIntegrationsServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		req := &pb.SaveIntegrationRequest{}
+		switch p := payload.(type) {
+		case *pb.WebhookIntegration:
+			req.Payload = &pb.SaveIntegrationRequest_Webhook{Webhook: p}
+		case *pb.SlackIntegration:
+			req.Payload = &pb.SaveIntegrationRequest_Slack{Slack: p}
+		case *pb.DiscordIntegration:
+			req.Payload = &pb.SaveIntegrationRequest_Discord{Discord: p}
+		case *pb.GitHubIntegration:
+			req.Payload = &pb.SaveIntegrationRequest_Github{Github: p}
+		default:
+			return ErrorMsg{Err: fmt.Errorf("save: unknown payload type")}
+		}
+		cfg, err := client.SaveIntegration(ctx, req)
+		if err != nil {
+			return ErrorMsg{Err: fmt.Errorf("save integration: %w", err)}
+		}
+		return IntegrationsLoadedMsg{Config: cfg}
+	}
+}
+
+// deleteIntegrationCmd dispatches a DeleteIntegration RPC.
+func deleteIntegrationCmd(conn *grpc.ClientConn, kind pb.IntegrationKind, id string) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewIntegrationsServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		cfg, err := client.DeleteIntegration(ctx, &pb.DeleteIntegrationRequest{Kind: kind, Id: id})
+		if err != nil {
+			return ErrorMsg{Err: fmt.Errorf("delete integration: %w", err)}
+		}
+		return IntegrationsLoadedMsg{Config: cfg}
+	}
+}
+
+// testIntegrationCmd dispatches a TestIntegration RPC.
+func testIntegrationCmd(conn *grpc.ClientConn, kind pb.IntegrationKind, id string) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewIntegrationsServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		resp, err := client.TestIntegration(ctx, &pb.TestIntegrationRequest{Kind: kind, Id: id})
+		if err != nil {
+			return IntegrationTestedMsg{OK: false, Message: err.Error()}
+		}
+		return IntegrationTestedMsg{OK: resp.GetOk(), Message: resp.GetMessage(), StatusCode: resp.GetStatusCode()}
+	}
+}

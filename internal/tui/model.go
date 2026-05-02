@@ -62,6 +62,7 @@ type Model struct {
 	taskForm           *TaskForm
 	globalSettingsForm *GlobalSettingsForm
 	exportPicker       *ExportPicker
+	integrationsForm   *IntegrationsForm
 
 	// Status-bar message (e.g. "Exported watchfire-project-foo-2026-05-02.md")
 	// — replaces the showSaved indicator while present, cleared by ClearSavedMsg.
@@ -122,6 +123,7 @@ func NewModel(projectID string, program *programRef) Model {
 		logViewer:          NewLogViewer(),
 		globalSettingsForm: NewGlobalSettingsForm(),
 		exportPicker:       NewExportPicker(),
+		integrationsForm:   NewIntegrationsForm(),
 		program:            program,
 		streamCtx:          ctx,
 		streamCancel:       cancel,
@@ -335,6 +337,18 @@ func (m Model) View() string {
 			width := m.width - 6
 			height := m.height - 4
 			overlayContent = renderTaskDiffOverlay(m.taskDiff, width, height)
+		case overlayIntegrations:
+			if m.integrationsForm != nil {
+				width := m.width - 8
+				if width < 60 {
+					width = 60
+				}
+				if width > m.width-4 {
+					width = m.width - 4
+				}
+				m.integrationsForm.SetWidth(width)
+				overlayContent = overlayStyle.Width(width).Render(m.integrationsForm.View())
+			}
 		}
 		if overlayContent != "" {
 			view = renderOverlay(view, overlayContent, m.width, m.height)

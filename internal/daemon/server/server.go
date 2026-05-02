@@ -300,6 +300,7 @@ func New(port int) (*Server, error) {
 	pb.RegisterSettingsServiceServer(grpcServer, &settingsService{})
 	pb.RegisterNotificationServiceServer(grpcServer, &notificationService{bus: notifyBus})
 	pb.RegisterInsightsServiceServer(grpcServer, newInsightsService())
+	pb.RegisterIntegrationsServiceServer(grpcServer, newIntegrationsService())
 
 	// Start watcher event processing loop
 	go srv.processWatcherEvents()
@@ -422,6 +423,14 @@ func (s *Server) processWatcherEvents() {
 			// rollup (and cascade into the fleet `_global.json` cache) so
 			// the next insights query recomputes from disk.
 			insights.InvalidateProjectCache(event.ProjectID)
+		case watcher.EventIntegrationsChanged:
+			// v7.0 Relay integrations.yaml write — log so the user can
+			// confirm the daemon picked up the edit. The dispatcher
+			// rebuild lives in `internal/daemon/relay` (task 0062);
+			// this server simply notes the event today and lets the
+			// dispatcher subscribe in its own initializer when it
+			// lands.
+			log.Printf("[integrations-watch] Integrations config changed: %s", event.Path)
 		}
 	}
 }

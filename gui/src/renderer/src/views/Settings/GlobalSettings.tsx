@@ -7,6 +7,7 @@ import { DefaultsSection } from './DefaultsSection'
 import { AppearanceSection } from './AppearanceSection'
 import { AgentPathsSection } from './AgentPathsSection'
 import { NotificationsSection } from './NotificationsSection'
+import { IntegrationsSection } from './IntegrationsSection'
 import { UpdatesSection } from './UpdatesSection'
 import { AboutSection } from './AboutSection'
 
@@ -67,6 +68,7 @@ export function GlobalSettings() {
             <DefaultsSection settings={settings} agents={agents} agentsLoaded={agentsLoaded} />
             <AgentPathsSection settings={settings} agents={agents} agentsLoaded={agentsLoaded} />
             <NotificationsSection settings={settings} />
+            <IntegrationsSection />
             <UpdatesSection settings={settings} />
           </>
         )}
