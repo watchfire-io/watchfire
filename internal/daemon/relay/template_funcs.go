@@ -78,5 +78,6 @@ func TemplateFuncs() template.FuncMap {
 		"rfc3339":       rfc3339,
 		"jsonStr":       jsonStr,
 		"digestSnippet": digestSnippet,
+		"slackEmoji":    slackEmojiForColor,
 	}
 }

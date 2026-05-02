@@ -151,7 +151,7 @@ func (s *integrationsService) TestIntegration(ctx context.Context, req *pb.TestI
 		if ep.URL == "" {
 			return &pb.TestIntegrationResponse{Ok: false, Message: "slack URL not set in keyring"}, nil
 		}
-		return s.deliverTest(ctx, ep.URL, "TASK_FAILED")
+		return s.deliverSlackTest(ctx, ep)
 	case pb.IntegrationKind_DISCORD:
 		ep, ok := findDiscord(cfg.Discord, id)
 		if !ok {
@@ -248,6 +248,67 @@ func (s *integrationsService) deliverDiscordTest(ctx context.Context, ep models.
 		Ok:      allOK,
 		Message: strings.Join(msgs, " · "),
 	}, nil
+}
+
+// deliverSlackTest renders + POSTs one Block Kit message per supported
+// notification kind so a single click of "Test" exercises every Slack
+// template the v7.0 Relay Slack adapter ships. Mirrors deliverDiscordTest
+// — the aggregate response rolls per-kind status into the message and
+// sets ok=true only if every kind succeeded.
+func (s *integrationsService) deliverSlackTest(ctx context.Context, ep models.SlackEndpoint) (*pb.TestIntegrationResponse, error) {
+	adapter, err := relay.NewSlackAdapter(ep, s.httpClient, nil)
+	if err != nil {
+		return &pb.TestIntegrationResponse{Ok: false, Message: err.Error()}, nil
+	}
+
+	now := time.Now().UTC()
+	kinds := []notify.Kind{
+		notify.KindTaskFailed,
+		notify.KindRunComplete,
+		notify.KindWeeklyDigest,
+	}
+	allOK := true
+	var msgs []string
+	for _, kind := range kinds {
+		payload := syntheticSlackPayload(kind, now)
+		if sendErr := adapter.Send(ctx, payload); sendErr != nil {
+			allOK = false
+			msgs = append(msgs, fmt.Sprintf("%s: %v", kind, sendErr))
+			continue
+		}
+		msgs = append(msgs, fmt.Sprintf("%s: OK", kind))
+	}
+	return &pb.TestIntegrationResponse{
+		Ok:      allOK,
+		Message: strings.Join(msgs, " · "),
+	}, nil
+}
+
+// syntheticSlackPayload builds a self-contained sample Payload for each
+// notification kind, used by the Test handler so the user can preview
+// how each Block Kit message renders without waiting for a real failure
+// or digest run.
+func syntheticSlackPayload(kind notify.Kind, now time.Time) relay.Payload {
+	base := relay.Payload{
+		Version:      1,
+		Kind:         string(kind),
+		EmittedAt:    now,
+		ProjectID:    "test-project",
+		ProjectName:  "Watchfire test",
+		ProjectColor: "#3b82f6",
+		TaskNumber:   1,
+		TaskTitle:    "Watchfire Slack adapter test",
+		DeepLink:     "watchfire://project/test-project/task/0001",
+	}
+	switch kind {
+	case notify.KindTaskFailed:
+		base.TaskFailureReason = "synthetic test — your Slack adapter is wired up correctly"
+	case notify.KindWeeklyDigest:
+		base.DigestDate = now.Format("2006-01-02")
+		base.DeepLink = "watchfire://digest/" + base.DigestDate
+		base.DigestBody = "## Watchfire weekly digest test\n\nIf you can read this, your Slack channel is receiving WEEKLY_DIGEST notifications."
+	}
+	return base
 }
 
 // syntheticDiscordPayload builds a self-contained sample Payload for
