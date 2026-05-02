@@ -19,6 +19,7 @@ import { BottomPanel } from './BottomPanel/BottomPanel'
 import { useTerminalStore } from '../../stores/terminal-store'
 import { ModesControl } from './ModesControl'
 import { OpenInIDEButton } from './OpenInIDEButton'
+import { ExportPill } from '../../components/ExportPill'
 
 type CenterTab = 'tasks' | 'definition' | 'secrets' | 'trash' | 'settings'
 
@@ -135,6 +136,7 @@ export function ProjectView() {
             {isAgentRunning && <AgentBadge status={agentStatus} />}
           </div>
           <div className="flex items-center gap-2">
+            <ExportPill scope={{ kind: 'project', projectId }} />
             <OpenInIDEButton projectPath={project.path} />
             {!rightPanelOpen && <ModesControl projectId={projectId} layout="menu" />}
             <button

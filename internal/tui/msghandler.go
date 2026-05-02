@@ -175,7 +175,20 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 
 	case ClearSavedMsg:
 		m.showSaved = false
+		m.statusMessage = ""
 		return true, nil
+
+	// ── Export (v6.0 Ember) ───────────────────────────────────────
+	case ExportCompletedMsg:
+		m.statusMessage = "Exported " + msg.Filename
+		m.showSaved = true
+		cmds = append(cmds, clearSavedAfter(clearSavedTimeout))
+		return true, tea.Batch(cmds...)
+
+	case ExportFailedMsg:
+		m.err = fmt.Errorf("export failed: %w", msg.Err)
+		cmds = append(cmds, clearErrorAfter(5*time.Second))
+		return true, tea.Batch(cmds...)
 
 	// ── Log viewer ────────────────────────────────────────────────
 	case LogsLoadedMsg:

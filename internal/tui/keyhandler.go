@@ -71,6 +71,18 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			return getSettingsCmd(m.conn)
 		}
 		return nil
+
+	case key.Matches(msg, globalKeys.Export):
+		// Open the v6.0 Ember export picker, scoped to the current
+		// project. The picker opens with Markdown highlighted; Enter
+		// triggers the daemon RPC and writes the file to the project
+		// root. Esc cancels.
+		if m.project == nil || m.exportPicker == nil {
+			return nil
+		}
+		m.exportPicker.OpenForProject(m.projectID, m.project.Path)
+		m.activeOverlay = overlayExport
+		return nil
 	}
 
 	// Tab switching (only when left panel focused and not in terminal)
@@ -394,6 +406,36 @@ func (m *Model) handleOverlayKey(msg tea.KeyMsg) tea.Cmd {
 
 	case overlayGlobalSettings:
 		return m.handleGlobalSettingsKey(msg)
+
+	case overlayExport:
+		return m.handleExportPickerKey(msg)
+	}
+	return nil
+}
+
+// handleExportPickerKey routes keys for the v6.0 Ember export overlay.
+// ↑/↓ swap between Markdown / CSV; Enter triggers the export and prints
+// a status-bar confirmation; Esc cancels. The picker stores the scope
+// (project / single-task / global) — the same handler runs all three.
+func (m *Model) handleExportPickerKey(msg tea.KeyMsg) tea.Cmd {
+	if m.exportPicker == nil {
+		m.activeOverlay = overlayNone
+		return nil
+	}
+	switch msg.String() {
+	case "esc":
+		m.activeOverlay = overlayNone
+		return nil
+	case "up", "k":
+		m.exportPicker.MoveUp()
+		return nil
+	case "down", "j":
+		m.exportPicker.MoveDown()
+		return nil
+	case "enter":
+		picker := *m.exportPicker
+		m.activeOverlay = overlayNone
+		return runExport(m.conn, picker)
 	}
 	return nil
 }

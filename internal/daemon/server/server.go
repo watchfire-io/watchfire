@@ -297,6 +297,7 @@ func New(port int) (*Server, error) {
 	pb.RegisterBranchServiceServer(grpcServer, &branchService{})
 	pb.RegisterSettingsServiceServer(grpcServer, &settingsService{})
 	pb.RegisterNotificationServiceServer(grpcServer, &notificationService{bus: notifyBus})
+	pb.RegisterInsightsServiceServer(grpcServer, newInsightsService())
 
 	// Start watcher event processing loop
 	go srv.processWatcherEvents()

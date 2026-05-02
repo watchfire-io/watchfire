@@ -1,0 +1,13 @@
+# section: kpis
+project_id,project_name,window_start,window_end,total_done,total_failed,total_created,total_in_flight,avg_duration_sec
+watchfire-pid,watchfire,2026-04-25T00:00:00Z,2026-05-02T00:00:00Z,4,2,8,3,4500
+# section: daily
+date,done,failed,created
+2026-04-26,0,1,2
+2026-04-28,2,0,3
+2026-04-30,1,1,1
+2026-05-01,1,0,2
+# section: agents
+agent,tasks,done,failed,avg_duration_sec
+claude-code,4,3,1,5400
+codex,2,1,1,3000

@@ -48,8 +48,12 @@ func renderStatusBar(m *Model, width int) string {
 		return renderErrorBar(m.err.Error(), width)
 	}
 
-	// Saved indicator
+	// Saved indicator (or status message — exports use this for the
+	// "Exported watchfire-project-foo-2026-05-02.md" confirmation).
 	if m.showSaved {
+		if m.statusMessage != "" {
+			return renderStatusMessageBar(m.statusMessage, width)
+		}
 		return renderSavedBar(width)
 	}
 
@@ -239,4 +243,13 @@ func renderSavedBar(width int) string {
 	return statusBarStyle.
 		Width(width).
 		Render(" " + lipgloss.NewStyle().Foreground(colorGreen).Render("✓ Saved"))
+}
+
+// renderStatusMessageBar renders an arbitrary one-line success message
+// (the v6.0 Ember export confirmation lands here). Same green check as
+// the Saved bar so the visual language stays consistent.
+func renderStatusMessageBar(msg string, width int) string {
+	return statusBarStyle.
+		Width(width).
+		Render(" " + lipgloss.NewStyle().Foreground(colorGreen).Render("✓ "+msg))
 }

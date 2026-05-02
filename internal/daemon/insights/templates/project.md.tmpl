@@ -1,0 +1,34 @@
+# {{.ProjectName}} — Watchfire report
+
+_Project: `{{.ProjectID}}`_
+_Window: {{windowLabel .WindowStart .WindowEnd}}_
+
+## Summary
+
+- **{{.KPIs.TotalDone}}** task{{plural .KPIs.TotalDone}} completed
+- **{{.KPIs.TotalFailed}}** task{{plural .KPIs.TotalFailed}} failed
+- **{{.KPIs.TotalCreated}}** task{{plural .KPIs.TotalCreated}} created
+- **{{.KPIs.TotalInFlight}}** task{{plural .KPIs.TotalInFlight}} currently in flight
+- Average completion time: **{{durationHuman .KPIs.AvgDurationSec}}**
+
+## Daily breakdown
+
+| Date | Done | Failed | Created |
+| --- | --- | --- | --- |
+{{- range .Daily}}
+| {{.Date}} | {{.Done}} | {{.Failed}} | {{.Created}} |
+{{- end}}
+{{- if not .Daily}}
+| _no activity in window_ | | | |
+{{- end}}
+
+## Agent breakdown
+
+| Agent | Tasks | Done | Failed | Avg duration |
+| --- | --- | --- | --- | --- |
+{{- range .Agents}}
+| `{{.Agent}}` | {{.Tasks}} | {{.Done}} | {{.Failed}} | {{durationHuman .AvgDurationSec}} |
+{{- end}}
+{{- if not .Agents}}
+| _no agent activity in window_ | | | | |
+{{- end}}
