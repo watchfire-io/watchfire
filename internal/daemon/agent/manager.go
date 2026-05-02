@@ -13,6 +13,7 @@ import (
 	"github.com/watchfire-io/watchfire/internal/config"
 	"github.com/watchfire-io/watchfire/internal/daemon/agent/backend"
 	"github.com/watchfire-io/watchfire/internal/daemon/agent/prompts"
+	"github.com/watchfire-io/watchfire/internal/daemon/notify"
 	"github.com/watchfire-io/watchfire/internal/daemon/task"
 	"github.com/watchfire-io/watchfire/internal/models"
 )
@@ -62,8 +63,14 @@ type RunningAgent struct {
 	WorktreePath  string
 	BackendName   string    // resolved agent backend name (e.g. "claude-code", "codex")
 	StartedAt     time.Time // when the current session started (UTC)
-	Process       *Process
-	userStopped   bool // set by StopAgentByUser to prevent chaining in wildfire/start-all
+	// RunStartedAt is the wall-clock time the autonomous run started (the
+	// rising edge of agentStatus.isRunning for this project). For chained
+	// runs (start-all / wildfire), this is the start time of the FIRST agent
+	// in the chain — preserved across StartAgent calls so the run-complete
+	// notification can compute "tasks updated within the run window".
+	RunStartedAt time.Time
+	Process      *Process
+	userStopped  bool // set by StopAgentByUser to prevent chaining in wildfire/start-all
 }
 
 // StartOptions contains options for starting an agent.
@@ -80,7 +87,8 @@ type StartOptions struct {
 	TaskSystemPrompt string // Full system prompt with task details
 	Rows             int
 	Cols             int
-	Sandbox          string // "auto" | "seatbelt" | "landlock" | "bwrap" | "none"
+	Sandbox          string    // "auto" | "seatbelt" | "landlock" | "bwrap" | "none"
+	RunStartedAt     time.Time // Set by the chain-restart path so the next agent inherits the run-window anchor; zero on a fresh run.
 }
 
 // Manager handles agent lifecycle operations.
@@ -92,6 +100,7 @@ type Manager struct {
 	nextTaskFn     func(projectID, projectPath string, mode Mode, phase WildfirePhase, rows, cols int) (*StartOptions, error)
 	onTaskDoneFn   func(projectPath string, taskNumber int, worktreePath string) bool // called after agent exits for a task; returns true to continue chaining
 	watchProjectFn func(projectID, projectPath string)                                // called to ensure project watcher is active
+	notifyBus      *notify.Bus                                                        // optional; nil disables in-process fan-out (headless log file is still written)
 }
 
 // NewManager creates a new agent manager.
@@ -132,6 +141,15 @@ func (m *Manager) SetWatchProjectFn(fn func(projectID, projectPath string)) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.watchProjectFn = fn
+}
+
+// SetNotifyBus wires the notification bus the manager should fan run-complete
+// (and, in 0049, task-failed) events into. Optional — when nil the manager
+// still appends to the headless `notifications.log` fallback.
+func (m *Manager) SetNotifyBus(b *notify.Bus) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.notifyBus = b
 }
 
 // StartAgent starts an agent for the given project.
@@ -339,6 +357,16 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 		return nil, fmt.Errorf("failed to start agent process: %w", err)
 	}
 
+	startedAt := time.Now().UTC()
+	// Rising edge: when the chain-restart path forwards a non-zero
+	// RunStartedAt the new session inherits the original run anchor; on a
+	// fresh run (or any non-chain entry) we stamp it now so the run-complete
+	// window covers exactly this autonomous run.
+	runStartedAt := opts.RunStartedAt
+	if runStartedAt.IsZero() {
+		runStartedAt = startedAt
+	}
+
 	ra := &RunningAgent{
 		ProjectID:     opts.ProjectID,
 		ProjectName:   opts.ProjectName,
@@ -351,7 +379,8 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 		SessionName:   sessionName,
 		WorktreePath:  worktreePath,
 		BackendName:   be.Name(),
-		StartedAt:     time.Now().UTC(),
+		StartedAt:     startedAt,
+		RunStartedAt:  runStartedAt,
 		Process:       proc,
 	}
 
@@ -432,6 +461,8 @@ func (m *Manager) monitorProcess(projectID string, proc *Process) {
 		projectName := ag.ProjectName
 		projectColor := ag.ProjectColor
 		prevTaskNumber := ag.TaskNumber
+		runStartedAt := ag.RunStartedAt
+		bus := m.notifyBus
 		rows, cols := proc.TerminalSize()
 
 		// Clean up old process resources before chaining
@@ -445,6 +476,7 @@ func (m *Manager) monitorProcess(projectID string, proc *Process) {
 		nextOpts, err := m.nextTaskFn(projectID, projectPath, agentMode, agentPhase, rows, cols)
 		if err != nil {
 			log.Printf("%s: error finding next task: %v", agentMode, err)
+			emitRunComplete(bus, projectID, projectName, projectPath, agentMode, runStartedAt)
 			return
 		}
 		if nextOpts != nil {
@@ -461,6 +493,11 @@ func (m *Manager) monitorProcess(projectID string, proc *Process) {
 					m.mu.Lock()
 					delete(m.taskRestarts, projectID)
 					m.mu.Unlock()
+
+					// Run ended (we're transitioning to chat mode); emit
+					// RUN_COMPLETE for the autonomous portion that just stopped
+					// before kicking off the chat session.
+					emitRunComplete(bus, projectID, projectName, projectPath, agentMode, runStartedAt)
 
 					chatOpts := StartOptions{
 						ProjectID:    projectID,
@@ -484,23 +521,39 @@ func (m *Manager) monitorProcess(projectID string, proc *Process) {
 				m.mu.Unlock()
 			}
 
+			// Forward the run-window anchor so the next chained agent
+			// keeps the same RunStartedAt as the first one in this run.
+			nextOpts.RunStartedAt = runStartedAt
 			log.Printf("%s: starting next — mode=%s phase=%s task=#%04d", agentMode, nextOpts.Mode, nextOpts.WildfirePhase, nextOpts.TaskNumber)
 			if _, err := m.StartAgent(*nextOpts); err != nil {
 				log.Printf("%s: failed to start next: %v", agentMode, err)
+				emitRunComplete(bus, projectID, projectName, projectPath, agentMode, runStartedAt)
 			}
 			return
 		}
 
 		log.Printf("%s: no more tasks for project %s", agentMode, projectID)
+		emitRunComplete(bus, projectID, projectName, projectPath, agentMode, runStartedAt)
 		return
 	}
 
 	// Non-chaining mode: just clean up
+	mode := ag.Mode
+	projectName := ag.ProjectName
+	projectPath := ag.ProjectPath
+	runStartedAt := ag.RunStartedAt
+	bus := m.notifyBus
+
 	proc.Cleanup()
 	delete(m.agents, projectID)
 	delete(m.taskRestarts, projectID)
 	m.persistStateLocked()
 	m.mu.Unlock()
+
+	// A single-task run (or any task-scoped run that exited without chaining)
+	// is also a falling edge of an autonomous run — emit RUN_COMPLETE if the
+	// window had any completions or failures.
+	emitRunComplete(bus, projectID, projectName, projectPath, mode, runStartedAt)
 }
 
 // pollTaskStatus periodically checks whether a task has been marked done.

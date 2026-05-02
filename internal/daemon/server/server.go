@@ -22,6 +22,7 @@ import (
 	"github.com/watchfire-io/watchfire/internal/config"
 	"github.com/watchfire-io/watchfire/internal/daemon/agent"
 	"github.com/watchfire-io/watchfire/internal/daemon/agent/prompts"
+	"github.com/watchfire-io/watchfire/internal/daemon/notify"
 	"github.com/watchfire-io/watchfire/internal/daemon/project"
 	"github.com/watchfire-io/watchfire/internal/daemon/task"
 	"github.com/watchfire-io/watchfire/internal/daemon/tray"
@@ -41,6 +42,7 @@ type Server struct {
 	taskManager    *task.Manager
 	agentManager   *agent.Manager
 	watcher        *watcher.Watcher
+	notifyBus      *notify.Bus
 	updateState    UpdateState
 }
 
@@ -67,6 +69,13 @@ func New(port int) (*Server, error) {
 	projectMgr := project.NewManager()
 	taskMgr := task.NewManager()
 	agentMgr := agent.NewManager()
+
+	// Notification bus — fans run-complete (and, in 0049, task-failed) events
+	// out to in-process subscribers. The headless `notifications.log` fallback
+	// is appended unconditionally; the bus is the live channel for the GUI's
+	// gRPC subscription (added in 0049's NotificationService.Subscribe RPC).
+	notifyBus := notify.NewBus()
+	agentMgr.SetNotifyBus(notifyBus)
 
 	// Create and start file watcher
 	w, err := watcher.New()
@@ -274,6 +283,7 @@ func New(port int) (*Server, error) {
 		taskManager:    taskMgr,
 		agentManager:   agentMgr,
 		watcher:        w,
+		notifyBus:      notifyBus,
 	}
 
 	// Register services with generated proto descriptors
