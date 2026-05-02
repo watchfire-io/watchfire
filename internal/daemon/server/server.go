@@ -416,6 +416,11 @@ func (s *Server) processWatcherEvents() {
 			// daemon noticed the change, which is useful for diagnosing UX
 			// reports of "I changed it but nothing happened."
 			log.Printf("[settings-watch] Global settings changed: %s", event.Path)
+		case watcher.EventMetricsChanged:
+			// v6.0 Ember per-task metrics file write — drop the per-project
+			// rollup (and cascade into the fleet `_global.json` cache) so
+			// the next insights query recomputes from disk.
+			insights.InvalidateProjectCache(event.ProjectID)
 		}
 	}
 }

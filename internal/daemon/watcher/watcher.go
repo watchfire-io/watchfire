@@ -27,6 +27,11 @@ const (
 	EventDefinitionDone       // definition_done.yaml created
 	EventTasksDone            // tasks_done.yaml created
 	EventGlobalSettingsChanged // ~/.watchfire/settings.yaml written
+	// EventMetricsChanged fires when a per-task metrics file is written
+	// (`<n>.metrics.yaml`). v6.0 Ember insights consumers treat this as
+	// the cache-bust signal — any per-project metrics write also drops
+	// the fleet `_global.json` cache via the cascade.
+	EventMetricsChanged
 )
 
 // Signal file names for phase completion.
@@ -304,6 +309,19 @@ func (w *Watcher) processFileChange(path string, op fsnotify.Op) {
 		// Check for task files
 		tasksDir := config.ProjectTasksDir(projectPath)
 		if dir == tasksDir && filepath.Ext(filename) == ".yaml" {
+			// Per-task metrics file (`<n>.metrics.yaml`) — fires as
+			// EventMetricsChanged so v6.0 Ember insights consumers can
+			// invalidate their caches without conflating this with
+			// canonical task YAML edits.
+			if num := parseMetricsTaskNumber(filename); num > 0 {
+				w.eventsChan <- Event{
+					Type:       EventMetricsChanged,
+					ProjectID:  projectID,
+					TaskNumber: num,
+					Path:       path,
+				}
+				return
+			}
 			taskNum := parseTaskNumber(filename)
 			if taskNum > 0 {
 				eventType := EventTaskChanged
@@ -332,6 +350,31 @@ func parseTaskNumber(filename string) int {
 		} else {
 			return 0 // Invalid filename
 		}
+	}
+	return num
+}
+
+// parseMetricsTaskNumber extracts the task number from a metrics
+// filename like "0001.metrics.yaml". Returns 0 for any other filename.
+func parseMetricsTaskNumber(filename string) int {
+	const suffix = ".metrics.yaml"
+	if len(filename) <= len(suffix) {
+		return 0
+	}
+	if filename[len(filename)-len(suffix):] != suffix {
+		return 0
+	}
+	stem := filename[:len(filename)-len(suffix)]
+	num := 0
+	for _, c := range stem {
+		if c >= '0' && c <= '9' {
+			num = num*10 + int(c-'0')
+		} else {
+			return 0
+		}
+	}
+	if num == 0 {
+		return 0
 	}
 	return num
 }

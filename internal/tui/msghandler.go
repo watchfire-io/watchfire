@@ -199,6 +199,13 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 		}
 		return true, nil
 
+	// ── Per-project insights overlay (v6.0 Ember) ─────────────────
+	case ProjectInsightsLoadedMsg:
+		if msg.Insights.Window == m.projectInsightsWindow {
+			m.projectInsights = msg.Insights
+		}
+		return true, nil
+
 	// ── Log viewer ────────────────────────────────────────────────
 	case LogsLoadedMsg:
 		m.logViewer.SetLogs(msg.Logs)

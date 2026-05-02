@@ -683,6 +683,36 @@ message GlobalInsights {
   google.protobuf.Timestamp window_end = 11;
 }
 
+// GetProjectInsightsRequest scopes a per-project insights query. Both
+// window bounds are optional — leaving them unset queries "all time".
+message GetProjectInsightsRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+  google.protobuf.Timestamp window_start = 3;
+  google.protobuf.Timestamp window_end = 4;
+}
+
+// ProjectInsights is the per-project rollup the daemon returns from
+// `GetProjectInsights`. Same shape primitives as GlobalInsights — the
+// dashboard's per-project Insights tab and the TUI per-project overlay
+// reuse the same renderers.
+message ProjectInsights {
+  string project_id = 1;
+  int32 tasks_total = 2;
+  int32 tasks_succeeded = 3;
+  int32 tasks_failed = 4;
+  repeated DayBucket tasks_by_day = 5;
+  repeated AgentBreakdown agent_breakdown = 6;
+  int64 total_duration_ms = 7;
+  int64 avg_duration_ms = 8;
+  int64 p50_duration_ms = 9;
+  int64 p95_duration_ms = 10;
+  double total_cost_usd = 11;
+  int32 tasks_missing_cost = 12;
+  google.protobuf.Timestamp window_start = 13;
+  google.protobuf.Timestamp window_end = 14;
+}
+
 // InsightsService handles cross-task analytics. v6.0 Ember scope is per-task
 // / per-project / fleet rollups in CSV + Markdown plus the dashboard
 // rollup. Future v6.x can extend with PDF / HTML / scheduled export without
@@ -690,4 +720,5 @@ message GlobalInsights {
 service InsightsService {
   rpc ExportReport(ExportReportRequest) returns (ExportReportResponse);
   rpc GetGlobalInsights(GetGlobalInsightsRequest) returns (GlobalInsights);
+  rpc GetProjectInsights(GetProjectInsightsRequest) returns (ProjectInsights);
 }

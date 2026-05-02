@@ -206,6 +206,8 @@ func (m *Model) handleTaskListKey(msg tea.KeyMsg) tea.Cmd {
 		return m.setSelectedTaskDone()
 	case key.Matches(msg, taskListKeys.Delete):
 		return m.confirmDeleteTask()
+	case key.Matches(msg, taskListKeys.Insights):
+		return m.openProjectInsightsOverlay("30d")
 	}
 	return nil
 }
@@ -418,6 +420,9 @@ func (m *Model) handleOverlayKey(msg tea.KeyMsg) tea.Cmd {
 
 	case overlayFleetInsights:
 		return m.handleFleetInsightsKey(msg)
+
+	case overlayProjectInsights:
+		return m.handleProjectInsightsKey(msg)
 	}
 	return nil
 }
@@ -451,6 +456,37 @@ func (m *Model) openFleetInsightsOverlay(window string) tea.Cmd {
 		return nil
 	}
 	return loadFleetInsightsCmd(m.conn, window)
+}
+
+// handleProjectInsightsKey routes input while the v6.0 Ember per-project
+// overlay is open. 1 / 3 / 9 / 0 cycle the window; Esc / q close.
+func (m *Model) handleProjectInsightsKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc", "q":
+		m.activeOverlay = overlayNone
+		return nil
+	case "1":
+		return m.openProjectInsightsOverlay("7d")
+	case "3":
+		return m.openProjectInsightsOverlay("30d")
+	case "9":
+		return m.openProjectInsightsOverlay("90d")
+	case "0":
+		return m.openProjectInsightsOverlay("all")
+	}
+	return nil
+}
+
+// openProjectInsightsOverlay flips the overlay on, resets the in-flight
+// state, and dispatches the gRPC fetch for the current project.
+func (m *Model) openProjectInsightsOverlay(window string) tea.Cmd {
+	m.projectInsightsWindow = window
+	m.projectInsights = ProjectInsights{Window: window}
+	m.activeOverlay = overlayProjectInsights
+	if m.conn == nil || m.projectID == "" {
+		return nil
+	}
+	return loadProjectInsightsCmd(m.conn, m.projectID, window)
 }
 
 // handleExportPickerKey routes keys for the v6.0 Ember export overlay.

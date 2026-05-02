@@ -2333,8 +2333,9 @@ var NotificationService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	InsightsService_ExportReport_FullMethodName      = "/watchfire.InsightsService/ExportReport"
-	InsightsService_GetGlobalInsights_FullMethodName = "/watchfire.InsightsService/GetGlobalInsights"
+	InsightsService_ExportReport_FullMethodName       = "/watchfire.InsightsService/ExportReport"
+	InsightsService_GetGlobalInsights_FullMethodName  = "/watchfire.InsightsService/GetGlobalInsights"
+	InsightsService_GetProjectInsights_FullMethodName = "/watchfire.InsightsService/GetProjectInsights"
 )
 
 // InsightsServiceClient is the client API for InsightsService service.
@@ -2348,6 +2349,7 @@ const (
 type InsightsServiceClient interface {
 	ExportReport(ctx context.Context, in *ExportReportRequest, opts ...grpc.CallOption) (*ExportReportResponse, error)
 	GetGlobalInsights(ctx context.Context, in *GetGlobalInsightsRequest, opts ...grpc.CallOption) (*GlobalInsights, error)
+	GetProjectInsights(ctx context.Context, in *GetProjectInsightsRequest, opts ...grpc.CallOption) (*ProjectInsights, error)
 }
 
 type insightsServiceClient struct {
@@ -2378,6 +2380,16 @@ func (c *insightsServiceClient) GetGlobalInsights(ctx context.Context, in *GetGl
 	return out, nil
 }
 
+func (c *insightsServiceClient) GetProjectInsights(ctx context.Context, in *GetProjectInsightsRequest, opts ...grpc.CallOption) (*ProjectInsights, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ProjectInsights)
+	err := c.cc.Invoke(ctx, InsightsService_GetProjectInsights_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // InsightsServiceServer is the server API for InsightsService service.
 // All implementations must embed UnimplementedInsightsServiceServer
 // for forward compatibility.
@@ -2389,6 +2401,7 @@ func (c *insightsServiceClient) GetGlobalInsights(ctx context.Context, in *GetGl
 type InsightsServiceServer interface {
 	ExportReport(context.Context, *ExportReportRequest) (*ExportReportResponse, error)
 	GetGlobalInsights(context.Context, *GetGlobalInsightsRequest) (*GlobalInsights, error)
+	GetProjectInsights(context.Context, *GetProjectInsightsRequest) (*ProjectInsights, error)
 	mustEmbedUnimplementedInsightsServiceServer()
 }
 
@@ -2404,6 +2417,9 @@ func (UnimplementedInsightsServiceServer) ExportReport(context.Context, *ExportR
 }
 func (UnimplementedInsightsServiceServer) GetGlobalInsights(context.Context, *GetGlobalInsightsRequest) (*GlobalInsights, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetGlobalInsights not implemented")
+}
+func (UnimplementedInsightsServiceServer) GetProjectInsights(context.Context, *GetProjectInsightsRequest) (*ProjectInsights, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetProjectInsights not implemented")
 }
 func (UnimplementedInsightsServiceServer) mustEmbedUnimplementedInsightsServiceServer() {}
 func (UnimplementedInsightsServiceServer) testEmbeddedByValue()                         {}
@@ -2462,6 +2478,24 @@ func _InsightsService_GetGlobalInsights_Handler(srv interface{}, ctx context.Con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _InsightsService_GetProjectInsights_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetProjectInsightsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InsightsServiceServer).GetProjectInsights(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InsightsService_GetProjectInsights_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InsightsServiceServer).GetProjectInsights(ctx, req.(*GetProjectInsightsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // InsightsService_ServiceDesc is the grpc.ServiceDesc for InsightsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2476,6 +2510,10 @@ var InsightsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetGlobalInsights",
 			Handler:    _InsightsService_GetGlobalInsights_Handler,
+		},
+		{
+			MethodName: "GetProjectInsights",
+			Handler:    _InsightsService_GetProjectInsights_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
