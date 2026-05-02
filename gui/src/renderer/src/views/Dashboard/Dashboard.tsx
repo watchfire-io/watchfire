@@ -22,6 +22,7 @@ import { ProjectRow } from './ProjectRow'
 import { EmptyState } from './EmptyState'
 import { FilterChips } from './FilterChips'
 import { StatusBar } from './StatusBar'
+import { ExportPill } from '../../components/ExportPill'
 import { cn } from '../../lib/utils'
 import {
   DASHBOARD_FILTERS,
@@ -153,7 +154,10 @@ export function Dashboard() {
               Overview of all your projects and their current status.
             </p>
           </div>
-          <LayoutToggle layout={layout} onChange={updateLayout} />
+          <div className="flex items-center gap-2 shrink-0">
+            <ExportPill scope={{ kind: 'global' }} label="Export" />
+            <LayoutToggle layout={layout} onChange={updateLayout} />
+          </div>
         </div>
         <div className="mb-3">
           <StatusBar

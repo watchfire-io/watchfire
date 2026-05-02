@@ -3,15 +3,15 @@
 //   - clicking the OS WEEKLY_DIGEST notification (via `notifications:click`),
 //   - clicking the tray's `📊 Weekly digest · last Mon` row (FOCUS_TARGET_DIGEST),
 //   - clicking a "Digests" entry in the in-app notification center.
-// Includes an Export pill (re-uses the v6.0 task 0059 useExportReport hook
-// when present; falls back to a clipboard copy here so the modal is usable
-// even before that hook lands) and a "View in dashboard" button that closes
-// the modal and routes the GUI to the dashboard home.
+// Includes an Export pill (re-uses the v6.0 task 0059 useExportReport hook,
+// scope=global, format=MARKDOWN) and a "View in dashboard" button that
+// closes the modal and routes the GUI to the dashboard home.
 
 import { useEffect } from 'react'
 import { Download, LayoutDashboard } from 'lucide-react'
 import { useDigestStore } from '../../stores/digest-store'
 import { useAppStore } from '../../stores/app-store'
+import { useExportReport } from '../../hooks/useExportReport'
 import { Button } from '../ui/Button'
 import { Modal } from '../ui/Modal'
 import { MarkdownView } from './MarkdownView'
@@ -34,6 +34,7 @@ export function DigestModal(): React.ReactNode {
   const loading = useDigestStore((s) => s.loading)
   const close = useDigestStore((s) => s.close)
   const setView = useAppStore((s) => s.setView)
+  const { exportGlobal, loading: exporting } = useExportReport()
 
   // Refresh the body when openDate changes, in case the user navigates
   // between digests without unmounting the modal.
@@ -43,11 +44,19 @@ export function DigestModal(): React.ReactNode {
   }, [openDate])
 
   const handleExport = async (): Promise<void> => {
-    if (!body) return
+    // Mirror the digest's window — the digest covers the previous 7 days
+    // ending at openDate. Without the window the daemon would fall back to
+    // its own "now" semantics, which would drift from what the user is
+    // looking at.
+    if (!openDate) return
+    const [y, m, d] = openDate.split('-').map((s) => parseInt(s, 10))
+    if (!y || !m || !d) return
+    const end = new Date(y, m - 1, d, 23, 59, 59)
+    const start = new Date(end.getTime() - 7 * 24 * 60 * 60 * 1000)
     try {
-      await navigator.clipboard.writeText(body)
+      await exportGlobal('markdown', { start, end })
     } catch {
-      /* clipboard blocked — silently swallow; the file is on disk anyway */
+      /* error surfaced via the hook's `error` state on the next render */
     }
   }
 
@@ -65,9 +74,9 @@ export function DigestModal(): React.ReactNode {
       title={`Weekly digest · ${formatDateLabel(openDate)}`}
       footer={
         <>
-          <Button variant="secondary" size="sm" onClick={handleExport}>
+          <Button variant="secondary" size="sm" onClick={handleExport} disabled={exporting}>
             <Download size={14} />
-            Export Markdown
+            {exporting ? 'Exporting…' : 'Export Markdown'}
           </Button>
           <Button variant="secondary" size="sm" onClick={handleViewDashboard}>
             <LayoutDashboard size={14} />

@@ -1,0 +1,3 @@
+# section: task
+project_id,project_name,task_number,title,status,success,failure_reason,agent,agent_sessions,started_at,completed_at,duration_sec,worktree_branch
+watchfire-pid,watchfire,59,v6.0 Ember — Export reports (CSV + Markdown),done,true,,claude-code,2,2026-04-28T09:30:00Z,2026-04-28T11:12:00Z,6120,watchfire/0059

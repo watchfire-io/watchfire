@@ -7,7 +7,8 @@ import {
   AgentService,
   LogService,
   BranchService,
-  SettingsService
+  SettingsService,
+  InsightsService
 } from '../generated/watchfire_pb'
 
 let transport: Transport | null = null
@@ -49,4 +50,8 @@ export function getBranchClient(): Client<typeof BranchService> {
 
 export function getSettingsClient(): Client<typeof SettingsService> {
   return createClient(SettingsService, getTransport())
+}
+
+export function getInsightsClient(): Client<typeof InsightsService> {
+  return createClient(InsightsService, getTransport())
 }

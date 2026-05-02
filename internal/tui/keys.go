@@ -8,6 +8,7 @@ type GlobalKeys struct {
 	Help           key.Binding
 	Tab            key.Binding
 	GlobalSettings key.Binding
+	Export         key.Binding
 }
 
 var globalKeys = GlobalKeys{
@@ -26,6 +27,10 @@ var globalKeys = GlobalKeys{
 	GlobalSettings: key.NewBinding(
 		key.WithKeys("ctrl+g"),
 		key.WithHelp("Ctrl+g", "global settings"),
+	),
+	Export: key.NewBinding(
+		key.WithKeys("ctrl+e"),
+		key.WithHelp("Ctrl+e", "export report"),
 	),
 }
 

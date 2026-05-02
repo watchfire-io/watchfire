@@ -14,6 +14,7 @@ const (
 	overlayAddTask        = 2
 	overlayEditTask       = 3
 	overlayGlobalSettings = 4
+	overlayExport         = 5 // v6.0 Ember export-format picker
 )
 
 // renderOverlay renders an overlay centered on top of the base view.

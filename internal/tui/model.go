@@ -61,6 +61,11 @@ type Model struct {
 	logViewer          *LogViewer
 	taskForm           *TaskForm
 	globalSettingsForm *GlobalSettingsForm
+	exportPicker       *ExportPicker
+
+	// Status-bar message (e.g. "Exported watchfire-project-foo-2026-05-02.md")
+	// — replaces the showSaved indicator while present, cleared by ClearSavedMsg.
+	statusMessage string
 
 	// Program reference for goroutine Send()
 	program *programRef
@@ -101,6 +106,7 @@ func NewModel(projectID string, program *programRef) Model {
 		settingsForm:       NewSettingsForm(),
 		logViewer:          NewLogViewer(),
 		globalSettingsForm: NewGlobalSettingsForm(),
+		exportPicker:       NewExportPicker(),
 		program:            program,
 		streamCtx:          ctx,
 		streamCancel:       cancel,
@@ -295,6 +301,10 @@ func (m Model) View() string {
 				}
 				m.globalSettingsForm.SetWidth(width)
 				overlayContent = overlayStyle.Width(width).Render(m.globalSettingsForm.View())
+			}
+		case overlayExport:
+			if m.exportPicker != nil {
+				overlayContent = m.exportPicker.View()
 			}
 		}
 		if overlayContent != "" {

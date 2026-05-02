@@ -585,3 +585,47 @@ message SubscribeNotificationsRequest {
 service NotificationService {
   rpc Subscribe(SubscribeNotificationsRequest) returns (stream Notification);
 }
+
+// ============================================================================
+// Insights Messages (v6.0 Ember)
+// ============================================================================
+
+// ExportFormat selects the wire format for an exported report. CSV is a
+// flat single-file representation (multi-section reports use a `# section:`
+// header line to delimit sub-tables); MARKDOWN renders human-readable
+// reports with H2 headings.
+enum ExportFormat {
+  CSV = 0;
+  MARKDOWN = 1;
+}
+
+// ExportReportRequest names a scope (single task / project / fleet-wide
+// global) and a format. window_start / window_end bound the time-range the
+// report covers (applies to per-day breakdowns; ignored for single_task).
+message ExportReportRequest {
+  RequestMeta meta = 1;
+  oneof scope {
+    string project_id = 2;       // Per-project report
+    bool global = 3;             // Fleet rollup
+    string single_task = 4;      // "<project_id>:<task_number>" — one task
+  }
+  ExportFormat format = 5;
+  google.protobuf.Timestamp window_start = 6;
+  google.protobuf.Timestamp window_end = 7;
+}
+
+// ExportReportResponse carries the rendered file. content is the raw bytes
+// (UTF-8 text for CSV / Markdown); the GUI saves it via Blob URL using the
+// supplied filename. mime is `text/csv` or `text/markdown`.
+message ExportReportResponse {
+  string filename = 1;
+  bytes content = 2;
+  string mime = 3;
+}
+
+// InsightsService handles cross-task analytics export. v6.0 Ember scope is
+// per-task / per-project / fleet rollups in CSV + Markdown. Future v6.x can
+// extend with PDF / HTML / scheduled export without breaking the wire.
+service InsightsService {
+  rpc ExportReport(ExportReportRequest) returns (ExportReportResponse);
+}

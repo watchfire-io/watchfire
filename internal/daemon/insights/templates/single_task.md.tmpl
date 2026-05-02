@@ -1,0 +1,28 @@
+# Task #{{.TaskNumber}} — {{.Title}}
+
+_Project: **{{.ProjectName}}** · `{{.ProjectID}}`_
+
+## Outcome
+
+| Field | Value |
+| --- | --- |
+| Status | `{{.Status}}` |
+| Success | {{successCell .Success}} |
+| Agent | `{{defaultStr .Agent "—"}}` |
+| Sessions | {{.AgentSessions}} |
+| Started | {{timePtr .StartedAt}} |
+| Completed | {{timePtr .CompletedAt}} |
+| Duration | {{durationHuman .DurationSec}} |
+| Branch | `{{defaultStr .WorktreeBranch "—"}}` |
+{{- if .FailureReason}}
+
+> **Failure reason:** {{.FailureReason}}
+{{- end}}
+{{- if .Prompt}}
+
+## Prompt (excerpt)
+
+{{.Prompt}}
+{{- end}}
+
+_Diff: review the worktree branch `{{defaultStr .WorktreeBranch "(unknown)"}}` for the file-level changes._
