@@ -48,29 +48,39 @@ var integrationsListCmd = &cobra.Command{
 }
 
 var integrationsTestCmd = &cobra.Command{
-	Use:   "test <kind> <id>",
+	Use:   "test [kind] <id>",
 	Short: "Send a synthetic notification through an integration",
 	Long: `Fire a synthetic notification through the named integration. Verifies the
 plumbing end-to-end: keyring secret resolves, URL reachable, channel renders
 the message correctly.
 
-For Discord endpoints, the test sends one POST per supported notification
-kind (TASK_FAILED, RUN_COMPLETE, WEEKLY_DIGEST) so every embed template is
-exercised in a single command.
+The single-arg form looks the id up across every configured integration; the
+two-arg form pins the kind explicitly when an id is reused across kinds:
 
-  watchfire integrations test discord  <id>
-  watchfire integrations test slack    <id>
+  watchfire integrations test <id>            # auto-detect across all kinds
   watchfire integrations test webhook  <id>
+  watchfire integrations test slack    <id>
+  watchfire integrations test discord  <id>
   watchfire integrations test github   _
 
-The github form has no id (single-instance config); pass any placeholder.`,
-	Args: cobra.ExactArgs(2),
+For Discord / Slack endpoints, the test sends one POST per supported
+notification kind (TASK_FAILED, RUN_COMPLETE, WEEKLY_DIGEST) so every
+template is exercised in a single command. The github form has no id
+(single-instance config); pass any placeholder.`,
+	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		kind, err := parseIntegrationKind(args[0])
-		if err != nil {
-			return err
+		var kind pb.IntegrationKind
+		var id string
+		if len(args) == 2 {
+			k, err := parseIntegrationKind(args[0])
+			if err != nil {
+				return err
+			}
+			kind = k
+			id = args[1]
+		} else {
+			id = args[0]
 		}
-		id := args[1]
 
 		if err := EnsureDaemon(); err != nil {
 			return err
@@ -81,10 +91,27 @@ The github form has no id (single-instance config); pass any placeholder.`,
 		}
 		defer func() { _ = conn.Close() }()
 
+		client := pb.NewIntegrationsServiceClient(conn)
+
+		// Auto-detect kind by scanning the configured integrations
+		// when only the id was provided.
+		if len(args) == 1 {
+			lookupCtx, lookupCancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer lookupCancel()
+			cfg, err := client.ListIntegrations(lookupCtx, &pb.ListIntegrationsRequest{})
+			if err != nil {
+				return fmt.Errorf("list integrations: %w", err)
+			}
+			detected, ok := detectIntegrationKind(cfg, id)
+			if !ok {
+				return fmt.Errorf("no integration found with id %q (run `watchfire integrations list` to see configured ids)", id)
+			}
+			kind = detected
+		}
+
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		client := pb.NewIntegrationsServiceClient(conn)
 		resp, err := client.TestIntegration(ctx, &pb.TestIntegrationRequest{
 			Kind: kind,
 			Id:   id,
@@ -103,6 +130,35 @@ The github form has no id (single-instance config); pass any placeholder.`,
 		}
 		return nil
 	},
+}
+
+// detectIntegrationKind searches every configured integration list for
+// a matching id. Returns the matching kind on the first hit (webhook
+// → slack → discord → github) or false when no entry matches. Used by
+// the single-arg form of `watchfire integrations test`.
+func detectIntegrationKind(cfg *pb.IntegrationsConfig, id string) (pb.IntegrationKind, bool) {
+	if cfg == nil {
+		return 0, false
+	}
+	for _, ep := range cfg.GetWebhooks() {
+		if ep.GetId() == id {
+			return pb.IntegrationKind_WEBHOOK, true
+		}
+	}
+	for _, ep := range cfg.GetSlack() {
+		if ep.GetId() == id {
+			return pb.IntegrationKind_SLACK, true
+		}
+	}
+	for _, ep := range cfg.GetDiscord() {
+		if ep.GetId() == id {
+			return pb.IntegrationKind_DISCORD, true
+		}
+	}
+	if g := cfg.GetGithub(); g != nil && g.GetEnabled() && id == "github" {
+		return pb.IntegrationKind_GITHUB, true
+	}
+	return 0, false
 }
 
 func parseIntegrationKind(s string) (pb.IntegrationKind, error) {

@@ -299,14 +299,19 @@ func TestTestIntegrationDelivers(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// The webhook adapter routes each test through the v7.0 Relay
+	// `relay.WebhookAdapter`, which fires one POST per notification
+	// kind (TASK_FAILED, RUN_COMPLETE, WEEKLY_DIGEST) so every wire
+	// shape is exercised in a single command. Aggregate response is
+	// ok=true only when every POST returns 2xx.
 	resp, err := svc.TestIntegration(ctx, &pb.TestIntegrationRequest{
 		Kind: pb.IntegrationKind_WEBHOOK, Id: "ok",
 	})
 	if err != nil {
 		t.Fatalf("test ok: %v", err)
 	}
-	if !resp.GetOk() || resp.GetStatusCode() != http.StatusOK {
-		t.Errorf("expected success on 200, got ok=%v status=%d", resp.GetOk(), resp.GetStatusCode())
+	if !resp.GetOk() {
+		t.Errorf("expected success on 200, got ok=%v msg=%q", resp.GetOk(), resp.GetMessage())
 	}
 
 	resp, err = svc.TestIntegration(ctx, &pb.TestIntegrationRequest{
@@ -315,8 +320,8 @@ func TestTestIntegrationDelivers(t *testing.T) {
 	if err != nil {
 		t.Fatalf("test fail: %v", err)
 	}
-	if resp.GetOk() || resp.GetStatusCode() != http.StatusBadRequest {
-		t.Errorf("expected failure on 400, got ok=%v status=%d", resp.GetOk(), resp.GetStatusCode())
+	if resp.GetOk() {
+		t.Errorf("expected failure on 400, got ok=%v msg=%q", resp.GetOk(), resp.GetMessage())
 	}
 }
 
