@@ -18,6 +18,7 @@ import { InsightsTab } from './InsightsTab'
 import { RightPanel } from './RightPanel/RightPanel'
 import { BottomPanel } from './BottomPanel/BottomPanel'
 import { useTerminalStore } from '../../stores/terminal-store'
+import { useIntegrationsStore } from '../../stores/integrations-store'
 import { ModesControl } from './ModesControl'
 import { OpenInIDEButton } from './OpenInIDEButton'
 import { ExportPill } from '../../components/ExportPill'
@@ -41,6 +42,22 @@ export function ProjectView() {
   const fetchTasks = useTasksStore((s) => s.fetchTasks)
   const gitInfo = useGitStore((s) => s.gitInfo[projectId || ''])
   const fetchGitInfo = useGitStore((s) => s.fetchGitInfo)
+  // v7.0 Relay: surface an "Auto-PR" pill on the project header when
+  // GitHubConfig.AutoPR applies to this project. Empty project_scopes
+  // means "all projects", so the pill follows that convention.
+  const integrationsConfig = useIntegrationsStore((s) => s.config)
+  const fetchIntegrations = useIntegrationsStore((s) => s.fetch)
+  useEffect(() => {
+    if (integrationsConfig === null) {
+      fetchIntegrations()
+    }
+  }, [integrationsConfig, fetchIntegrations])
+  const autoPRApplies = (() => {
+    const gh = integrationsConfig?.github
+    if (!gh || !gh.enabled || !projectId) return false
+    if ((gh.projectScopes ?? []).length === 0) return true
+    return gh.projectScopes.includes(projectId)
+  })()
 
   const [centerTab, setCenterTab] = useState<CenterTab>('tasks')
   const [rightPanelOpen, setRightPanelOpen] = useState(() => {
@@ -136,6 +153,14 @@ export function ProjectView() {
             <StatusDot color={project.color || '#e07040'} pulsing={isAgentWorking(agentStatus)} />
             <h2 className="font-heading text-base font-semibold">{project.name}</h2>
             {isAgentRunning && <AgentBadge status={agentStatus} />}
+            {autoPRApplies && (
+              <span
+                title="GitHub auto-PR enabled — completed tasks open a PR instead of merging locally"
+                className="text-xs px-2 py-0.5 rounded-full bg-fire-500/15 text-fire-500 border border-fire-500/30 font-medium"
+              >
+                Auto-PR
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-2">
             <ExportPill scope={{ kind: 'project', projectId }} />

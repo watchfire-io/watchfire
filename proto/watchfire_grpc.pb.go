@@ -2559,3 +2559,231 @@ var InsightsService_ServiceDesc = grpc.ServiceDesc{
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "proto/watchfire.proto",
 }
+
+const (
+	IntegrationsService_ListIntegrations_FullMethodName  = "/watchfire.IntegrationsService/ListIntegrations"
+	IntegrationsService_SaveIntegration_FullMethodName   = "/watchfire.IntegrationsService/SaveIntegration"
+	IntegrationsService_DeleteIntegration_FullMethodName = "/watchfire.IntegrationsService/DeleteIntegration"
+	IntegrationsService_TestIntegration_FullMethodName   = "/watchfire.IntegrationsService/TestIntegration"
+)
+
+// IntegrationsServiceClient is the client API for IntegrationsService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// IntegrationsService handles outbound integrations configuration.
+// v7.0 Relay scope: Webhook / Slack / Discord / GitHub. Each Save or
+// Delete triggers the dispatcher's adapter-list rebuild via the
+// `EventIntegrationsChanged` watcher event (the watcher fires on YAML
+// mtime change; the service explicitly hedges for keyring-only updates).
+type IntegrationsServiceClient interface {
+	ListIntegrations(ctx context.Context, in *ListIntegrationsRequest, opts ...grpc.CallOption) (*IntegrationsConfig, error)
+	SaveIntegration(ctx context.Context, in *SaveIntegrationRequest, opts ...grpc.CallOption) (*IntegrationsConfig, error)
+	DeleteIntegration(ctx context.Context, in *DeleteIntegrationRequest, opts ...grpc.CallOption) (*IntegrationsConfig, error)
+	TestIntegration(ctx context.Context, in *TestIntegrationRequest, opts ...grpc.CallOption) (*TestIntegrationResponse, error)
+}
+
+type integrationsServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewIntegrationsServiceClient(cc grpc.ClientConnInterface) IntegrationsServiceClient {
+	return &integrationsServiceClient{cc}
+}
+
+func (c *integrationsServiceClient) ListIntegrations(ctx context.Context, in *ListIntegrationsRequest, opts ...grpc.CallOption) (*IntegrationsConfig, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IntegrationsConfig)
+	err := c.cc.Invoke(ctx, IntegrationsService_ListIntegrations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *integrationsServiceClient) SaveIntegration(ctx context.Context, in *SaveIntegrationRequest, opts ...grpc.CallOption) (*IntegrationsConfig, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IntegrationsConfig)
+	err := c.cc.Invoke(ctx, IntegrationsService_SaveIntegration_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *integrationsServiceClient) DeleteIntegration(ctx context.Context, in *DeleteIntegrationRequest, opts ...grpc.CallOption) (*IntegrationsConfig, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IntegrationsConfig)
+	err := c.cc.Invoke(ctx, IntegrationsService_DeleteIntegration_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *integrationsServiceClient) TestIntegration(ctx context.Context, in *TestIntegrationRequest, opts ...grpc.CallOption) (*TestIntegrationResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TestIntegrationResponse)
+	err := c.cc.Invoke(ctx, IntegrationsService_TestIntegration_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// IntegrationsServiceServer is the server API for IntegrationsService service.
+// All implementations must embed UnimplementedIntegrationsServiceServer
+// for forward compatibility.
+//
+// IntegrationsService handles outbound integrations configuration.
+// v7.0 Relay scope: Webhook / Slack / Discord / GitHub. Each Save or
+// Delete triggers the dispatcher's adapter-list rebuild via the
+// `EventIntegrationsChanged` watcher event (the watcher fires on YAML
+// mtime change; the service explicitly hedges for keyring-only updates).
+type IntegrationsServiceServer interface {
+	ListIntegrations(context.Context, *ListIntegrationsRequest) (*IntegrationsConfig, error)
+	SaveIntegration(context.Context, *SaveIntegrationRequest) (*IntegrationsConfig, error)
+	DeleteIntegration(context.Context, *DeleteIntegrationRequest) (*IntegrationsConfig, error)
+	TestIntegration(context.Context, *TestIntegrationRequest) (*TestIntegrationResponse, error)
+	mustEmbedUnimplementedIntegrationsServiceServer()
+}
+
+// UnimplementedIntegrationsServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedIntegrationsServiceServer struct{}
+
+func (UnimplementedIntegrationsServiceServer) ListIntegrations(context.Context, *ListIntegrationsRequest) (*IntegrationsConfig, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListIntegrations not implemented")
+}
+func (UnimplementedIntegrationsServiceServer) SaveIntegration(context.Context, *SaveIntegrationRequest) (*IntegrationsConfig, error) {
+	return nil, status.Error(codes.Unimplemented, "method SaveIntegration not implemented")
+}
+func (UnimplementedIntegrationsServiceServer) DeleteIntegration(context.Context, *DeleteIntegrationRequest) (*IntegrationsConfig, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteIntegration not implemented")
+}
+func (UnimplementedIntegrationsServiceServer) TestIntegration(context.Context, *TestIntegrationRequest) (*TestIntegrationResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method TestIntegration not implemented")
+}
+func (UnimplementedIntegrationsServiceServer) mustEmbedUnimplementedIntegrationsServiceServer() {}
+func (UnimplementedIntegrationsServiceServer) testEmbeddedByValue()                             {}
+
+// UnsafeIntegrationsServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to IntegrationsServiceServer will
+// result in compilation errors.
+type UnsafeIntegrationsServiceServer interface {
+	mustEmbedUnimplementedIntegrationsServiceServer()
+}
+
+func RegisterIntegrationsServiceServer(s grpc.ServiceRegistrar, srv IntegrationsServiceServer) {
+	// If the following call panics, it indicates UnimplementedIntegrationsServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&IntegrationsService_ServiceDesc, srv)
+}
+
+func _IntegrationsService_ListIntegrations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListIntegrationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IntegrationsServiceServer).ListIntegrations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IntegrationsService_ListIntegrations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IntegrationsServiceServer).ListIntegrations(ctx, req.(*ListIntegrationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IntegrationsService_SaveIntegration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveIntegrationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IntegrationsServiceServer).SaveIntegration(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IntegrationsService_SaveIntegration_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IntegrationsServiceServer).SaveIntegration(ctx, req.(*SaveIntegrationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IntegrationsService_DeleteIntegration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteIntegrationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IntegrationsServiceServer).DeleteIntegration(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IntegrationsService_DeleteIntegration_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IntegrationsServiceServer).DeleteIntegration(ctx, req.(*DeleteIntegrationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IntegrationsService_TestIntegration_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TestIntegrationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IntegrationsServiceServer).TestIntegration(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IntegrationsService_TestIntegration_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IntegrationsServiceServer).TestIntegration(ctx, req.(*TestIntegrationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// IntegrationsService_ServiceDesc is the grpc.ServiceDesc for IntegrationsService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var IntegrationsService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "watchfire.IntegrationsService",
+	HandlerType: (*IntegrationsServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "ListIntegrations",
+			Handler:    _IntegrationsService_ListIntegrations_Handler,
+		},
+		{
+			MethodName: "SaveIntegration",
+			Handler:    _IntegrationsService_SaveIntegration_Handler,
+		},
+		{
+			MethodName: "DeleteIntegration",
+			Handler:    _IntegrationsService_DeleteIntegration_Handler,
+		},
+		{
+			MethodName: "TestIntegration",
+			Handler:    _IntegrationsService_TestIntegration_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "proto/watchfire.proto",
+}

@@ -125,3 +125,17 @@ type SettingsLoadedMsg struct {
 type SettingsSavedMsg struct {
 	Settings *pb.Settings
 }
+
+// IntegrationsLoadedMsg carries the IntegrationsConfig from List /
+// Save / Delete RPCs. v7.0 Relay.
+type IntegrationsLoadedMsg struct {
+	Config *pb.IntegrationsConfig
+}
+
+// IntegrationTestedMsg surfaces the result of a TestIntegration RPC so
+// the overlay can render an inline "HTTP 200" / "HTTP 4xx" status.
+type IntegrationTestedMsg struct {
+	OK         bool
+	Message    string
+	StatusCode int32
+}

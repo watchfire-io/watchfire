@@ -786,3 +786,137 @@ service InsightsService {
   rpc GetProjectInsights(GetProjectInsightsRequest) returns (ProjectInsights);
   rpc GetTaskDiff(GetTaskDiffRequest) returns (FileDiffSet);
 }
+
+// ============================================================================
+// Integrations Messages (v7.0 Relay)
+// ============================================================================
+
+// IntegrationKind disambiguates the four outbound integration types in
+// the IntegrationsService oneof payloads. The on-the-wire ordering
+// matches the order the GUI surfaces them in the picker.
+enum IntegrationKind {
+  WEBHOOK = 0;
+  SLACK = 1;
+  DISCORD = 2;
+  GITHUB = 3;
+}
+
+// IntegrationEvents is the per-integration event-bitmask. Mirrors the
+// daemon-side `models.EventBitmask` shape. Each integration carries its
+// own copy so the user can fan TASK_FAILED to Slack but RUN_COMPLETE to
+// Discord without duplicating endpoints.
+message IntegrationEvents {
+  bool task_failed = 1;
+  bool run_complete = 2;
+  bool weekly_digest = 3;
+}
+
+// WebhookIntegration is a single generic outbound webhook target. The
+// `secret` field is write-only — Save accepts it (and pushes it to the
+// keyring); List + the response of Save scrub it (returning only
+// `secret_set: bool`).
+message WebhookIntegration {
+  string id = 1;
+  string label = 2;
+  string url = 3;
+  string url_label = 4;                // Masked, display-only ("***hooks.example.com/...")
+  bool secret_set = 5;                 // True if the keyring carries a secret
+  string secret = 6;                   // Write-only — never returned by List
+  IntegrationEvents enabled_events = 7;
+  repeated string project_mute_ids = 8;
+}
+
+// SlackIntegration targets a Slack incoming webhook. The URL itself is
+// the secret (Slack's incoming-webhook auth model), so it is write-only
+// — Save accepts it; List returns only the masked `url_label`.
+message SlackIntegration {
+  string id = 1;
+  string label = 2;
+  string url = 3;                      // Write-only — never returned by List
+  string url_label = 4;                // Masked, display-only
+  bool url_set = 5;                    // True if the keyring carries the URL
+  IntegrationEvents enabled_events = 6;
+  repeated string project_mute_ids = 7;
+}
+
+// DiscordIntegration mirrors SlackIntegration exactly — Discord's
+// webhook auth model is the same (URL-as-secret).
+message DiscordIntegration {
+  string id = 1;
+  string label = 2;
+  string url = 3;                      // Write-only — never returned by List
+  string url_label = 4;                // Masked, display-only
+  bool url_set = 5;                    // True if the keyring carries the URL
+  IntegrationEvents enabled_events = 6;
+  repeated string project_mute_ids = 7;
+}
+
+// GitHubIntegration is the single-instance GitHub auto-PR config. No
+// URL field — relies on `gh` CLI auth.
+message GitHubIntegration {
+  bool enabled = 1;
+  bool draft_default = 2;
+  repeated string project_scopes = 3;
+}
+
+// IntegrationsConfig is the root document the IntegrationsService
+// returns from List + as the response to Save / Delete.
+message IntegrationsConfig {
+  repeated WebhookIntegration webhooks = 1;
+  repeated SlackIntegration slack = 2;
+  repeated DiscordIntegration discord = 3;
+  GitHubIntegration github = 4;
+}
+
+message ListIntegrationsRequest {
+  RequestMeta meta = 1;
+}
+
+// SaveIntegrationRequest is the unified create + update wire shape. The
+// `payload` oneof carries the integration-specific body; the server
+// derives create-vs-update by checking whether the ID already exists in
+// the YAML.
+message SaveIntegrationRequest {
+  RequestMeta meta = 1;
+  oneof payload {
+    WebhookIntegration webhook = 2;
+    SlackIntegration slack = 3;
+    DiscordIntegration discord = 4;
+    GitHubIntegration github = 5;
+  }
+}
+
+// DeleteIntegrationRequest names the integration to delete by kind + id.
+// GitHub is single-instance; passing GITHUB resets it to the zero value.
+message DeleteIntegrationRequest {
+  RequestMeta meta = 1;
+  IntegrationKind kind = 2;
+  string id = 3;                       // Ignored when kind = GITHUB
+}
+
+// TestIntegrationRequest fires a synthetic notification through the
+// dispatcher to the named integration. Used by the GUI / TUI's "Test"
+// button to verify plumbing end-to-end.
+message TestIntegrationRequest {
+  RequestMeta meta = 1;
+  IntegrationKind kind = 2;
+  string id = 3;
+}
+
+message TestIntegrationResponse {
+  bool ok = 1;
+  string message = 2;                  // Human-readable success / failure summary
+  int32 status_code = 3;               // HTTP status of the test send (0 if not applicable)
+}
+
+// IntegrationsService handles outbound integrations configuration.
+// v7.0 Relay scope: Webhook / Slack / Discord / GitHub. Each Save or
+// Delete triggers the dispatcher's adapter-list rebuild via the
+// `EventIntegrationsChanged` watcher event (the watcher fires on YAML
+// mtime change; the service explicitly hedges for keyring-only updates).
+service IntegrationsService {
+  rpc ListIntegrations(ListIntegrationsRequest) returns (IntegrationsConfig);
+  rpc SaveIntegration(SaveIntegrationRequest) returns (IntegrationsConfig);
+  rpc DeleteIntegration(DeleteIntegrationRequest) returns (IntegrationsConfig);
+  rpc TestIntegration(TestIntegrationRequest) returns (TestIntegrationResponse);
+}

@@ -5,6 +5,8 @@ import (
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
+
+	pb "github.com/watchfire-io/watchfire/proto"
 )
 
 // handleKey processes key events.
@@ -89,6 +91,16 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		// in a "loading" state and dispatches the gRPC fetch so the
 		// box pops up immediately.
 		return m.openFleetInsightsOverlay("30d")
+
+	case key.Matches(msg, globalKeys.Integrations):
+		m.activeOverlay = overlayIntegrations
+		if m.integrationsForm != nil {
+			m.integrationsForm.Reset()
+		}
+		if m.conn != nil {
+			return listIntegrationsCmd(m.conn)
+		}
+		return nil
 	}
 
 	// Tab switching (only when left panel focused and not in terminal)
@@ -431,6 +443,194 @@ func (m *Model) handleOverlayKey(msg tea.KeyMsg) tea.Cmd {
 
 	case overlayTaskDiff:
 		return m.handleTaskDiffKey(msg)
+
+	case overlayIntegrations:
+		return m.handleIntegrationsKey(msg)
+	}
+	return nil
+}
+
+// handleIntegrationsKey handles input while the v7.0 Relay integrations
+// overlay is open. List mode: a/e/d/t shortcuts. Add mode: stacked form
+// with Tab-to-advance / Esc-to-cancel. Confirm-delete mode: y/n.
+func (m *Model) handleIntegrationsKey(msg tea.KeyMsg) tea.Cmd {
+	f := m.integrationsForm
+	if f == nil {
+		m.activeOverlay = overlayNone
+		return nil
+	}
+
+	switch f.Mode() {
+	case integrationsModeAdd:
+		return m.handleIntegrationsAddKey(msg)
+	case integrationsModeConfirmDelete:
+		return m.handleIntegrationsConfirmDeleteKey(msg)
+	}
+
+	switch msg.String() {
+	case "esc", "q":
+		m.activeOverlay = overlayNone
+		f.Reset()
+		return nil
+	case "up", "k":
+		f.MoveUp()
+		return nil
+	case "down", "j":
+		f.MoveDown()
+		return nil
+	case "a":
+		f.StartAdd()
+		return nil
+	case "e":
+		row := f.CurrentRow()
+		if row.Kind == integrationsRowGitHub {
+			// Edit-as-add: pre-populate the add form with current
+			// GitHub state. A future polish task can add a dedicated
+			// edit step that updates the existing entry in place.
+			f.StartAdd()
+			f.addKind = integrationsRowGitHub
+			f.addStep = addFieldEvents
+			gh := f.cfg.GetGithub()
+			if gh != nil {
+				f.addEvents.TaskFailed = gh.GetEnabled()
+				f.addEvents.RunComplete = gh.GetDraftDefault()
+			}
+		} else {
+			f.StartAdd()
+			f.addKind = row.Kind
+		}
+		return nil
+	case "d":
+		f.StartDeleteConfirm()
+		return nil
+	case "t":
+		row := f.CurrentRow()
+		if m.conn == nil {
+			return nil
+		}
+		f.SetStatus("Sending test…")
+		switch row.Kind {
+		case integrationsRowWebhook:
+			return testIntegrationCmd(m.conn, pb.IntegrationKind_WEBHOOK, row.ID)
+		case integrationsRowSlack:
+			return testIntegrationCmd(m.conn, pb.IntegrationKind_SLACK, row.ID)
+		case integrationsRowDiscord:
+			return testIntegrationCmd(m.conn, pb.IntegrationKind_DISCORD, row.ID)
+		case integrationsRowGitHub:
+			return testIntegrationCmd(m.conn, pb.IntegrationKind_GITHUB, "")
+		}
+	}
+	return nil
+}
+
+func (m *Model) handleIntegrationsAddKey(msg tea.KeyMsg) tea.Cmd {
+	f := m.integrationsForm
+	switch msg.String() {
+	case "esc":
+		f.CancelAdd()
+		return nil
+	case "left", "h":
+		f.CycleAddKind(-1)
+		return nil
+	case "right", "l":
+		f.CycleAddKind(+1)
+		return nil
+	case "1":
+		if f.addStep == addFieldEvents {
+			f.ToggleAddEvent(0)
+			return nil
+		}
+	case "2":
+		if f.addStep == addFieldEvents {
+			f.ToggleAddEvent(1)
+			return nil
+		}
+	case "3":
+		if f.addStep == addFieldEvents {
+			f.ToggleAddEvent(2)
+			return nil
+		}
+	}
+
+	switch msg.Type {
+	case tea.KeyTab, tea.KeyEnter:
+		done := f.AdvanceAdd()
+		if done {
+			return m.dispatchIntegrationsAdd()
+		}
+		return nil
+	}
+
+	// While editing URL / label, forward the keystroke to the textinput.
+	if f.addStep == addFieldURL || f.addStep == addFieldLabel {
+		ti := f.InputModel()
+		newTI, _ := ti.Update(msg)
+		*ti = newTI
+	}
+	return nil
+}
+
+func (m *Model) handleIntegrationsConfirmDeleteKey(msg tea.KeyMsg) tea.Cmd {
+	f := m.integrationsForm
+	switch msg.String() {
+	case "y", "Y":
+		row, ok := f.FinishDeleteConfirm(true)
+		if !ok || m.conn == nil {
+			return nil
+		}
+		var kind pb.IntegrationKind
+		switch row.Kind {
+		case integrationsRowWebhook:
+			kind = pb.IntegrationKind_WEBHOOK
+		case integrationsRowSlack:
+			kind = pb.IntegrationKind_SLACK
+		case integrationsRowDiscord:
+			kind = pb.IntegrationKind_DISCORD
+		case integrationsRowGitHub:
+			kind = pb.IntegrationKind_GITHUB
+		}
+		return deleteIntegrationCmd(m.conn, kind, row.ID)
+	case "n", "N", "esc":
+		f.FinishDeleteConfirm(false)
+	}
+	return nil
+}
+
+func (m *Model) dispatchIntegrationsAdd() tea.Cmd {
+	f := m.integrationsForm
+	kind, url, label, events, mutes := f.AddSnapshot()
+	f.CancelAdd()
+	if m.conn == nil {
+		return nil
+	}
+	switch kind {
+	case integrationsRowWebhook:
+		return saveIntegrationCmd(m.conn, &pb.WebhookIntegration{
+			Label:          label,
+			Url:            url,
+			EnabledEvents:  events,
+			ProjectMuteIds: mutes,
+		})
+	case integrationsRowSlack:
+		return saveIntegrationCmd(m.conn, &pb.SlackIntegration{
+			Label:          label,
+			Url:            url,
+			EnabledEvents:  events,
+			ProjectMuteIds: mutes,
+		})
+	case integrationsRowDiscord:
+		return saveIntegrationCmd(m.conn, &pb.DiscordIntegration{
+			Label:          label,
+			Url:            url,
+			EnabledEvents:  events,
+			ProjectMuteIds: mutes,
+		})
+	case integrationsRowGitHub:
+		return saveIntegrationCmd(m.conn, &pb.GitHubIntegration{
+			Enabled:       events.GetTaskFailed(),
+			DraftDefault:  events.GetRunComplete(),
+			ProjectScopes: mutes,
+		})
 	}
 	return nil
 }

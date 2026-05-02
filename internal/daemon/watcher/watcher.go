@@ -32,6 +32,11 @@ const (
 	// the cache-bust signal — any per-project metrics write also drops
 	// the fleet `_global.json` cache via the cascade.
 	EventMetricsChanged
+	// EventIntegrationsChanged fires when ~/.watchfire/integrations.yaml
+	// is written. v7.0 Relay's dispatcher rebuilds its adapter list on
+	// this event so URL / mute / event-bitmask edits land without a
+	// daemon restart.
+	EventIntegrationsChanged
 )
 
 // Signal file names for phase completion.
@@ -239,6 +244,16 @@ func (w *Watcher) processFileChange(path string, op fsnotify.Op) {
 	if filename == config.SettingsFileName {
 		w.eventsChan <- Event{
 			Type: EventGlobalSettingsChanged,
+			Path: path,
+		}
+		return
+	}
+
+	// Check for global integrations.yaml — v7.0 Relay's dispatcher
+	// rebuilds its adapter list off this event.
+	if filename == config.IntegrationsFileName {
+		w.eventsChan <- Event{
+			Type: EventIntegrationsChanged,
 			Path: path,
 		}
 		return
