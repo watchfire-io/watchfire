@@ -404,3 +404,91 @@ func TestTestIntegrationDiscordPostsAllKinds(t *testing.T) {
 		}
 	}
 }
+
+// TestTestIntegrationSlackPostsAllKinds asserts that calling
+// TestIntegration with a Slack endpoint POSTs three Block Kit messages
+// (one per notification kind) — each parses as a Block Kit envelope with
+// the expected header text — and the response message names every kind.
+// Pinned by the v7.0 task 0063 acceptance criterion: "POSTs each
+// notification kind through with the expected Block Kit body".
+func TestTestIntegrationSlackPostsAllKinds(t *testing.T) {
+	withTempHomeIntegrations(t)
+	mem := newMemSecretStore()
+	config.SetSecretStoreForTest(&memSecretStoreAdapter{inner: mem})
+	t.Cleanup(func() { config.SetSecretStoreForTest(nil) })
+
+	type capturedBlock struct {
+		Type string `json:"type"`
+		Text *struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"text,omitempty"`
+	}
+	type capturedMsg struct {
+		Blocks []capturedBlock `json:"blocks"`
+	}
+	var (
+		mu     sync.Mutex
+		titles []string
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("missing Content-Type, got %q", r.Header.Get("Content-Type"))
+		}
+		body, _ := io.ReadAll(r.Body)
+		var c capturedMsg
+		if err := json.Unmarshal(body, &c); err != nil {
+			t.Errorf("server received non-Block-Kit body: %v\n%s", err, body)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if len(c.Blocks) == 0 || c.Blocks[0].Type != "header" || c.Blocks[0].Text == nil {
+			t.Errorf("first block should be a header with text, got %+v", c.Blocks)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		titles = append(titles, c.Blocks[0].Text.Text)
+		mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(srv.Close)
+
+	svc := newIntegrationsService()
+	ctx := context.Background()
+
+	if _, err := svc.SaveIntegration(ctx, &pb.SaveIntegrationRequest{
+		Payload: &pb.SaveIntegrationRequest_Slack{
+			Slack: &pb.SlackIntegration{Id: "s1", Url: srv.URL},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := svc.TestIntegration(ctx, &pb.TestIntegrationRequest{
+		Kind: pb.IntegrationKind_SLACK, Id: "s1",
+	})
+	if err != nil {
+		t.Fatalf("test slack: %v", err)
+	}
+	if !resp.GetOk() {
+		t.Errorf("expected ok=true, got %v with msg=%q", resp.GetOk(), resp.GetMessage())
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(titles) != 3 {
+		t.Fatalf("want 3 POSTs (one per kind), got %d", len(titles))
+	}
+	sort.Strings(titles)
+	wantTitles := []string{
+		":bar_chart: Watchfire — your week",
+		":rotating_light: Task failed — Watchfire test",
+		":white_check_mark: Run complete — Watchfire test",
+	}
+	for i, want := range wantTitles {
+		if titles[i] != want {
+			t.Errorf("titles[%d] = %q, want %q", i, titles[i], want)
+		}
+	}
+}

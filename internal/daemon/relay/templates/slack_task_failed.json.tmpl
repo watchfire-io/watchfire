@@ -1,0 +1,42 @@
+{
+  "blocks": [
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": {{ printf ":rotating_light: Task failed — %s" .ProjectName | jsonStr }},
+        "emoji": true
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": {{ printf "*Task #%04d*: %s\n*Reason*: %s" .TaskNumber .TaskTitle .TaskFailureReason | jsonStr }}
+      }
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": {{ printf "%s %s · %s" (slackEmoji .ProjectColor) .ProjectName (rfc3339 .EmittedAt) | jsonStr }}
+        }
+      ]
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "View in Watchfire",
+            "emoji": true
+          },
+          "url": {{ .DeepLink | jsonStr }}
+        }
+      ]
+    }
+  ]
+}

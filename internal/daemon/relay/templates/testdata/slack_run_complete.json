@@ -1,0 +1,42 @@
+{
+  "blocks": [
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": ":white_check_mark: Run complete — Watchfire",
+        "emoji": true
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "*Task #0042*: Build the Discord adapter"
+      }
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": ":large_blue_square: Watchfire · 2026-05-02T12:34:56Z"
+        }
+      ]
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "View in Watchfire",
+            "emoji": true
+          },
+          "url": "watchfire://project/proj-abc/task/0042"
+        }
+      ]
+    }
+  ]
+}

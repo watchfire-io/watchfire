@@ -1,0 +1,42 @@
+{
+  "blocks": [
+    {
+      "type": "header",
+      "text": {
+        "type": "plain_text",
+        "text": ":bar_chart: Watchfire — your week",
+        "emoji": true
+      }
+    },
+    {
+      "type": "section",
+      "text": {
+        "type": "mrkdwn",
+        "text": "## This week\n\n- 12 tasks completed across 3 projects\n- 2 failures"
+      }
+    },
+    {
+      "type": "context",
+      "elements": [
+        {
+          "type": "mrkdwn",
+          "text": ":bar_chart: Weekly digest · 2026-05-02T12:34:56Z"
+        }
+      ]
+    },
+    {
+      "type": "actions",
+      "elements": [
+        {
+          "type": "button",
+          "text": {
+            "type": "plain_text",
+            "text": "Open digest",
+            "emoji": true
+          },
+          "url": "watchfire://digest/2026-05-02"
+        }
+      ]
+    }
+  ]
+}
