@@ -3,6 +3,7 @@ package tui
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/lipgloss"
@@ -79,7 +80,46 @@ type IntegrationsForm struct {
 	// later by extending getProjectsCmd; today we leave it empty (the
 	// step is skipped if empty).
 	projectIDs []string
+
+	// v8.0 Echo — Inbound tab state. Lives alongside the v7.0 outbound
+	// list so the same overlay surfaces both directions; users press Tab
+	// to swap between Outbound and Inbound. Inbound shape: a vertical
+	// stack of editable rows (listen address, public URL, per-provider
+	// secret blocks) plus a status pill at the top.
+	tab            integrationsTab
+	inboundStatus  *pb.InboundStatus
+	inboundCursor  int                  // index into the editable inbound rows below
+	inboundEditing bool                 // true when the textinput is consuming keystrokes
+	inboundInput   textinput.Model      // shared input for whichever inbound row is being edited
+	inboundDraft   pb.InboundConfig     // local edit buffer; flushed via saveInboundConfigCmd on Enter
 }
+
+// integrationsTab disambiguates the two views inside the integrations
+// overlay. Outbound is the v7.0 Relay endpoints list (default); Inbound
+// is the v8.0 Echo listener configuration.
+type integrationsTab int
+
+const (
+	integrationsTabOutbound integrationsTab = iota
+	integrationsTabInbound
+)
+
+// inboundRow indexes the editable rows in the Inbound tab. They render
+// in this order top-to-bottom; the cursor (`inboundCursor`) selects one
+// at a time and Enter starts editing it.
+type inboundRow int
+
+const (
+	inboundRowEnabled inboundRow = iota // master toggle (Disabled inverted)
+	inboundRowListenAddr
+	inboundRowPublicURL
+	inboundRowGitHubSecret
+	inboundRowSlackSecret
+	inboundRowDiscordPubKey
+	inboundRowDiscordAppID
+	inboundRowDiscordBotToken
+	inboundRowCount
+)
 
 type integrationsFormMode int
 
@@ -93,10 +133,164 @@ const (
 func NewIntegrationsForm() *IntegrationsForm {
 	ti := textinput.New()
 	ti.CharLimit = 256
+	inboundTI := textinput.New()
+	inboundTI.CharLimit = 1024
 	return &IntegrationsForm{
-		cfg:   &pb.IntegrationsConfig{Github: &pb.GitHubIntegration{}},
-		input: ti,
-		mode:  integrationsModeList,
+		cfg:          &pb.IntegrationsConfig{Github: &pb.GitHubIntegration{}},
+		input:        ti,
+		mode:         integrationsModeList,
+		tab:          integrationsTabOutbound,
+		inboundInput: inboundTI,
+	}
+}
+
+// LoadInbound populates the Inbound tab from a freshly-fetched
+// InboundStatus. Idempotent; called both on initial overlay open and
+// after each saveInboundConfigCmd.
+func (f *IntegrationsForm) LoadInbound(st *pb.InboundStatus) {
+	if st == nil {
+		return
+	}
+	f.inboundStatus = st
+	if cfg := st.GetConfig(); cfg != nil {
+		f.inboundDraft = pb.InboundConfig{
+			ListenAddr:           cfg.GetListenAddr(),
+			PublicUrl:            cfg.GetPublicUrl(),
+			DiscordAppId:         cfg.GetDiscordAppId(),
+			Disabled:             cfg.GetDisabled(),
+			GithubSecretSet:      cfg.GetGithubSecretSet(),
+			SlackSecretSet:       cfg.GetSlackSecretSet(),
+			DiscordPublicKeySet:  cfg.GetDiscordPublicKeySet(),
+			DiscordBotTokenSet:   cfg.GetDiscordBotTokenSet(),
+		}
+	}
+}
+
+// Tab returns the active overlay tab (outbound vs inbound).
+func (f *IntegrationsForm) Tab() integrationsTab { return f.tab }
+
+// SwitchTab toggles between the Outbound and Inbound tabs. Resets local
+// edit state (inboundEditing) when leaving the Inbound tab so the next
+// re-entry starts in selection mode.
+func (f *IntegrationsForm) SwitchTab() {
+	if f.tab == integrationsTabOutbound {
+		f.tab = integrationsTabInbound
+	} else {
+		f.tab = integrationsTabOutbound
+	}
+	f.inboundEditing = false
+	f.inboundInput.Blur()
+}
+
+// MoveInboundCursor advances the cursor within the Inbound tab.
+func (f *IntegrationsForm) MoveInboundCursor(delta int) {
+	if f.inboundEditing {
+		return
+	}
+	next := f.inboundCursor + delta
+	if next < 0 {
+		next = 0
+	}
+	if next >= int(inboundRowCount) {
+		next = int(inboundRowCount) - 1
+	}
+	f.inboundCursor = next
+}
+
+// IsInboundEditing reports whether the textinput is consuming keystrokes
+// in the Inbound tab. Used by the key handler to decide whether to
+// forward keys to the inboundInput vs. to the cursor / toggle shortcuts.
+func (f *IntegrationsForm) IsInboundEditing() bool { return f.inboundEditing }
+
+// InboundInputModel exposes the inbound textinput so the model's update
+// dispatch can forward key events while editing one of the rows.
+func (f *IntegrationsForm) InboundInputModel() *textinput.Model { return &f.inboundInput }
+
+// StartInboundEdit enters edit mode for the row under the cursor.
+// Toggle rows (enabled / disabled) flip immediately and stay in
+// selection mode; text rows focus the textinput.
+func (f *IntegrationsForm) StartInboundEdit() {
+	row := inboundRow(f.inboundCursor)
+	if row == inboundRowEnabled {
+		f.inboundDraft.Disabled = !f.inboundDraft.Disabled
+		return
+	}
+	f.inboundEditing = true
+	f.inboundInput.Reset()
+	switch row {
+	case inboundRowListenAddr:
+		f.inboundInput.SetValue(f.inboundDraft.GetListenAddr())
+		f.inboundInput.Placeholder = "127.0.0.1:8765"
+	case inboundRowPublicURL:
+		f.inboundInput.SetValue(f.inboundDraft.GetPublicUrl())
+		f.inboundInput.Placeholder = "https://your-tunnel.ngrok.app"
+	case inboundRowDiscordAppID:
+		f.inboundInput.SetValue(f.inboundDraft.GetDiscordAppId())
+		f.inboundInput.Placeholder = "Discord application ID"
+	default:
+		f.inboundInput.SetValue("")
+		f.inboundInput.Placeholder = "Paste secret here (Enter to save)"
+	}
+	f.inboundInput.Focus()
+}
+
+// CancelInboundEdit aborts the in-progress edit and returns to selection
+// mode without persisting anything.
+func (f *IntegrationsForm) CancelInboundEdit() {
+	f.inboundEditing = false
+	f.inboundInput.Blur()
+	f.inboundInput.SetValue("")
+}
+
+// CommitInboundEdit folds the textinput value into the local draft for
+// the row under the cursor and returns the snapshot so the caller can
+// dispatch saveInboundConfigCmd. Returns nil if no actual change was
+// made (empty input on a non-secret row).
+func (f *IntegrationsForm) CommitInboundEdit() *pb.InboundConfig {
+	value := strings.TrimSpace(f.inboundInput.Value())
+	row := inboundRow(f.inboundCursor)
+	out := &pb.InboundConfig{
+		ListenAddr:   f.inboundDraft.GetListenAddr(),
+		PublicUrl:    f.inboundDraft.GetPublicUrl(),
+		DiscordAppId: f.inboundDraft.GetDiscordAppId(),
+		Disabled:     f.inboundDraft.GetDisabled(),
+	}
+	switch row {
+	case inboundRowListenAddr:
+		out.ListenAddr = value
+		f.inboundDraft.ListenAddr = value
+	case inboundRowPublicURL:
+		out.PublicUrl = value
+		f.inboundDraft.PublicUrl = value
+	case inboundRowDiscordAppID:
+		out.DiscordAppId = value
+		f.inboundDraft.DiscordAppId = value
+	case inboundRowGitHubSecret:
+		out.GithubSecret = value
+	case inboundRowSlackSecret:
+		out.SlackSecret = value
+	case inboundRowDiscordPubKey:
+		out.DiscordPublicKey = value
+	case inboundRowDiscordBotToken:
+		out.DiscordBotToken = value
+	default:
+		return nil
+	}
+	f.inboundEditing = false
+	f.inboundInput.Blur()
+	f.inboundInput.SetValue("")
+	return out
+}
+
+// FlushInboundDraft returns a snapshot of the local draft for cases
+// where the user toggled the Enabled switch and wants to push the
+// change immediately (Tab on a toggle row triggers a save).
+func (f *IntegrationsForm) FlushInboundDraft() *pb.InboundConfig {
+	return &pb.InboundConfig{
+		ListenAddr:   f.inboundDraft.GetListenAddr(),
+		PublicUrl:    f.inboundDraft.GetPublicUrl(),
+		DiscordAppId: f.inboundDraft.GetDiscordAppId(),
+		Disabled:     f.inboundDraft.GetDisabled(),
 	}
 }
 
@@ -398,8 +592,181 @@ func (f *IntegrationsForm) View() string {
 	case integrationsModeConfirmDelete:
 		return f.renderConfirmDelete()
 	default:
+		if f.tab == integrationsTabInbound {
+			return f.renderInbound()
+		}
 		return f.renderList()
 	}
+}
+
+// renderInbound draws the v8.0 Echo Inbound tab: status pill + listen
+// address + public URL + per-provider secrets. Mirrors the GUI's
+// InboundSection layout but in plain-text form.
+func (f *IntegrationsForm) renderInbound() string {
+	var b strings.Builder
+	b.WriteString(overlayTitleStyle.Render("Integrations · Inbound (Echo)"))
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render("Receive signed deliveries from GitHub / Slack / Discord."))
+	b.WriteString("\n\n")
+
+	// Status pill — green when listening, red when bind failed,
+	// dim when disabled by user toggle.
+	listening := false
+	bindErr := ""
+	addrDisplay := f.inboundDraft.GetListenAddr()
+	if addrDisplay == "" {
+		addrDisplay = "127.0.0.1:8765"
+	}
+	if f.inboundStatus != nil {
+		listening = f.inboundStatus.GetListening()
+		bindErr = f.inboundStatus.GetBindError()
+		if a := f.inboundStatus.GetListenAddr(); a != "" {
+			addrDisplay = a
+		}
+	}
+	pill := ""
+	switch {
+	case f.inboundDraft.GetDisabled():
+		pill = lipgloss.NewStyle().Foreground(colorDim).Render("● Disabled")
+	case listening:
+		pill = lipgloss.NewStyle().Foreground(colorCyan).Render("● Listening")
+	case bindErr != "":
+		pill = lipgloss.NewStyle().Foreground(colorRed).Render("● Bind error")
+	default:
+		pill = lipgloss.NewStyle().Foreground(colorRed).Render("● Not listening")
+	}
+	b.WriteString(fmt.Sprintf("%s  %s\n", pill, lipgloss.NewStyle().Foreground(colorDim).Render(addrDisplay)))
+	if bindErr != "" {
+		b.WriteString(lipgloss.NewStyle().Foreground(colorRed).Render(bindErr))
+		b.WriteString("\n")
+	}
+	b.WriteString("\n")
+
+	rows := f.inboundRowDescriptors()
+	for i, r := range rows {
+		marker := "  "
+		if i == f.inboundCursor && !f.inboundEditing {
+			marker = settingsCursorStyle.Render("▸ ")
+		}
+		line := fmt.Sprintf("%s%-26s %s", marker, r.label, r.value)
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+
+	if f.inboundEditing {
+		b.WriteString("\n")
+		b.WriteString(lipgloss.NewStyle().Foreground(colorCyan).Render("Editing: "+rows[f.inboundCursor].label) + "\n")
+		b.WriteString(f.inboundInput.View())
+		b.WriteString("\n\n")
+		b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render("Enter saves · Esc cancels"))
+	} else {
+		b.WriteString("\n")
+		if f.statusLine != "" {
+			b.WriteString(lipgloss.NewStyle().Foreground(colorCyan).Render(f.statusLine))
+			b.WriteString("\n")
+		}
+		b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render("Tab outbound/inbound · ↑↓ move · Enter edit/toggle · Esc close"))
+	}
+	return b.String()
+}
+
+type inboundRowDescriptor struct {
+	label string
+	value string
+}
+
+func (f *IntegrationsForm) inboundRowDescriptors() []inboundRowDescriptor {
+	rows := make([]inboundRowDescriptor, inboundRowCount)
+	rows[inboundRowEnabled] = inboundRowDescriptor{
+		label: "Enabled",
+		value: boolLabel(!f.inboundDraft.GetDisabled()),
+	}
+	rows[inboundRowListenAddr] = inboundRowDescriptor{
+		label: "Listen address",
+		value: orPlaceholder(f.inboundDraft.GetListenAddr(), "127.0.0.1:8765"),
+	}
+	rows[inboundRowPublicURL] = inboundRowDescriptor{
+		label: "Public URL",
+		value: orPlaceholder(f.inboundDraft.GetPublicUrl(), "(unset)"),
+	}
+	rows[inboundRowGitHubSecret] = inboundRowDescriptor{
+		label: "GitHub secret",
+		value: secretLabel(f.inboundDraft.GetGithubSecretSet(), f.lastDeliveryDisplay("github")),
+	}
+	rows[inboundRowSlackSecret] = inboundRowDescriptor{
+		label: "Slack signing secret",
+		value: secretLabel(f.inboundDraft.GetSlackSecretSet(), f.lastDeliveryDisplay("slack")),
+	}
+	rows[inboundRowDiscordPubKey] = inboundRowDescriptor{
+		label: "Discord public key",
+		value: secretLabel(f.inboundDraft.GetDiscordPublicKeySet(), f.lastDeliveryDisplay("discord")),
+	}
+	rows[inboundRowDiscordAppID] = inboundRowDescriptor{
+		label: "Discord app ID",
+		value: orPlaceholder(f.inboundDraft.GetDiscordAppId(), "(unset)"),
+	}
+	rows[inboundRowDiscordBotToken] = inboundRowDescriptor{
+		label: "Discord bot token",
+		value: secretLabel(f.inboundDraft.GetDiscordBotTokenSet(), ""),
+	}
+	return rows
+}
+
+func (f *IntegrationsForm) lastDeliveryDisplay(provider string) string {
+	if f.inboundStatus == nil {
+		return ""
+	}
+	var unix int64
+	switch provider {
+	case "github":
+		unix = f.inboundStatus.GetLastGithubDeliveryUnix()
+	case "slack":
+		unix = f.inboundStatus.GetLastSlackDeliveryUnix()
+	case "discord":
+		unix = f.inboundStatus.GetLastDiscordDeliveryUnix()
+	}
+	if unix == 0 {
+		return ""
+	}
+	return fmt.Sprintf("· last %s ago", humanDuration(time.Since(time.Unix(unix, 0))))
+}
+
+func boolLabel(on bool) string {
+	if on {
+		return settingsToggleOn.Render("[x] on")
+	}
+	return settingsToggleOff.Render("[ ] off")
+}
+
+func secretLabel(isSet bool, lastDelivery string) string {
+	base := lipgloss.NewStyle().Foreground(colorDim).Render("not set")
+	if isSet {
+		base = lipgloss.NewStyle().Foreground(colorCyan).Render("set")
+	}
+	if lastDelivery != "" {
+		base += "  " + lipgloss.NewStyle().Foreground(colorDim).Render(lastDelivery)
+	}
+	return base
+}
+
+func orPlaceholder(s, placeholder string) string {
+	if s == "" {
+		return lipgloss.NewStyle().Foreground(colorDim).Render(placeholder)
+	}
+	return s
+}
+
+func humanDuration(d time.Duration) string {
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	if d < time.Hour {
+		return fmt.Sprintf("%dm", int(d.Minutes()))
+	}
+	if d < 24*time.Hour {
+		return fmt.Sprintf("%dh", int(d.Hours()))
+	}
+	return fmt.Sprintf("%dd", int(d.Hours()/24))
 }
 
 func (f *IntegrationsForm) renderList() string {

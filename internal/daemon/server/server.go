@@ -22,6 +22,7 @@ import (
 	"github.com/watchfire-io/watchfire/internal/config"
 	"github.com/watchfire-io/watchfire/internal/daemon/agent"
 	"github.com/watchfire-io/watchfire/internal/daemon/agent/prompts"
+	"github.com/watchfire-io/watchfire/internal/daemon/echo"
 	"github.com/watchfire-io/watchfire/internal/daemon/insights"
 	"github.com/watchfire-io/watchfire/internal/daemon/metrics"
 	"github.com/watchfire-io/watchfire/internal/daemon/notify"
@@ -49,6 +50,9 @@ type Server struct {
 	digestRunner   *digestRunner
 	relayDispatch  *relay.Dispatcher
 	relayCancel    context.CancelFunc
+	echoServer     *echo.Server
+	echoCancel     context.CancelFunc
+	integrationsSvc *integrationsService
 	updateState    UpdateState
 }
 
@@ -280,7 +284,16 @@ func New(port int) (*Server, error) {
 	pb.RegisterSettingsServiceServer(grpcServer, &settingsService{})
 	pb.RegisterNotificationServiceServer(grpcServer, &notificationService{bus: notifyBus})
 	pb.RegisterInsightsServiceServer(grpcServer, newInsightsService())
-	pb.RegisterIntegrationsServiceServer(grpcServer, newIntegrationsService())
+	srv.integrationsSvc = newIntegrationsService()
+	pb.RegisterIntegrationsServiceServer(grpcServer, srv.integrationsSvc)
+
+	// v8.0 Echo — inbound HTTP listener. Reads `Inbound` block from
+	// integrations.yaml; binds to 127.0.0.1:8765 by default. Bind failure
+	// logs ERROR but doesn't abort daemon startup; the failure is
+	// surfaced via IntegrationsService.GetInboundStatus so the GUI's
+	// "Listening status" pill turns red.
+	srv.startEchoServer()
+	srv.integrationsSvc.bindEchoServer(srv)
 
 	// Start watcher event processing loop
 	go srv.processWatcherEvents()
@@ -354,6 +367,11 @@ func (s *Server) Stop() {
 	if s.relayDispatch != nil {
 		s.relayDispatch.Stop()
 	}
+	// Stop the v8.0 Echo inbound listener so the bind address frees
+	// before the daemon exits.
+	if s.echoCancel != nil {
+		s.echoCancel()
+	}
 	// Stop watcher before agents (prevents new task-done events during shutdown)
 	if s.watcher != nil {
 		s.watcher.Stop()
@@ -366,6 +384,43 @@ func (s *Server) Stop() {
 	}
 	s.grpcServer.GracefulStop()
 }
+
+// startEchoServer (v8.0 Echo) launches the inbound HTTP listener in a
+// background goroutine. Reads the persisted InboundConfig from
+// integrations.yaml; bind failure is logged but does not abort daemon
+// startup — the failure is surfaced through GetInboundStatus so the
+// settings UI's "Listening status" pill can flip red.
+func (s *Server) startEchoServer() {
+	cfg, err := config.LoadIntegrations()
+	if err != nil {
+		log.Printf("WARN: echo: load integrations failed: %v — starting with default inbound config", err)
+		cfg = models.NewIntegrationsConfig()
+	}
+	srv := echo.New(cfg.Inbound, log.Default())
+	ctx, cancel := context.WithCancel(context.Background())
+	s.echoServer = srv
+	s.echoCancel = cancel
+	go func() {
+		if runErr := srv.Run(ctx); runErr != nil {
+			log.Printf("ERROR: echo: %v", runErr)
+		}
+	}()
+}
+
+// restartEchoServer tears down the running Echo listener and re-binds
+// against the freshly-saved InboundConfig. Used by the
+// IntegrationsService.SaveInboundConfig RPC so config edits take effect
+// without daemon restart.
+func (s *Server) restartEchoServer() {
+	if s.echoCancel != nil {
+		s.echoCancel()
+	}
+	s.startEchoServer()
+}
+
+// EchoServer exposes the inbound HTTP listener for the integrations
+// service handler. Used to populate GetInboundStatus responses.
+func (s *Server) EchoServer() *echo.Server { return s.echoServer }
 
 // processWatcherEvents listens for file system events and handles them.
 func (s *Server) processWatcherEvents() {

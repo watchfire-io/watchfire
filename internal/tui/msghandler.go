@@ -265,6 +265,14 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 		}
 		return true, nil
 
+	// ── v8.0 Echo inbound status ────────────────────────────────────
+	case InboundStatusLoadedMsg:
+		if m.integrationsForm != nil {
+			m.integrationsForm.LoadInbound(msg.Status)
+			m.integrationsForm.SetStatus("")
+		}
+		return true, nil
+
 	// ── Editor finished ────────────────────────────────────────────
 	case EditorFinishedMsg:
 		if msg.Err != nil {

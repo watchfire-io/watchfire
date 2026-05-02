@@ -2565,22 +2565,29 @@ const (
 	IntegrationsService_SaveIntegration_FullMethodName   = "/watchfire.IntegrationsService/SaveIntegration"
 	IntegrationsService_DeleteIntegration_FullMethodName = "/watchfire.IntegrationsService/DeleteIntegration"
 	IntegrationsService_TestIntegration_FullMethodName   = "/watchfire.IntegrationsService/TestIntegration"
+	IntegrationsService_GetInboundStatus_FullMethodName  = "/watchfire.IntegrationsService/GetInboundStatus"
+	IntegrationsService_SaveInboundConfig_FullMethodName = "/watchfire.IntegrationsService/SaveInboundConfig"
 )
 
 // IntegrationsServiceClient is the client API for IntegrationsService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// IntegrationsService handles outbound integrations configuration.
-// v7.0 Relay scope: Webhook / Slack / Discord / GitHub. Each Save or
-// Delete triggers the dispatcher's adapter-list rebuild via the
-// `EventIntegrationsChanged` watcher event (the watcher fires on YAML
-// mtime change; the service explicitly hedges for keyring-only updates).
+// IntegrationsService handles both outbound (v7.0 Relay) and inbound
+// (v8.0 Echo) integrations configuration. Each outbound Save / Delete
+// triggers the dispatcher's adapter-list rebuild via the
+// `EventIntegrationsChanged` watcher event. Inbound config changes are
+// applied by the daemon at next Echo-server restart (the SaveInboundConfig
+// RPC tears down + rebinds the listener so new addresses / disabled
+// toggles take effect immediately).
 type IntegrationsServiceClient interface {
 	ListIntegrations(ctx context.Context, in *ListIntegrationsRequest, opts ...grpc.CallOption) (*IntegrationsConfig, error)
 	SaveIntegration(ctx context.Context, in *SaveIntegrationRequest, opts ...grpc.CallOption) (*IntegrationsConfig, error)
 	DeleteIntegration(ctx context.Context, in *DeleteIntegrationRequest, opts ...grpc.CallOption) (*IntegrationsConfig, error)
 	TestIntegration(ctx context.Context, in *TestIntegrationRequest, opts ...grpc.CallOption) (*TestIntegrationResponse, error)
+	// v8.0 Echo: inbound HTTP listener configuration + status.
+	GetInboundStatus(ctx context.Context, in *GetInboundStatusRequest, opts ...grpc.CallOption) (*InboundStatus, error)
+	SaveInboundConfig(ctx context.Context, in *SaveInboundConfigRequest, opts ...grpc.CallOption) (*InboundStatus, error)
 }
 
 type integrationsServiceClient struct {
@@ -2631,20 +2638,45 @@ func (c *integrationsServiceClient) TestIntegration(ctx context.Context, in *Tes
 	return out, nil
 }
 
+func (c *integrationsServiceClient) GetInboundStatus(ctx context.Context, in *GetInboundStatusRequest, opts ...grpc.CallOption) (*InboundStatus, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InboundStatus)
+	err := c.cc.Invoke(ctx, IntegrationsService_GetInboundStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *integrationsServiceClient) SaveInboundConfig(ctx context.Context, in *SaveInboundConfigRequest, opts ...grpc.CallOption) (*InboundStatus, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(InboundStatus)
+	err := c.cc.Invoke(ctx, IntegrationsService_SaveInboundConfig_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // IntegrationsServiceServer is the server API for IntegrationsService service.
 // All implementations must embed UnimplementedIntegrationsServiceServer
 // for forward compatibility.
 //
-// IntegrationsService handles outbound integrations configuration.
-// v7.0 Relay scope: Webhook / Slack / Discord / GitHub. Each Save or
-// Delete triggers the dispatcher's adapter-list rebuild via the
-// `EventIntegrationsChanged` watcher event (the watcher fires on YAML
-// mtime change; the service explicitly hedges for keyring-only updates).
+// IntegrationsService handles both outbound (v7.0 Relay) and inbound
+// (v8.0 Echo) integrations configuration. Each outbound Save / Delete
+// triggers the dispatcher's adapter-list rebuild via the
+// `EventIntegrationsChanged` watcher event. Inbound config changes are
+// applied by the daemon at next Echo-server restart (the SaveInboundConfig
+// RPC tears down + rebinds the listener so new addresses / disabled
+// toggles take effect immediately).
 type IntegrationsServiceServer interface {
 	ListIntegrations(context.Context, *ListIntegrationsRequest) (*IntegrationsConfig, error)
 	SaveIntegration(context.Context, *SaveIntegrationRequest) (*IntegrationsConfig, error)
 	DeleteIntegration(context.Context, *DeleteIntegrationRequest) (*IntegrationsConfig, error)
 	TestIntegration(context.Context, *TestIntegrationRequest) (*TestIntegrationResponse, error)
+	// v8.0 Echo: inbound HTTP listener configuration + status.
+	GetInboundStatus(context.Context, *GetInboundStatusRequest) (*InboundStatus, error)
+	SaveInboundConfig(context.Context, *SaveInboundConfigRequest) (*InboundStatus, error)
 	mustEmbedUnimplementedIntegrationsServiceServer()
 }
 
@@ -2666,6 +2698,12 @@ func (UnimplementedIntegrationsServiceServer) DeleteIntegration(context.Context,
 }
 func (UnimplementedIntegrationsServiceServer) TestIntegration(context.Context, *TestIntegrationRequest) (*TestIntegrationResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method TestIntegration not implemented")
+}
+func (UnimplementedIntegrationsServiceServer) GetInboundStatus(context.Context, *GetInboundStatusRequest) (*InboundStatus, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetInboundStatus not implemented")
+}
+func (UnimplementedIntegrationsServiceServer) SaveInboundConfig(context.Context, *SaveInboundConfigRequest) (*InboundStatus, error) {
+	return nil, status.Error(codes.Unimplemented, "method SaveInboundConfig not implemented")
 }
 func (UnimplementedIntegrationsServiceServer) mustEmbedUnimplementedIntegrationsServiceServer() {}
 func (UnimplementedIntegrationsServiceServer) testEmbeddedByValue()                             {}
@@ -2760,6 +2798,42 @@ func _IntegrationsService_TestIntegration_Handler(srv interface{}, ctx context.C
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IntegrationsService_GetInboundStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetInboundStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IntegrationsServiceServer).GetInboundStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IntegrationsService_GetInboundStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IntegrationsServiceServer).GetInboundStatus(ctx, req.(*GetInboundStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IntegrationsService_SaveInboundConfig_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SaveInboundConfigRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IntegrationsServiceServer).SaveInboundConfig(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IntegrationsService_SaveInboundConfig_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IntegrationsServiceServer).SaveInboundConfig(ctx, req.(*SaveInboundConfigRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // IntegrationsService_ServiceDesc is the grpc.ServiceDesc for IntegrationsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2782,6 +2856,14 @@ var IntegrationsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "TestIntegration",
 			Handler:    _IntegrationsService_TestIntegration_Handler,
+		},
+		{
+			MethodName: "GetInboundStatus",
+			Handler:    _IntegrationsService_GetInboundStatus_Handler,
+		},
+		{
+			MethodName: "SaveInboundConfig",
+			Handler:    _IntegrationsService_SaveInboundConfig_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

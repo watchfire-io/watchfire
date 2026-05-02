@@ -98,7 +98,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			m.integrationsForm.Reset()
 		}
 		if m.conn != nil {
-			return listIntegrationsCmd(m.conn)
+			// Fetch both outbound endpoints and v8.0 Echo inbound status
+			// so a Tab into the Inbound tab finds the data already loaded.
+			return tea.Batch(listIntegrationsCmd(m.conn), getInboundStatusCmd(m.conn))
 		}
 		return nil
 	}
@@ -450,9 +452,10 @@ func (m *Model) handleOverlayKey(msg tea.KeyMsg) tea.Cmd {
 	return nil
 }
 
-// handleIntegrationsKey handles input while the v7.0 Relay integrations
-// overlay is open. List mode: a/e/d/t shortcuts. Add mode: stacked form
-// with Tab-to-advance / Esc-to-cancel. Confirm-delete mode: y/n.
+// handleIntegrationsKey handles input while the integrations overlay is
+// open. List mode: a/e/d/t shortcuts (v7.0 outbound) or row navigation
+// (v8.0 inbound, when the Inbound tab is active). Add mode: stacked
+// form with Tab-to-advance / Esc-to-cancel. Confirm-delete mode: y/n.
 func (m *Model) handleIntegrationsKey(msg tea.KeyMsg) tea.Cmd {
 	f := m.integrationsForm
 	if f == nil {
@@ -465,6 +468,21 @@ func (m *Model) handleIntegrationsKey(msg tea.KeyMsg) tea.Cmd {
 		return m.handleIntegrationsAddKey(msg)
 	case integrationsModeConfirmDelete:
 		return m.handleIntegrationsConfirmDeleteKey(msg)
+	}
+
+	if f.Tab() == integrationsTabInbound {
+		return m.handleIntegrationsInboundKey(msg)
+	}
+
+	// Tab toggles between Outbound and Inbound when not editing —
+	// applies to the outbound list mode only (the inbound handler
+	// owns Tab in its own mode).
+	if msg.Type == tea.KeyTab {
+		f.SwitchTab()
+		if m.conn != nil {
+			return getInboundStatusCmd(m.conn)
+		}
+		return nil
 	}
 
 	switch msg.String() {
@@ -566,6 +584,60 @@ func (m *Model) handleIntegrationsAddKey(msg tea.KeyMsg) tea.Cmd {
 		ti := f.InputModel()
 		newTI, _ := ti.Update(msg)
 		*ti = newTI
+	}
+	return nil
+}
+
+// handleIntegrationsInboundKey owns key dispatch while the v8.0 Echo
+// Inbound tab is active. Selection mode: ↑↓ navigate, Enter edits or
+// toggles, Tab returns to the outbound tab. Edit mode: Enter commits +
+// dispatches saveInboundConfigCmd, Esc cancels.
+func (m *Model) handleIntegrationsInboundKey(msg tea.KeyMsg) tea.Cmd {
+	f := m.integrationsForm
+	if f.IsInboundEditing() {
+		switch msg.Type {
+		case tea.KeyEnter:
+			cfg := f.CommitInboundEdit()
+			if cfg == nil || m.conn == nil {
+				return nil
+			}
+			f.SetStatus("Saving inbound config…")
+			return saveInboundConfigCmd(m.conn, cfg)
+		case tea.KeyEsc:
+			f.CancelInboundEdit()
+			return nil
+		}
+		ti := f.InboundInputModel()
+		newTI, _ := ti.Update(msg)
+		*ti = newTI
+		return nil
+	}
+
+	switch msg.String() {
+	case "esc", "q":
+		m.activeOverlay = overlayNone
+		f.Reset()
+		return nil
+	case "up", "k":
+		f.MoveInboundCursor(-1)
+		return nil
+	case "down", "j":
+		f.MoveInboundCursor(+1)
+		return nil
+	case "enter":
+		f.StartInboundEdit()
+		// If the row was a toggle (Enabled), the draft mutated in place;
+		// flush so the daemon picks up the change without an extra Enter.
+		if !f.IsInboundEditing() && m.conn != nil {
+			f.SetStatus("Saving inbound config…")
+			return saveInboundConfigCmd(m.conn, f.FlushInboundDraft())
+		}
+		return nil
+	}
+
+	if msg.Type == tea.KeyTab {
+		f.SwitchTab()
+		return nil
 	}
 	return nil
 }

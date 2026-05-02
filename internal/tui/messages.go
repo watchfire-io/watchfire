@@ -139,3 +139,11 @@ type IntegrationTestedMsg struct {
 	Message    string
 	StatusCode int32
 }
+
+// InboundStatusLoadedMsg carries the v8.0 Echo InboundStatus from
+// GetInboundStatus / SaveInboundConfig RPCs. The Inbound tab in the
+// integrations overlay reads this to refresh the listening pill +
+// last-delivery rows.
+type InboundStatusLoadedMsg struct {
+	Status *pb.InboundStatus
+}
