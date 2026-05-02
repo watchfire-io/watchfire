@@ -1,0 +1,12 @@
+{
+  "username": "Watchfire",
+  "avatar_url": "https://watchfire.app/icon-256.png",
+  "embeds": [{
+    "title": "Task failed — Watchfire",
+    "description": "**#0042** Build the Discord adapter\n\n_tests failed: 3 of 12_",
+    "url": "watchfire://project/proj-abc/task/0042",
+    "color": 15680580,
+    "timestamp": "2026-05-02T12:34:56Z",
+    "footer": { "text": "Watchfire" }
+  }]
+}

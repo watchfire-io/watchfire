@@ -14,6 +14,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/watchfire-io/watchfire/internal/config"
+	"github.com/watchfire-io/watchfire/internal/daemon/notify"
+	"github.com/watchfire-io/watchfire/internal/daemon/relay"
 	"github.com/watchfire-io/watchfire/internal/models"
 	pb "github.com/watchfire-io/watchfire/proto"
 )
@@ -158,7 +160,7 @@ func (s *integrationsService) TestIntegration(ctx context.Context, req *pb.TestI
 		if ep.URL == "" {
 			return &pb.TestIntegrationResponse{Ok: false, Message: "discord URL not set in keyring"}, nil
 		}
-		return s.deliverTest(ctx, ep.URL, "TASK_FAILED")
+		return s.deliverDiscordTest(ctx, ep)
 	case pb.IntegrationKind_GITHUB:
 		// GitHub auto-PR has no synchronous test send — surface the
 		// gh CLI auth check status instead. Keeps this handler honest:
@@ -211,6 +213,68 @@ func (s *integrationsService) deliverTest(ctx context.Context, endpoint, kind st
 		Message:    msg,
 		StatusCode: int32(resp.StatusCode),
 	}, nil
+}
+
+// deliverDiscordTest renders + POSTs one Discord embed per supported
+// notification kind, so a single click of "Test" exercises every
+// template the v7.0 Relay Discord adapter ships. The aggregate response
+// rolls per-kind status into the message + sets ok=true only if every
+// kind succeeded; the status_code field carries the worst HTTP status
+// (or the last one on all-success).
+func (s *integrationsService) deliverDiscordTest(ctx context.Context, ep models.DiscordEndpoint) (*pb.TestIntegrationResponse, error) {
+	adapter, err := relay.NewDiscordAdapter(ep, s.httpClient, nil)
+	if err != nil {
+		return &pb.TestIntegrationResponse{Ok: false, Message: err.Error()}, nil
+	}
+
+	now := time.Now().UTC()
+	kinds := []notify.Kind{
+		notify.KindTaskFailed,
+		notify.KindRunComplete,
+		notify.KindWeeklyDigest,
+	}
+	allOK := true
+	var msgs []string
+	for _, kind := range kinds {
+		payload := syntheticDiscordPayload(kind, now)
+		if sendErr := adapter.Send(ctx, payload); sendErr != nil {
+			allOK = false
+			msgs = append(msgs, fmt.Sprintf("%s: %v", kind, sendErr))
+			continue
+		}
+		msgs = append(msgs, fmt.Sprintf("%s: OK", kind))
+	}
+	return &pb.TestIntegrationResponse{
+		Ok:      allOK,
+		Message: strings.Join(msgs, " · "),
+	}, nil
+}
+
+// syntheticDiscordPayload builds a self-contained sample Payload for
+// each notification kind, used by the Test handler so the user can
+// preview how each Discord embed renders without waiting for a real
+// failure / digest run.
+func syntheticDiscordPayload(kind notify.Kind, now time.Time) relay.Payload {
+	base := relay.Payload{
+		Version:      1,
+		Kind:         string(kind),
+		EmittedAt:    now,
+		ProjectID:    "test-project",
+		ProjectName:  "Watchfire test",
+		ProjectColor: "#3b82f6",
+		TaskNumber:   1,
+		TaskTitle:    "Watchfire Discord adapter test",
+		DeepLink:     "watchfire://project/test-project/task/0001",
+	}
+	switch kind {
+	case notify.KindTaskFailed:
+		base.TaskFailureReason = "synthetic test — your Discord adapter is wired up correctly"
+	case notify.KindWeeklyDigest:
+		base.DigestDate = now.Format("2006-01-02")
+		base.DeepLink = "watchfire://digest/" + base.DigestDate
+		base.DigestBody = "## Watchfire weekly digest test\n\nIf you can read this, your Discord channel is receiving WEEKLY_DIGEST notifications."
+	}
+	return base
 }
 
 // --- proto / model converters ---------------------------------------------

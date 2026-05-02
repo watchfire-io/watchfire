@@ -2,9 +2,12 @@ package server
 
 import (
 	"context"
+	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"sort"
 	"sync"
 	"testing"
 
@@ -314,5 +317,90 @@ func TestTestIntegrationDelivers(t *testing.T) {
 	}
 	if resp.GetOk() || resp.GetStatusCode() != http.StatusBadRequest {
 		t.Errorf("expected failure on 400, got ok=%v status=%d", resp.GetOk(), resp.GetStatusCode())
+	}
+}
+
+// TestTestIntegrationDiscordPostsAllKinds asserts that calling
+// TestIntegration with a Discord endpoint POSTs three payloads (one per
+// notification kind) — each parses as a Discord webhook envelope — and
+// the response message names every kind. Pinned by the v7.0 task 0064
+// acceptance criterion: "POSTs each notification kind through with a
+// valid Discord webhook payload".
+func TestTestIntegrationDiscordPostsAllKinds(t *testing.T) {
+	withTempHomeIntegrations(t)
+	mem := newMemSecretStore()
+	config.SetSecretStoreForTest(&memSecretStoreAdapter{inner: mem})
+	t.Cleanup(func() { config.SetSecretStoreForTest(nil) })
+
+	type captured struct {
+		Embeds []map[string]any `json:"embeds"`
+	}
+	var (
+		mu    sync.Mutex
+		calls []captured
+	)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		var c captured
+		if err := json.Unmarshal(body, &c); err != nil {
+			t.Errorf("server received non-JSON body: %v", err)
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		mu.Lock()
+		calls = append(calls, c)
+		mu.Unlock()
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(srv.Close)
+
+	svc := newIntegrationsService()
+	ctx := context.Background()
+
+	if _, err := svc.SaveIntegration(ctx, &pb.SaveIntegrationRequest{
+		Payload: &pb.SaveIntegrationRequest_Discord{
+			Discord: &pb.DiscordIntegration{Id: "d1", Url: srv.URL},
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	resp, err := svc.TestIntegration(ctx, &pb.TestIntegrationRequest{
+		Kind: pb.IntegrationKind_DISCORD, Id: "d1",
+	})
+	if err != nil {
+		t.Fatalf("test discord: %v", err)
+	}
+	if !resp.GetOk() {
+		t.Errorf("expected ok=true, got %v with msg=%q", resp.GetOk(), resp.GetMessage())
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+	if len(calls) != 3 {
+		t.Fatalf("want 3 POSTs (one per kind), got %d", len(calls))
+	}
+	gotTitles := make([]string, 0, 3)
+	for _, c := range calls {
+		if len(c.Embeds) != 1 {
+			t.Errorf("each POST should carry exactly one embed, got %d", len(c.Embeds))
+			continue
+		}
+		title, _ := c.Embeds[0]["title"].(string)
+		gotTitles = append(gotTitles, title)
+	}
+	sort.Strings(gotTitles)
+	wantTitles := []string{
+		"Run complete — Watchfire test",
+		"Task failed — Watchfire test",
+		"Watchfire — your week",
+	}
+	if len(gotTitles) != len(wantTitles) {
+		t.Fatalf("titles len = %d, want %d (got %v)", len(gotTitles), len(wantTitles), gotTitles)
+	}
+	for i, want := range wantTitles {
+		if gotTitles[i] != want {
+			t.Errorf("titles[%d] = %q, want %q", i, gotTitles[i], want)
+		}
 	}
 }
