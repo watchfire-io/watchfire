@@ -1,5 +1,15 @@
 import type { AgentStatus, Project, Task } from '../generated/watchfire_pb'
 
+export type DashboardFilter = 'all' | 'working' | 'needs-attention' | 'idle' | 'has-ready'
+
+export const DASHBOARD_FILTERS: DashboardFilter[] = [
+  'all',
+  'working',
+  'needs-attention',
+  'idle',
+  'has-ready'
+]
+
 /** Project has at least one non-deleted task with `status === 'done' && success === false`. */
 export function hasFailedTask(tasks: Task[] | undefined): boolean {
   if (!tasks) return false
@@ -73,4 +83,73 @@ export function projectOrderDiffers(a: Project[], b: Project[]): boolean {
     if (a[i].projectId !== b[i].projectId) return true
   }
   return false
+}
+
+/** Whether a project matches the given dashboard filter. */
+export function projectMatchesFilter(
+  filter: DashboardFilter,
+  tasks: Task[] | undefined,
+  status: AgentStatus | undefined
+): boolean {
+  switch (filter) {
+    case 'all':
+      return true
+    case 'working':
+      return isProjectWorking(status)
+    case 'needs-attention':
+      return hasFailedTask(tasks)
+    case 'idle':
+      return isProjectIdle(tasks, status)
+    case 'has-ready':
+      return hasReadyTask(tasks)
+  }
+}
+
+export interface DashboardCounts {
+  all: number
+  working: number
+  'needs-attention': number
+  idle: number
+  'has-ready': number
+}
+
+/**
+ * Per-filter project counts derived from a single pass over the project list.
+ * Shared by the aggregate status bar (task 0036) and the filter chips (task
+ * 0037) so the two surfaces never drift.
+ */
+export function dashboardCounts(
+  projects: Project[],
+  tasksByProjectId: Record<string, Task[]>,
+  agentStatuses: Record<string, AgentStatus>
+): DashboardCounts {
+  const counts: DashboardCounts = {
+    all: projects.length,
+    working: 0,
+    'needs-attention': 0,
+    idle: 0,
+    'has-ready': 0
+  }
+  for (const project of projects) {
+    const tasks = tasksByProjectId[project.projectId]
+    const status = agentStatuses[project.projectId]
+    if (isProjectWorking(status)) counts.working++
+    if (hasFailedTask(tasks)) counts['needs-attention']++
+    if (isProjectIdle(tasks, status)) counts.idle++
+    if (hasReadyTask(tasks)) counts['has-ready']++
+  }
+  return counts
+}
+
+/** Filter projects in place, preserving input order. */
+export function filterProjects(
+  projects: Project[],
+  filter: DashboardFilter,
+  tasksByProjectId: Record<string, Task[]>,
+  agentStatuses: Record<string, AgentStatus>
+): Project[] {
+  if (filter === 'all') return projects
+  return projects.filter((p) =>
+    projectMatchesFilter(filter, tasksByProjectId[p.projectId], agentStatuses[p.projectId])
+  )
 }
