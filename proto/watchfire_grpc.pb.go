@@ -2336,6 +2336,7 @@ const (
 	InsightsService_ExportReport_FullMethodName       = "/watchfire.InsightsService/ExportReport"
 	InsightsService_GetGlobalInsights_FullMethodName  = "/watchfire.InsightsService/GetGlobalInsights"
 	InsightsService_GetProjectInsights_FullMethodName = "/watchfire.InsightsService/GetProjectInsights"
+	InsightsService_GetTaskDiff_FullMethodName        = "/watchfire.InsightsService/GetTaskDiff"
 )
 
 // InsightsServiceClient is the client API for InsightsService service.
@@ -2344,12 +2345,14 @@ const (
 //
 // InsightsService handles cross-task analytics. v6.0 Ember scope is per-task
 // / per-project / fleet rollups in CSV + Markdown plus the dashboard
-// rollup. Future v6.x can extend with PDF / HTML / scheduled export without
+// rollup, plus the per-task structured diff for the inline diff viewer.
+// Future v6.x can extend with PDF / HTML / scheduled export without
 // breaking the wire.
 type InsightsServiceClient interface {
 	ExportReport(ctx context.Context, in *ExportReportRequest, opts ...grpc.CallOption) (*ExportReportResponse, error)
 	GetGlobalInsights(ctx context.Context, in *GetGlobalInsightsRequest, opts ...grpc.CallOption) (*GlobalInsights, error)
 	GetProjectInsights(ctx context.Context, in *GetProjectInsightsRequest, opts ...grpc.CallOption) (*ProjectInsights, error)
+	GetTaskDiff(ctx context.Context, in *GetTaskDiffRequest, opts ...grpc.CallOption) (*FileDiffSet, error)
 }
 
 type insightsServiceClient struct {
@@ -2390,18 +2393,30 @@ func (c *insightsServiceClient) GetProjectInsights(ctx context.Context, in *GetP
 	return out, nil
 }
 
+func (c *insightsServiceClient) GetTaskDiff(ctx context.Context, in *GetTaskDiffRequest, opts ...grpc.CallOption) (*FileDiffSet, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(FileDiffSet)
+	err := c.cc.Invoke(ctx, InsightsService_GetTaskDiff_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // InsightsServiceServer is the server API for InsightsService service.
 // All implementations must embed UnimplementedInsightsServiceServer
 // for forward compatibility.
 //
 // InsightsService handles cross-task analytics. v6.0 Ember scope is per-task
 // / per-project / fleet rollups in CSV + Markdown plus the dashboard
-// rollup. Future v6.x can extend with PDF / HTML / scheduled export without
+// rollup, plus the per-task structured diff for the inline diff viewer.
+// Future v6.x can extend with PDF / HTML / scheduled export without
 // breaking the wire.
 type InsightsServiceServer interface {
 	ExportReport(context.Context, *ExportReportRequest) (*ExportReportResponse, error)
 	GetGlobalInsights(context.Context, *GetGlobalInsightsRequest) (*GlobalInsights, error)
 	GetProjectInsights(context.Context, *GetProjectInsightsRequest) (*ProjectInsights, error)
+	GetTaskDiff(context.Context, *GetTaskDiffRequest) (*FileDiffSet, error)
 	mustEmbedUnimplementedInsightsServiceServer()
 }
 
@@ -2420,6 +2435,9 @@ func (UnimplementedInsightsServiceServer) GetGlobalInsights(context.Context, *Ge
 }
 func (UnimplementedInsightsServiceServer) GetProjectInsights(context.Context, *GetProjectInsightsRequest) (*ProjectInsights, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetProjectInsights not implemented")
+}
+func (UnimplementedInsightsServiceServer) GetTaskDiff(context.Context, *GetTaskDiffRequest) (*FileDiffSet, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetTaskDiff not implemented")
 }
 func (UnimplementedInsightsServiceServer) mustEmbedUnimplementedInsightsServiceServer() {}
 func (UnimplementedInsightsServiceServer) testEmbeddedByValue()                         {}
@@ -2496,6 +2514,24 @@ func _InsightsService_GetProjectInsights_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _InsightsService_GetTaskDiff_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTaskDiffRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InsightsServiceServer).GetTaskDiff(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InsightsService_GetTaskDiff_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InsightsServiceServer).GetTaskDiff(ctx, req.(*GetTaskDiffRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // InsightsService_ServiceDesc is the grpc.ServiceDesc for InsightsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2514,6 +2550,10 @@ var InsightsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetProjectInsights",
 			Handler:    _InsightsService_GetProjectInsights_Handler,
+		},
+		{
+			MethodName: "GetTaskDiff",
+			Handler:    _InsightsService_GetTaskDiff_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

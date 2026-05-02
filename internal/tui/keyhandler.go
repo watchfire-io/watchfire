@@ -203,6 +203,11 @@ func (m *Model) handleTaskListKey(msg tea.KeyMsg) tea.Cmd {
 	case key.Matches(msg, taskListKeys.Draft):
 		return m.setSelectedTaskStatus("draft")
 	case key.Matches(msg, taskListKeys.Done):
+		// On a completed task, `d` opens the inline diff viewer overlay
+		// (v6.0 Ember). Otherwise it sets the task to done as usual.
+		if t := m.taskList.SelectedTask(); t != nil && t.Status == "done" {
+			return m.openTaskDiffOverlay()
+		}
 		return m.setSelectedTaskDone()
 	case key.Matches(msg, taskListKeys.Delete):
 		return m.confirmDeleteTask()
@@ -423,6 +428,9 @@ func (m *Model) handleOverlayKey(msg tea.KeyMsg) tea.Cmd {
 
 	case overlayProjectInsights:
 		return m.handleProjectInsightsKey(msg)
+
+	case overlayTaskDiff:
+		return m.handleTaskDiffKey(msg)
 	}
 	return nil
 }

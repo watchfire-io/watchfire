@@ -713,12 +713,76 @@ message ProjectInsights {
   google.protobuf.Timestamp window_end = 14;
 }
 
+// GetTaskDiffRequest names a task whose diff the daemon should compute
+// against either the still-existing `watchfire/<n>` branch or, if the
+// branch was already merged + deleted, the canonical merge commit on the
+// project's default branch.
+message GetTaskDiffRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+  int32 task_number = 3;
+}
+
+// FileDiffSet is the structured top-level shape returned by
+// `InsightsService.GetTaskDiff`. The GUI / TUI render natively from this
+// — no unified-diff parsing required. `truncated` flips when the daemon
+// caps a >MaxDiffLines result.
+message FileDiffSet {
+  repeated FileDiff files = 1;
+  int32 total_additions = 2;
+  int32 total_deletions = 3;
+  bool truncated = 4;
+}
+
+// FileDiff is one file-level entry inside a FileDiffSet. Binary files
+// surface as `status=MODIFIED, hunks=[]` with a synthetic single hunk
+// whose header reads "Binary file changed" — consumers can render a
+// clear marker without trying to display bytes.
+message FileDiff {
+  string path = 1;
+  enum Status {
+    MODIFIED = 0;
+    ADDED = 1;
+    DELETED = 2;
+    RENAMED = 3;
+  }
+  Status status = 2;
+  string old_path = 3;
+  repeated Hunk hunks = 4;
+}
+
+// Hunk corresponds to one `@@ -<oldStart>,<oldLines> +<newStart>,<newLines> @@`
+// region of a unified diff. `header` carries the trailing context label
+// git emits after the second `@@` (the function name, when available).
+message Hunk {
+  int32 old_start = 1;
+  int32 old_lines = 2;
+  int32 new_start = 3;
+  int32 new_lines = 4;
+  string header = 5;
+  repeated DiffLine lines = 6;
+}
+
+// DiffLine is one line inside a Hunk. `text` excludes the leading +/-/space
+// prefix; the kind tag carries that semantic.
+message DiffLine {
+  enum Kind {
+    CONTEXT = 0;
+    ADD = 1;
+    DEL = 2;
+  }
+  Kind kind = 1;
+  string text = 2;
+}
+
 // InsightsService handles cross-task analytics. v6.0 Ember scope is per-task
 // / per-project / fleet rollups in CSV + Markdown plus the dashboard
-// rollup. Future v6.x can extend with PDF / HTML / scheduled export without
+// rollup, plus the per-task structured diff for the inline diff viewer.
+// Future v6.x can extend with PDF / HTML / scheduled export without
 // breaking the wire.
 service InsightsService {
   rpc ExportReport(ExportReportRequest) returns (ExportReportResponse);
   rpc GetGlobalInsights(GetGlobalInsightsRequest) returns (GlobalInsights);
   rpc GetProjectInsights(GetProjectInsightsRequest) returns (ProjectInsights);
+  rpc GetTaskDiff(GetTaskDiffRequest) returns (FileDiffSet);
 }

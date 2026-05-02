@@ -42,7 +42,7 @@ var helpSections = []helpSection{
 			{"!", "Start all ready tasks"},
 			{"r", "Set task to Ready"},
 			{"t", "Set task to Draft"},
-			{"d", "Mark task Done"},
+			{"d", "Mark Done · or open diff if Done"},
 			{"i", "Project insights"},
 			{"/", "Search tasks"},
 			{"x", "Delete task (soft)"},
