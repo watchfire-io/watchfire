@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/posthog/posthog-go"
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -51,6 +53,18 @@ func (s *settingsService) UpdateSettings(_ context.Context, req *pb.UpdateSettin
 			}
 		}
 		settings.Defaults.DefaultAgent = req.Defaults.DefaultAgent
+
+		// Custom shell path for the GUI's in-app terminal (issue #32). Empty
+		// means "use $SHELL via login-shell autodetection". A non-empty value
+		// must point at an executable file the user can actually run; we
+		// validate with X_OK semantics here so a typo is rejected at save
+		// time rather than producing a silently-broken terminal later.
+		if req.Defaults.TerminalShell != "" {
+			if err := validateExecutablePath(req.Defaults.TerminalShell); err != nil {
+				return nil, fmt.Errorf("invalid terminal_shell %q: %w", req.Defaults.TerminalShell, err)
+			}
+		}
+		settings.Defaults.TerminalShell = req.Defaults.TerminalShell
 
 		if req.Defaults.Notifications != nil {
 			incoming := notificationsFromProto(req.Defaults.Notifications)
@@ -137,4 +151,28 @@ func (s *settingsService) ListAgents(_ context.Context, _ *emptypb.Empty) (*pb.A
 		})
 	}
 	return &pb.AgentList{Agents: agents}, nil
+}
+
+// validateExecutablePath returns nil iff path points at a regular file the
+// caller can execute. Mirrors the GUI's pre-save fs.access(path, X_OK) check
+// so a malformed terminal_shell setting is rejected by both surfaces with the
+// same semantics.
+func validateExecutablePath(path string) error {
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("path must be absolute")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return fmt.Errorf("is a directory")
+	}
+	// At least one execute bit set. We can't run access(2) directly without
+	// CGo, but on POSIX a regular file with any X bit is generally executable
+	// for someone — the kernel makes the final call when the user spawns it.
+	if info.Mode().Perm()&0o111 == 0 {
+		return fmt.Errorf("not executable")
+	}
+	return nil
 }

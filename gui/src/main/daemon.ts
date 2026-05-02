@@ -1,48 +1,11 @@
 import { existsSync, readFileSync } from 'fs'
 import { join, resolve } from 'path'
-import { homedir, platform } from 'os'
+import { homedir } from 'os'
 import { spawn, execSync } from 'child_process'
 import { createConnection } from 'net'
 import { parse } from 'yaml'
 import { app } from 'electron'
-
-/**
- * Resolve the user's login shell PATH.
- * macOS GUI apps inherit a minimal environment (PATH=/usr/bin:/bin:/usr/sbin:/sbin)
- * which is missing user-installed tool paths like ~/.local/bin. This causes
- * spawned agents (e.g. Claude Code) to run in a degraded environment that can
- * break authentication and billing routing.
- */
-function resolveShellEnv(): Record<string, string> {
-  const env: Record<string, string> = { ...process.env }
-  if (platform() !== 'darwin' && platform() !== 'linux') return env
-
-  try {
-    const shell = process.env.SHELL || '/bin/zsh'
-    // Run a login shell to get the full PATH
-    const fullPath = execSync(`${shell} -l -c 'echo $PATH'`, {
-      encoding: 'utf-8',
-      timeout: 5000
-    }).trim()
-    if (fullPath) {
-      env.PATH = fullPath
-    }
-  } catch {
-    // Fallback: manually prepend common user paths
-    const home = homedir()
-    const userPaths = [
-      join(home, '.local', 'bin'),
-      '/opt/homebrew/bin',
-      '/usr/local/bin'
-    ]
-    const currentPath = process.env.PATH || ''
-    const missing = userPaths.filter((p) => !currentPath.includes(p))
-    if (missing.length > 0) {
-      env.PATH = [...missing, currentPath].join(':')
-    }
-  }
-  return env
-}
+import { loginShellEnv } from './login-shell'
 
 export interface DaemonInfo {
   host: string
@@ -86,10 +49,13 @@ export async function ensureDaemon(): Promise<DaemonInfo> {
 
   // Start daemon in background with the user's full shell environment.
   // Without this, macOS GUI apps pass a minimal env that breaks agent auth.
+  // Shares the cached login-shell env with the in-app terminal (issue #32)
+  // so we only pay the login-shell exec cost once per Electron process.
+  const env = await loginShellEnv()
   const child = spawn(daemonPath, [], {
     detached: true,
     stdio: 'ignore',
-    env: resolveShellEnv()
+    env: env as NodeJS.ProcessEnv
   })
   child.unref()
 

@@ -1,6 +1,11 @@
 import { BrowserWindow } from 'electron'
 import { randomUUID } from 'crypto'
 import { createRequire } from 'module'
+import { existsSync, readFileSync, statSync } from 'fs'
+import { homedir } from 'os'
+import { join } from 'path'
+import { parse } from 'yaml'
+import { loginShellEnv } from './login-shell'
 
 // Use createRequire to load native module at runtime — bypasses Rollup bundling
 const _require = createRequire(import.meta.url || __filename)
@@ -24,18 +29,41 @@ function safeSend(channel: string, data: unknown): void {
   }
 }
 
-export function createPty(cwd: string): string {
+// Read defaults.terminal_shell from ~/.watchfire/settings.yaml. Returns the
+// configured path iff it points at an executable; otherwise null. We re-read
+// the file on each PTY spawn (not cached) so a settings change takes effect
+// on the next new tab without an app relaunch — the file is tiny and the
+// stat/read cost is dwarfed by the PTY spawn itself.
+function readConfiguredShell(): string | null {
+  try {
+    const path = join(homedir(), '.watchfire', 'settings.yaml')
+    if (!existsSync(path)) return null
+    const raw = readFileSync(path, 'utf-8')
+    const parsed = parse(raw) as { defaults?: { terminal_shell?: string } } | null
+    const shell = parsed?.defaults?.terminal_shell?.trim()
+    if (!shell) return null
+    const info = statSync(shell)
+    if (!info.isFile()) return null
+    if ((info.mode & 0o111) === 0) return null
+    return shell
+  } catch {
+    return null
+  }
+}
+
+export async function createPty(cwd: string): Promise<string> {
   if (!win) throw new Error('No window set')
 
   const id = randomUUID()
-  const shell = process.env.SHELL || '/bin/zsh'
+  const env = await loginShellEnv()
+  const shell = readConfiguredShell() || process.env.SHELL || '/bin/zsh'
 
   const p = pty.spawn(shell, [], {
     name: 'xterm-256color',
     cols: 80,
     rows: 24,
     cwd,
-    env: { ...process.env } as Record<string, string>
+    env: env as Record<string, string>
   })
 
   p.onData((data) => {

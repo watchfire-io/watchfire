@@ -2,6 +2,8 @@ package tui
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -13,6 +15,28 @@ import (
 	"github.com/watchfire-io/watchfire/internal/models"
 	pb "github.com/watchfire-io/watchfire/proto"
 )
+
+// validateExecutablePath mirrors the daemon-side check
+// (`server/settings_service.go:validateExecutablePath`) so the TUI can give
+// the user immediate feedback before sending an UpdateSettings RPC. The
+// daemon repeats the check on save — this client-side copy is a UX
+// optimisation, not the source of truth.
+func validateExecutablePath(path string) error {
+	if !filepath.IsAbs(path) {
+		return fmt.Errorf("path must be absolute")
+	}
+	info, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	if info.IsDir() {
+		return fmt.Errorf("is a directory")
+	}
+	if info.Mode().Perm()&0o111 == 0 {
+		return fmt.Errorf("not executable")
+	}
+	return nil
+}
 
 // askPerProjectValue is the sentinel stored in Settings.Defaults.DefaultAgent
 // to mean "prompt at init time". It must be empty so it round-trips
@@ -65,9 +89,15 @@ type GlobalSettingsForm struct {
 	defaultOptions []CycleOption
 	defaultIndex   int
 
+	// terminalShell is the absolute path to the shell binary the GUI's
+	// in-app terminal should spawn (issue #32). Empty = use $SHELL with
+	// login-shell autodetection. Editable via the form, persisted in
+	// settings.yaml under defaults.terminal_shell.
+	terminalShell string
+
 	notify notifyState
 
-	cursor  int // 0..len(agentRows)-1 = agent paths, then default, then notify rows
+	cursor  int // 0..len(agentRows)-1 = agent paths, default, terminal_shell, then notify rows
 	editing bool
 	input   textinput.Model
 	width   int
@@ -138,6 +168,7 @@ func (g *GlobalSettingsForm) Load(s *pb.Settings) {
 		}
 	}
 	g.defaultIndex = 0
+	g.terminalShell = ""
 	if s != nil && s.Defaults != nil {
 		for i, o := range g.defaultOptions {
 			if o.Value == s.Defaults.DefaultAgent {
@@ -145,6 +176,7 @@ func (g *GlobalSettingsForm) Load(s *pb.Settings) {
 				break
 			}
 		}
+		g.terminalShell = s.Defaults.TerminalShell
 	}
 
 	// Notifications — fall back to defaults when the daemon hasn't sent the
@@ -219,14 +251,17 @@ func (g *GlobalSettingsForm) Reset() {
 }
 
 func (g *GlobalSettingsForm) rowCount() int {
-	return len(g.agentRows) + 1 + int(notifyRowCount)
+	return len(g.agentRows) + 2 + int(notifyRowCount)
 }
 
 // defaultCursor is the index of the global-default row.
 func (g *GlobalSettingsForm) defaultCursor() int { return len(g.agentRows) }
 
+// terminalCursor is the index of the terminal-shell row.
+func (g *GlobalSettingsForm) terminalCursor() int { return len(g.agentRows) + 1 }
+
 // notifyCursorBase is the index of the first notification row.
-func (g *GlobalSettingsForm) notifyCursorBase() int { return len(g.agentRows) + 1 }
+func (g *GlobalSettingsForm) notifyCursorBase() int { return len(g.agentRows) + 2 }
 
 // notifyRowAtCursor returns which notification row the cursor is on, or -1
 // if the cursor is not on a notification row.
@@ -274,6 +309,12 @@ func (g *GlobalSettingsForm) StartEdit() bool {
 		g.input.Focus()
 		return true
 	}
+	if g.cursor == g.terminalCursor() {
+		g.editing = true
+		g.input.SetValue(g.terminalShell)
+		g.input.Focus()
+		return true
+	}
 	switch g.notifyRowAtCursor() {
 	case notifyRowVolume:
 		g.editing = true
@@ -303,12 +344,14 @@ func (g *GlobalSettingsForm) CancelEdit() {
 // EditResult is what FinishEdit returns. Callers branch on Kind to know which
 // RPC to fire. AgentName/Path apply only to EditAgentPath; NotifyChanged
 // applies to any notify-row edit and signals the caller to push the whole
-// notifications block.
+// notifications block; TerminalShell carries the new shell path on
+// EditTerminalShell.
 type EditResult struct {
 	Kind          EditKind
 	AgentName     string
 	Path          string
 	NotifyChanged bool
+	TerminalShell string
 	Err           string // non-empty when the edit was rejected (e.g. malformed HH:MM)
 }
 
@@ -319,6 +362,7 @@ const (
 	EditNone EditKind = iota
 	EditAgentPath
 	EditNotify
+	EditTerminalShell
 )
 
 // FinishEdit applies the edit. The returned EditResult tells the caller what
@@ -339,6 +383,24 @@ func (g *GlobalSettingsForm) FinishEdit() EditResult {
 		}
 		row.Path = newPath
 		return EditResult{Kind: EditAgentPath, AgentName: row.Name, Path: newPath}
+	}
+
+	if g.cursor == g.terminalCursor() {
+		newShell := strings.TrimSpace(g.input.Value())
+		if newShell == g.terminalShell {
+			return EditResult{}
+		}
+		// Validate locally before sending — a bad path produces a clear
+		// status-bar message instead of a daemon-side error round-trip. We
+		// still let the daemon do the authoritative X_OK check on save so
+		// the contract matches the GUI.
+		if newShell != "" {
+			if err := validateExecutablePath(newShell); err != nil {
+				return EditResult{Err: fmt.Sprintf("invalid terminal shell %q: %v", newShell, err)}
+			}
+		}
+		g.terminalShell = newShell
+		return EditResult{Kind: EditTerminalShell, TerminalShell: newShell}
 	}
 
 	switch g.notifyRowAtCursor() {
@@ -476,6 +538,9 @@ func (g *GlobalSettingsForm) View() string {
 	if l := len("Global default:"); l > labelWidth {
 		labelWidth = l
 	}
+	if l := len("Terminal shell:"); l > labelWidth {
+		labelWidth = l
+	}
 	labelStyle := settingsLabelStyle.Width(labelWidth + 1)
 
 	for i, r := range g.agentRows {
@@ -512,6 +577,24 @@ func (g *GlobalSettingsForm) View() string {
 		dline = settingsCursorStyle.Render(dline)
 	}
 	lines = append(lines, dline)
+
+	// Section: terminal shell (in-app terminal, issue #32)
+	lines = append(lines, "")
+	lines = append(lines, lipgloss.NewStyle().Bold(true).Foreground(colorCyan).Render("Terminal Shell"))
+	tlabel := labelStyle.Render("Path:")
+	var tval string
+	if g.editing && g.cursor == g.terminalCursor() {
+		tval = g.input.View()
+	} else if g.terminalShell == "" {
+		tval = lipgloss.NewStyle().Foreground(colorDim).Render("($SHELL — login-shell autodetect)")
+	} else {
+		tval = settingsValueStyle.Render(g.terminalShell)
+	}
+	tline := "  " + tlabel + " " + tval
+	if g.cursor == g.terminalCursor() {
+		tline = settingsCursorStyle.Render(tline)
+	}
+	lines = append(lines, tline)
 
 	// Section: notifications
 	lines = append(lines, "")

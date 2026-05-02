@@ -52,6 +52,10 @@ interface WatchfireAPI {
   // Open a project path in an external IDE / file manager
   openInIDE(ide: string, projectPath: string): Promise<{ ok: boolean; error?: string }>
 
+  // Browse for a custom shell binary (issue #32 / `defaults.terminal_shell`).
+  // Returns the absolute path on pick, null on cancel.
+  browseShellBinary(): Promise<string | null>
+
   // Bring the main window to the foreground
   focusWindow(): Promise<void>
 

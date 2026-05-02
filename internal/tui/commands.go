@@ -448,15 +448,18 @@ func getSettingsCmd(conn *grpc.ClientConn) tea.Cmd {
 // block is sent. agents carries a merge of agent path edits; nil means no
 // change. notifications, when non-nil, replaces the notifications block in
 // defaults; the daemon validates it before persisting and rolls back on
-// malformed quiet-hours values. Any of these nil → no change for that field.
-func updateGlobalSettingsCmd(conn *grpc.ClientConn, defaultAgent *string, agents map[string]string, notifications *pb.NotificationsConfig) tea.Cmd {
+// malformed quiet-hours values. terminalShell, when non-nil, sets the GUI
+// in-app terminal's shell path (issue #32) — empty string clears it back to
+// $SHELL autodetection, non-empty must be an executable file. Any of these
+// nil → no change for that field.
+func updateGlobalSettingsCmd(conn *grpc.ClientConn, defaultAgent *string, agents map[string]string, notifications *pb.NotificationsConfig, terminalShell *string) tea.Cmd {
 	return func() tea.Msg {
 		client := pb.NewSettingsServiceClient(conn)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		req := &pb.UpdateSettingsRequest{}
-		if defaultAgent != nil || notifications != nil {
+		if defaultAgent != nil || notifications != nil || terminalShell != nil {
 			// Load current defaults so we don't zero out the other fields.
 			cur, err := client.GetSettings(ctx, &emptypb.Empty{})
 			if err != nil {
@@ -471,6 +474,9 @@ func updateGlobalSettingsCmd(conn *grpc.ClientConn, defaultAgent *string, agents
 			}
 			if notifications != nil {
 				d.Notifications = notifications
+			}
+			if terminalShell != nil {
+				d.TerminalShell = *terminalShell
 			}
 			req.Defaults = d
 		}

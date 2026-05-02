@@ -71,6 +71,10 @@ type DefaultsConfig struct {
 	DefaultSandbox   string              `yaml:"default_sandbox"`
 	DefaultAgent     string              `yaml:"default_agent"`
 	Notifications    NotificationsConfig `yaml:"notifications"`
+	// TerminalShell is the absolute path to the shell binary the GUI's
+	// in-app terminal should spawn. Empty means "use $SHELL with login-shell
+	// PATH detection" (issue #32). Persisted under defaults.terminal_shell.
+	TerminalShell string `yaml:"terminal_shell"`
 }
 
 // UpdatesConfig holds settings for update checking.
