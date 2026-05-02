@@ -25,6 +25,10 @@ const (
 
 	// LogsDirName is the name of the logs directory.
 	LogsDirName = "logs"
+
+	// DigestsDirName is the name of the directory where weekly digests are
+	// persisted (one Markdown file per fire date).
+	DigestsDirName = "digests"
 )
 
 // File names
@@ -148,6 +152,26 @@ func EnsureGlobalDir() error {
 // EnsureGlobalLogsDir creates the global logs directory if it doesn't exist.
 func EnsureGlobalLogsDir() error {
 	dir, err := GlobalLogsDir()
+	if err != nil {
+		return err
+	}
+	return os.MkdirAll(dir, 0o755)
+}
+
+// GlobalDigestsDir returns the path to the weekly-digests directory
+// (~/.watchfire/digests/). Each digest is persisted there as
+// <YYYY-MM-DD>.md by `internal/daemon/server/digest.go`.
+func GlobalDigestsDir() (string, error) {
+	dir, err := GlobalDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, DigestsDirName), nil
+}
+
+// EnsureGlobalDigestsDir creates the digests directory if it doesn't exist.
+func EnsureGlobalDigestsDir() error {
+	dir, err := GlobalDigestsDir()
 	if err != nil {
 		return err
 	}

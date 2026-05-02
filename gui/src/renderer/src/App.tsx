@@ -7,12 +7,14 @@ import { useFocusStore } from './stores/focus-store'
 // disk-fetch latency. The store exposes `notify(kind, ...)`; the gRPC stream
 // subscriber from task 0049 is the call site.
 import { useNotificationsStore } from './stores/notifications-store'
+import { useDigestStore } from './stores/digest-store'
 import { Sidebar } from './components/Sidebar'
 import { Dashboard } from './views/Dashboard/Dashboard'
 import { AddProjectWizard } from './views/AddProject/AddProjectWizard'
 import { ProjectView } from './views/ProjectView/ProjectView'
 import { GlobalSettings } from './views/Settings/GlobalSettings'
 import { UpdateBanner } from './components/UpdateBanner'
+import { DigestModal } from './components/digest/DigestModal'
 
 // Eagerly read the store so its factory runs at app load — that's where the
 // two notification-sound Audio elements get preloaded so the first play()
@@ -41,11 +43,23 @@ export default function App() {
     })
   }, [stopReconnect, stopFocus, stopNotifications])
 
-  // When the user clicks an OS notification, route to the failing project's
-  // TasksTab. Main process focuses the window first, so this just handles
-  // the in-renderer routing.
+  // When the user clicks an OS notification, route by kind. v6.0 Ember
+  // WEEKLY_DIGEST clicks open the DigestModal with today's digest;
+  // TASK_FAILED / RUN_COMPLETE route to the failing project's TasksTab.
   useEffect(() => {
-    window.watchfire.onNotificationClick(({ projectId, taskNumber }) => {
+    window.watchfire.onNotificationClick(({ kind, projectId, taskNumber }) => {
+      if (kind === 'WEEKLY_DIGEST') {
+        // The daemon persists each digest under YYYY-MM-DD; open the most
+        // recent one. The store handles the IPC read.
+        void useDigestStore
+          .getState()
+          .refreshList()
+          .then(() => {
+            const latest = useDigestStore.getState().list[0]
+            if (latest) void useDigestStore.getState().open(latest)
+          })
+        return
+      }
       if (!projectId) return
       requestFocus({
         projectId,
@@ -138,6 +152,11 @@ export default function App() {
           </>
         )}
       </main>
+
+      {/* v6.0 Ember — globally-mounted digest modal opens whenever a
+          WEEKLY_DIGEST event lands or the user clicks the bell-icon
+          notification center's Digests tab. */}
+      <DigestModal />
     </div>
   )
 }

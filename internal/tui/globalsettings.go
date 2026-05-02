@@ -51,6 +51,8 @@ const (
 	notifyRowEnabled notifyRow = iota
 	notifyRowEventTaskFailed
 	notifyRowEventRunComplete
+	notifyRowEventWeeklyDigest // v6.0 Ember
+	notifyRowDigestSchedule    // v6.0 Ember — cycle through preset cadences
 	notifyRowSoundsEnabled
 	notifyRowSoundTaskFailed
 	notifyRowSoundRunComplete
@@ -65,16 +67,33 @@ const (
 // Kept in the form so the View() can render and the dispatch layer can roll
 // the whole thing up into a NotificationsConfig proto on save.
 type notifyState struct {
-	Enabled          bool
-	EventTaskFailed  bool
-	EventRunComplete bool
-	SoundsEnabled    bool
-	SoundTaskFailed  bool
-	SoundRunComplete bool
-	Volume           int // 0..100, displayed as N% and persisted as float32 N/100
-	QuietEnabled     bool
-	QuietStart       string
-	QuietEnd         string
+	Enabled            bool
+	EventTaskFailed    bool
+	EventRunComplete   bool
+	EventWeeklyDigest  bool   // v6.0 Ember
+	DigestSchedule     string // v6.0 Ember — cron-ish "MON 09:00" / "DAILY 17:00"
+	SoundsEnabled      bool
+	SoundTaskFailed    bool
+	SoundRunComplete   bool
+	Volume             int    // 0..100, displayed as N% and persisted as float32 N/100
+	QuietEnabled       bool
+	QuietStart         string
+	QuietEnd           string
+}
+
+// digestSchedulePresets are the cron-ish strings the TUI cycles through on
+// the digest-schedule row. Mirrors the GUI's SCHEDULE_PRESETS.
+var digestSchedulePresets = []string{"MON 09:00", "MON 18:00", "FRI 17:00", "DAILY 09:00"}
+
+// nextDigestSchedule cycles to the next preset after the current value.
+// Unknown values reset to the first preset.
+func nextDigestSchedule(current string) string {
+	for i, p := range digestSchedulePresets {
+		if p == current {
+			return digestSchedulePresets[(i+1)%len(digestSchedulePresets)]
+		}
+	}
+	return digestSchedulePresets[0]
 }
 
 // GlobalSettingsForm is the overlay used to edit ~/.watchfire/settings.yaml.
@@ -188,6 +207,10 @@ func (g *GlobalSettingsForm) Load(s *pb.Settings) {
 		if n.Events != nil {
 			g.notify.EventTaskFailed = n.Events.TaskFailed
 			g.notify.EventRunComplete = n.Events.RunComplete
+			g.notify.EventWeeklyDigest = n.Events.WeeklyDigest
+		}
+		if n.DigestSchedule != "" {
+			g.notify.DigestSchedule = n.DigestSchedule
 		}
 		if n.Sounds != nil {
 			g.notify.SoundsEnabled = n.Sounds.Enabled
@@ -209,16 +232,18 @@ func (g *GlobalSettingsForm) Load(s *pb.Settings) {
 
 func defaultNotifyState() notifyState {
 	return notifyState{
-		Enabled:          true,
-		EventTaskFailed:  true,
-		EventRunComplete: true,
-		SoundsEnabled:    true,
-		SoundTaskFailed:  true,
-		SoundRunComplete: true,
-		Volume:           60,
-		QuietEnabled:     false,
-		QuietStart:       "22:00",
-		QuietEnd:         "08:00",
+		Enabled:           true,
+		EventTaskFailed:   true,
+		EventRunComplete:  true,
+		EventWeeklyDigest: false,
+		DigestSchedule:    "MON 09:00",
+		SoundsEnabled:     true,
+		SoundTaskFailed:   true,
+		SoundRunComplete:  true,
+		Volume:            60,
+		QuietEnabled:      false,
+		QuietStart:        "22:00",
+		QuietEnd:          "08:00",
 	}
 }
 
@@ -474,6 +499,12 @@ func (g *GlobalSettingsForm) ToggleNotify() bool {
 		g.notify.EventTaskFailed = !g.notify.EventTaskFailed
 	case notifyRowEventRunComplete:
 		g.notify.EventRunComplete = !g.notify.EventRunComplete
+	case notifyRowEventWeeklyDigest:
+		g.notify.EventWeeklyDigest = !g.notify.EventWeeklyDigest
+	case notifyRowDigestSchedule:
+		// The digest-schedule row cycles through presets rather than a
+		// boolean. Toggle == cycle.
+		g.notify.DigestSchedule = nextDigestSchedule(g.notify.DigestSchedule)
 	case notifyRowSoundsEnabled:
 		g.notify.SoundsEnabled = !g.notify.SoundsEnabled
 	case notifyRowSoundTaskFailed:
@@ -494,8 +525,9 @@ func (g *GlobalSettingsForm) NotificationsProto() *pb.NotificationsConfig {
 	return &pb.NotificationsConfig{
 		Enabled: g.notify.Enabled,
 		Events: &pb.NotificationsEvents{
-			TaskFailed:  g.notify.EventTaskFailed,
-			RunComplete: g.notify.EventRunComplete,
+			TaskFailed:   g.notify.EventTaskFailed,
+			RunComplete:  g.notify.EventRunComplete,
+			WeeklyDigest: g.notify.EventWeeklyDigest,
 		},
 		Sounds: &pb.NotificationsSounds{
 			Enabled:     g.notify.SoundsEnabled,
@@ -508,6 +540,7 @@ func (g *GlobalSettingsForm) NotificationsProto() *pb.NotificationsConfig {
 			Start:   g.notify.QuietStart,
 			End:     g.notify.QuietEnd,
 		},
+		DigestSchedule: g.notify.DigestSchedule,
 	}
 }
 
@@ -602,6 +635,8 @@ func (g *GlobalSettingsForm) View() string {
 	lines = append(lines, g.notifyToggleLine("Enable notifications", g.notify.Enabled, notifyRowEnabled))
 	lines = append(lines, g.notifyToggleLine("Notify on task failure", g.notify.EventTaskFailed, notifyRowEventTaskFailed))
 	lines = append(lines, g.notifyToggleLine("Notify on run complete", g.notify.EventRunComplete, notifyRowEventRunComplete))
+	lines = append(lines, g.notifyToggleLine("Send weekly digest", g.notify.EventWeeklyDigest, notifyRowEventWeeklyDigest))
+	lines = append(lines, g.notifyValueLine("Digest schedule", g.notify.DigestSchedule, notifyRowDigestSchedule))
 
 	lines = append(lines, "")
 	lines = append(lines, lipgloss.NewStyle().Bold(true).Foreground(colorCyan).Render("Sounds"))

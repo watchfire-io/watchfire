@@ -55,6 +55,7 @@ type NotificationKind int
 const (
 	NotificationTaskFailed NotificationKind = iota
 	NotificationRunComplete
+	NotificationWeeklyDigest
 )
 
 // ShouldNotify combines all the gates a notification has to pass before it
@@ -75,6 +76,10 @@ func ShouldNotify(kind NotificationKind, cfg NotificationsConfig, projectMuted b
 		}
 	case NotificationRunComplete:
 		if !cfg.Events.RunComplete {
+			return false
+		}
+	case NotificationWeeklyDigest:
+		if !cfg.Events.WeeklyDigest {
 			return false
 		}
 	}

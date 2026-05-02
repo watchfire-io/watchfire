@@ -276,6 +276,14 @@ func emitFocus(action ClickAction) {
 				TaskNumber: action.TaskNumber,
 			})
 		}
+	case ClickFocusDigest:
+		openGUI()
+		if focusBus != nil {
+			focusBus.Emit(focus.Event{
+				Target:     focus.TargetDigest,
+				DigestDate: action.DigestDate,
+			})
+		}
 	case ClickOpenWatchfire:
 		openGUI()
 	case ClickOpenDashboard:
@@ -459,6 +467,7 @@ func snapshotInputs() MenuInputs {
 		projectNames[p.ProjectID] = p.ProjectName
 	}
 	notifs, todayCount := LoadRecentNotifications(logsDir, projectIDs, projectNames, time.Now())
+	latestDigest := LoadLatestDigest(state.DigestsDir())
 
 	agentByID := make(map[string]AgentInfo, len(agents))
 	for _, a := range agents {
@@ -498,6 +507,7 @@ func snapshotInputs() MenuInputs {
 		Projects:                infos,
 		Notifications:           notifs,
 		NotificationsTodayCount: todayCount,
+		LatestDigest:            latestDigest,
 		UpdateAvailable:         updateAvail,
 		UpdateVersion:           updateVer,
 	}

@@ -21,6 +21,11 @@ type DaemonState interface {
 	// (typically `~/.watchfire/logs/`). Used by the Notifications submenu
 	// to read each project's `notifications.log` file.
 	LogsDir() string
+
+	// DigestsDir returns the absolute path to the global digests directory
+	// (typically `~/.watchfire/digests/`). Used by the Notifications submenu
+	// to surface the most recent weekly digest as the topmost row.
+	DigestsDir() string
 }
 
 // AgentInfo describes a running agent for display in the tray menu.

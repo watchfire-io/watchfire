@@ -226,6 +226,13 @@ func (l *lazyDaemonState) LogsDir() string {
 	return ""
 }
 
+func (l *lazyDaemonState) DigestsDir() string {
+	if srv := l.getSrv(); srv != nil {
+		return server.NewTrayState(srv).DigestsDir()
+	}
+	return ""
+}
+
 // waitForPort polls until a TCP connection to the given port succeeds or the timeout expires.
 func waitForPort(port int, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)

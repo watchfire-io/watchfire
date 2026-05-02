@@ -120,12 +120,22 @@ const api = {
 
   // Subscribe to "user clicked the OS notification" events from the main
   // process. Used by App.tsx to route the GUI to the failing project's
-  // TasksTab.
+  // TasksTab — or to open the DigestModal when kind=WEEKLY_DIGEST.
   onNotificationClick: (
-    callback: (payload: { projectId: string; taskNumber: number }) => void
+    callback: (payload: { kind?: string; projectId: string; taskNumber: number }) => void
   ): void => {
     ipcRenderer.on('notifications:click', (_ev, payload) => callback(payload))
-  }
+  },
+
+  // v6.0 Ember — read a single weekly-digest's Markdown body from
+  // `~/.watchfire/digests/<dateKey>.md`. Returns null when the file is
+  // missing (rare — we only ever ask for dates the daemon has emitted).
+  readDigest: (dateKey: string): Promise<string | null> =>
+    ipcRenderer.invoke('digests:read', dateKey),
+
+  // v6.0 Ember — list available digest dates, newest first. Used by the
+  // in-app notification center's Digests tab.
+  listDigests: (): Promise<string[]> => ipcRenderer.invoke('digests:list')
 }
 
 contextBridge.exposeInMainWorld('watchfire', api)

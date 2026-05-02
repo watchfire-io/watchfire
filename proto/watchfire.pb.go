@@ -27,9 +27,10 @@ const (
 type FocusTarget int32
 
 const (
-	FocusTarget_FOCUS_TARGET_MAIN  FocusTarget = 0 // Project's main / dashboard view
-	FocusTarget_FOCUS_TARGET_TASKS FocusTarget = 1 // Project's TasksTab
-	FocusTarget_FOCUS_TARGET_TASK  FocusTarget = 2 // Specific task within a project
+	FocusTarget_FOCUS_TARGET_MAIN   FocusTarget = 0 // Project's main / dashboard view
+	FocusTarget_FOCUS_TARGET_TASKS  FocusTarget = 1 // Project's TasksTab
+	FocusTarget_FOCUS_TARGET_TASK   FocusTarget = 2 // Specific task within a project
+	FocusTarget_FOCUS_TARGET_DIGEST FocusTarget = 3 // Open the weekly digest modal (v6.0 Ember)
 )
 
 // Enum value maps for FocusTarget.
@@ -38,11 +39,13 @@ var (
 		0: "FOCUS_TARGET_MAIN",
 		1: "FOCUS_TARGET_TASKS",
 		2: "FOCUS_TARGET_TASK",
+		3: "FOCUS_TARGET_DIGEST",
 	}
 	FocusTarget_value = map[string]int32{
-		"FOCUS_TARGET_MAIN":  0,
-		"FOCUS_TARGET_TASKS": 1,
-		"FOCUS_TARGET_TASK":  2,
+		"FOCUS_TARGET_MAIN":   0,
+		"FOCUS_TARGET_TASKS":  1,
+		"FOCUS_TARGET_TASK":   2,
+		"FOCUS_TARGET_DIGEST": 3,
 	}
 )
 
@@ -74,14 +77,15 @@ func (FocusTarget) EnumDescriptor() ([]byte, []int) {
 }
 
 // NotificationKind enumerates the high-level reasons the daemon emits a
-// notification. STUCK_AGENT is reserved for a future task; only TASK_FAILED
-// and RUN_COMPLETE ship in the v5.0 Pulse release.
+// notification. STUCK_AGENT is reserved for a future task; TASK_FAILED and
+// RUN_COMPLETE ship in v5.0 Pulse, WEEKLY_DIGEST in v6.0 Ember.
 type NotificationKind int32
 
 const (
-	NotificationKind_TASK_FAILED  NotificationKind = 0
-	NotificationKind_RUN_COMPLETE NotificationKind = 1
-	NotificationKind_STUCK_AGENT  NotificationKind = 2
+	NotificationKind_TASK_FAILED   NotificationKind = 0
+	NotificationKind_RUN_COMPLETE  NotificationKind = 1
+	NotificationKind_STUCK_AGENT   NotificationKind = 2
+	NotificationKind_WEEKLY_DIGEST NotificationKind = 3
 )
 
 // Enum value maps for NotificationKind.
@@ -90,11 +94,13 @@ var (
 		0: "TASK_FAILED",
 		1: "RUN_COMPLETE",
 		2: "STUCK_AGENT",
+		3: "WEEKLY_DIGEST",
 	}
 	NotificationKind_value = map[string]int32{
-		"TASK_FAILED":  0,
-		"RUN_COMPLETE": 1,
-		"STUCK_AGENT":  2,
+		"TASK_FAILED":   0,
+		"RUN_COMPLETE":  1,
+		"STUCK_AGENT":   2,
+		"WEEKLY_DIGEST": 3,
 	}
 )
 
@@ -3046,6 +3052,7 @@ type NotificationsEvents struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	TaskFailed    bool                   `protobuf:"varint,1,opt,name=task_failed,json=taskFailed,proto3" json:"task_failed,omitempty"`
 	RunComplete   bool                   `protobuf:"varint,2,opt,name=run_complete,json=runComplete,proto3" json:"run_complete,omitempty"`
+	WeeklyDigest  bool                   `protobuf:"varint,3,opt,name=weekly_digest,json=weeklyDigest,proto3" json:"weekly_digest,omitempty"` // v6.0 Ember
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3090,6 +3097,13 @@ func (x *NotificationsEvents) GetTaskFailed() bool {
 func (x *NotificationsEvents) GetRunComplete() bool {
 	if x != nil {
 		return x.RunComplete
+	}
+	return false
+}
+
+func (x *NotificationsEvents) GetWeeklyDigest() bool {
+	if x != nil {
+		return x.WeeklyDigest
 	}
 	return false
 }
@@ -3223,13 +3237,14 @@ func (x *QuietHoursConfig) GetEnd() string {
 }
 
 type NotificationsConfig struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Enabled       bool                   `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"` // Master toggle
-	Events        *NotificationsEvents   `protobuf:"bytes,2,opt,name=events,proto3" json:"events,omitempty"`
-	Sounds        *NotificationsSounds   `protobuf:"bytes,3,opt,name=sounds,proto3" json:"sounds,omitempty"`
-	QuietHours    *QuietHoursConfig      `protobuf:"bytes,4,opt,name=quiet_hours,json=quietHours,proto3" json:"quiet_hours,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Enabled        bool                   `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"` // Master toggle
+	Events         *NotificationsEvents   `protobuf:"bytes,2,opt,name=events,proto3" json:"events,omitempty"`
+	Sounds         *NotificationsSounds   `protobuf:"bytes,3,opt,name=sounds,proto3" json:"sounds,omitempty"`
+	QuietHours     *QuietHoursConfig      `protobuf:"bytes,4,opt,name=quiet_hours,json=quietHours,proto3" json:"quiet_hours,omitempty"`
+	DigestSchedule string                 `protobuf:"bytes,5,opt,name=digest_schedule,json=digestSchedule,proto3" json:"digest_schedule,omitempty"` // v6.0 Ember — "MON 09:00" / "DAILY 17:00" etc.
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *NotificationsConfig) Reset() {
@@ -3288,6 +3303,13 @@ func (x *NotificationsConfig) GetQuietHours() *QuietHoursConfig {
 		return x.QuietHours
 	}
 	return nil
+}
+
+func (x *NotificationsConfig) GetDigestSchedule() string {
+	if x != nil {
+		return x.DigestSchedule
+	}
+	return ""
 }
 
 type UpdatesConfig struct {
@@ -3707,6 +3729,7 @@ type FocusEvent struct {
 	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	Target        FocusTarget            `protobuf:"varint,2,opt,name=target,proto3,enum=watchfire.FocusTarget" json:"target,omitempty"`
 	TaskNumber    int32                  `protobuf:"varint,3,opt,name=task_number,json=taskNumber,proto3" json:"task_number,omitempty"` // Only meaningful when target == FOCUS_TARGET_TASK
+	DigestDate    string                 `protobuf:"bytes,4,opt,name=digest_date,json=digestDate,proto3" json:"digest_date,omitempty"`  // YYYY-MM-DD identifying the digest file (FOCUS_TARGET_DIGEST)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3760,6 +3783,13 @@ func (x *FocusEvent) GetTaskNumber() int32 {
 		return x.TaskNumber
 	}
 	return 0
+}
+
+func (x *FocusEvent) GetDigestDate() string {
+	if x != nil {
+		return x.DigestDate
+	}
+	return ""
 }
 
 type ListLogsRequest struct {
@@ -4610,11 +4640,12 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\x0fdefault_sandbox\x18\x05 \x01(\tR\x0edefaultSandbox\x12#\n" +
 	"\rdefault_agent\x18\x06 \x01(\tR\fdefaultAgent\x12D\n" +
 	"\rnotifications\x18\a \x01(\v2\x1e.watchfire.NotificationsConfigR\rnotifications\x12%\n" +
-	"\x0eterminal_shell\x18\b \x01(\tR\rterminalShellJ\x04\b\x04\x10\x05\"Y\n" +
+	"\x0eterminal_shell\x18\b \x01(\tR\rterminalShellJ\x04\b\x04\x10\x05\"~\n" +
 	"\x13NotificationsEvents\x12\x1f\n" +
 	"\vtask_failed\x18\x01 \x01(\bR\n" +
 	"taskFailed\x12!\n" +
-	"\frun_complete\x18\x02 \x01(\bR\vrunComplete\"\x8b\x01\n" +
+	"\frun_complete\x18\x02 \x01(\bR\vrunComplete\x12#\n" +
+	"\rweekly_digest\x18\x03 \x01(\bR\fweeklyDigest\"\x8b\x01\n" +
 	"\x13NotificationsSounds\x12\x18\n" +
 	"\aenabled\x18\x01 \x01(\bR\aenabled\x12\x1f\n" +
 	"\vtask_failed\x18\x02 \x01(\bR\n" +
@@ -4624,13 +4655,14 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\x10QuietHoursConfig\x12\x18\n" +
 	"\aenabled\x18\x01 \x01(\bR\aenabled\x12\x14\n" +
 	"\x05start\x18\x02 \x01(\tR\x05start\x12\x10\n" +
-	"\x03end\x18\x03 \x01(\tR\x03end\"\xdd\x01\n" +
+	"\x03end\x18\x03 \x01(\tR\x03end\"\x86\x02\n" +
 	"\x13NotificationsConfig\x12\x18\n" +
 	"\aenabled\x18\x01 \x01(\bR\aenabled\x126\n" +
 	"\x06events\x18\x02 \x01(\v2\x1e.watchfire.NotificationsEventsR\x06events\x126\n" +
 	"\x06sounds\x18\x03 \x01(\v2\x1e.watchfire.NotificationsSoundsR\x06sounds\x12<\n" +
 	"\vquiet_hours\x18\x04 \x01(\v2\x1b.watchfire.QuietHoursConfigR\n" +
-	"quietHours\"\x87\x01\n" +
+	"quietHours\x12'\n" +
+	"\x0fdigest_schedule\x18\x05 \x01(\tR\x0edigestSchedule\"\x87\x01\n" +
 	"\rUpdatesConfig\x12(\n" +
 	"\x10check_on_startup\x18\x01 \x01(\bR\x0echeckOnStartup\x12'\n" +
 	"\x0fcheck_frequency\x18\x02 \x01(\tR\x0echeckFrequency\x12#\n" +
@@ -4671,14 +4703,16 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\tAgentList\x12,\n" +
 	"\x06agents\x18\x01 \x03(\v2\x14.watchfire.AgentInfoR\x06agents\"I\n" +
 	"\x1bSubscribeFocusEventsRequest\x12*\n" +
-	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\"|\n" +
+	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\"\x9d\x01\n" +
 	"\n" +
 	"FocusEvent\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12.\n" +
 	"\x06target\x18\x02 \x01(\x0e2\x16.watchfire.FocusTargetR\x06target\x12\x1f\n" +
 	"\vtask_number\x18\x03 \x01(\x05R\n" +
-	"taskNumber\"\\\n" +
+	"taskNumber\x12\x1f\n" +
+	"\vdigest_date\x18\x04 \x01(\tR\n" +
+	"digestDate\"\\\n" +
 	"\x0fListLogsRequest\x12*\n" +
 	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\x12\x1d\n" +
 	"\n" +
@@ -4724,15 +4758,17 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"emitted_at\x18\x06 \x01(\v2\x1a.google.protobuf.TimestampR\temittedAt\x12/\n" +
 	"\x04kind\x18\a \x01(\x0e2\x1b.watchfire.NotificationKindR\x04kind\"K\n" +
 	"\x1dSubscribeNotificationsRequest\x12*\n" +
-	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta*S\n" +
+	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta*l\n" +
 	"\vFocusTarget\x12\x15\n" +
 	"\x11FOCUS_TARGET_MAIN\x10\x00\x12\x16\n" +
 	"\x12FOCUS_TARGET_TASKS\x10\x01\x12\x15\n" +
-	"\x11FOCUS_TARGET_TASK\x10\x02*F\n" +
+	"\x11FOCUS_TARGET_TASK\x10\x02\x12\x17\n" +
+	"\x13FOCUS_TARGET_DIGEST\x10\x03*Y\n" +
 	"\x10NotificationKind\x12\x0f\n" +
 	"\vTASK_FAILED\x10\x00\x12\x10\n" +
 	"\fRUN_COMPLETE\x10\x01\x12\x0f\n" +
-	"\vSTUCK_AGENT\x10\x022\xd9\x03\n" +
+	"\vSTUCK_AGENT\x10\x02\x12\x11\n" +
+	"\rWEEKLY_DIGEST\x10\x032\xd9\x03\n" +
 	"\x0eProjectService\x12>\n" +
 	"\fListProjects\x12\x16.google.protobuf.Empty\x1a\x16.watchfire.ProjectList\x126\n" +
 	"\n" +
