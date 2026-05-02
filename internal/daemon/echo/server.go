@@ -42,10 +42,12 @@ type Server struct {
 	logger *log.Logger
 	mux    *http.ServeMux
 
-	mu        sync.Mutex
-	listener  net.Listener
-	httpSrv   *http.Server
-	listening bool
+	mu             sync.Mutex
+	listener       net.Listener
+	httpSrv        *http.Server
+	listening      bool
+	bindErr        string
+	lastDeliveries map[string]time.Time // provider → last RecordDelivery time
 }
 
 // New builds an Echo server with the configured listen address. The
@@ -60,10 +62,55 @@ func New(cfg models.InboundConfig, logger *log.Logger) *Server {
 		cfg.ListenAddr = DefaultListenAddr
 	}
 	mux := http.NewServeMux()
-	s := &Server{cfg: cfg, logger: logger, mux: mux}
+	s := &Server{
+		cfg:            cfg,
+		logger:         logger,
+		mux:            mux,
+		lastDeliveries: make(map[string]time.Time),
+	}
 
 	mux.HandleFunc("GET /echo/health", s.health)
 	return s
+}
+
+// RecordDelivery stamps a per-provider last-delivery timestamp. Echo
+// handlers call this after successfully verifying + processing an inbound
+// request so the IntegrationsService.GetInboundStatus RPC can surface
+// the freshness of each provider in the GUI / TUI without needing to
+// thread a counter through every handler. Provider names are the route
+// segment ("github" / "slack" / "discord") so the status RPC can map
+// them by string match.
+func (s *Server) RecordDelivery(provider string) {
+	if provider == "" {
+		return
+	}
+	s.mu.Lock()
+	if s.lastDeliveries == nil {
+		s.lastDeliveries = make(map[string]time.Time)
+	}
+	s.lastDeliveries[provider] = time.Now().UTC()
+	s.mu.Unlock()
+}
+
+// LastDelivery returns the last successful-delivery timestamp for a
+// provider, or zero time if none has been seen this process lifetime.
+func (s *Server) LastDelivery(provider string) time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.lastDeliveries == nil {
+		return time.Time{}
+	}
+	return s.lastDeliveries[provider]
+}
+
+// BindError returns the most recent bind-failure message (or empty
+// string if the server is currently listening / has not been started).
+// Used by the IntegrationsService.GetInboundStatus RPC to surface the
+// reason a "listening: false" state is sticky.
+func (s *Server) BindError() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.bindErr
 }
 
 // RegisterProvider attaches a per-provider HTTP handler at the given
@@ -107,6 +154,9 @@ func (s *Server) Run(ctx context.Context) error {
 
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", s.cfg.ListenAddr)
 	if err != nil {
+		s.mu.Lock()
+		s.bindErr = err.Error()
+		s.mu.Unlock()
 		return fmt.Errorf("echo: bind %s: %w", s.cfg.ListenAddr, err)
 	}
 
@@ -118,6 +168,7 @@ func (s *Server) Run(ctx context.Context) error {
 		ErrorLog:          s.logger,
 	}
 	s.listening = true
+	s.bindErr = ""
 	s.mu.Unlock()
 
 	s.logger.Printf("INFO: echo: listening on %s", s.cfg.ListenAddr)

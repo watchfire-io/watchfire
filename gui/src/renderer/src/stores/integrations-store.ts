@@ -5,6 +5,8 @@ import type {
   SlackIntegration,
   DiscordIntegration,
   GitHubIntegration,
+  InboundConfig,
+  InboundStatus,
   TestIntegrationResponse
 } from '../generated/watchfire_pb'
 import { IntegrationKind } from '../generated/watchfire_pb'
@@ -28,6 +30,10 @@ interface IntegrationsStoreState {
   // testResults is keyed by `${kind}:${id}` so the detail panel can
   // render the inline "Test ✓ HTTP 200" status next to the Test button.
   testResults: Record<string, IntegrationTestResult>
+  // v8.0 Echo inbound listener status — populated by `fetchInbound` and
+  // refreshed periodically by InboundSection's polling effect.
+  inbound: InboundStatus | null
+  inboundLoading: boolean
 
   fetch: () => Promise<void>
   saveWebhook: (webhook: Partial<WebhookIntegration>) => Promise<void>
@@ -36,6 +42,8 @@ interface IntegrationsStoreState {
   saveGitHub: (github: Partial<GitHubIntegration>) => Promise<void>
   remove: (kind: IntegrationKind, id: string) => Promise<void>
   test: (kind: IntegrationKind, id: string) => Promise<TestIntegrationResponse>
+  fetchInbound: () => Promise<void>
+  saveInbound: (cfg: Partial<InboundConfig>) => Promise<void>
 }
 
 function testKey(kind: IntegrationKind, id: string): string {
@@ -47,6 +55,8 @@ export const useIntegrationsStore = create<IntegrationsStoreState>((set, get) =>
   loading: false,
   saving: false,
   testResults: {},
+  inbound: null,
+  inboundLoading: false,
 
   fetch: async () => {
     set({ loading: true })
@@ -138,6 +148,30 @@ export const useIntegrationsStore = create<IntegrationsStoreState>((set, get) =>
       }
     })
     return resp
+  },
+
+  fetchInbound: async () => {
+    set({ inboundLoading: true })
+    try {
+      const client = getIntegrationsClient()
+      const inbound = await client.getInboundStatus({})
+      set({ inbound, inboundLoading: false })
+    } catch (err) {
+      console.warn('getInboundStatus failed', err)
+      set({ inboundLoading: false })
+    }
+  },
+
+  saveInbound: async (cfg) => {
+    set({ saving: true })
+    try {
+      const client = getIntegrationsClient()
+      const inbound = await client.saveInboundConfig({ config: cfg as InboundConfig } as never)
+      set({ inbound, saving: false })
+    } catch (err) {
+      set({ saving: false })
+      throw err
+    }
   }
 }))
 

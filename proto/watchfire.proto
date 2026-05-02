@@ -909,14 +909,66 @@ message TestIntegrationResponse {
   int32 status_code = 3;               // HTTP status of the test send (0 if not applicable)
 }
 
-// IntegrationsService handles outbound integrations configuration.
-// v7.0 Relay scope: Webhook / Slack / Discord / GitHub. Each Save or
-// Delete triggers the dispatcher's adapter-list rebuild via the
-// `EventIntegrationsChanged` watcher event (the watcher fires on YAML
-// mtime change; the service explicitly hedges for keyring-only updates).
+// IntegrationsService handles both outbound (v7.0 Relay) and inbound
+// (v8.0 Echo) integrations configuration. Each outbound Save / Delete
+// triggers the dispatcher's adapter-list rebuild via the
+// `EventIntegrationsChanged` watcher event. Inbound config changes are
+// applied by the daemon at next Echo-server restart (the SaveInboundConfig
+// RPC tears down + rebinds the listener so new addresses / disabled
+// toggles take effect immediately).
 service IntegrationsService {
   rpc ListIntegrations(ListIntegrationsRequest) returns (IntegrationsConfig);
   rpc SaveIntegration(SaveIntegrationRequest) returns (IntegrationsConfig);
   rpc DeleteIntegration(DeleteIntegrationRequest) returns (IntegrationsConfig);
   rpc TestIntegration(TestIntegrationRequest) returns (TestIntegrationResponse);
+
+  // v8.0 Echo: inbound HTTP listener configuration + status.
+  rpc GetInboundStatus(GetInboundStatusRequest) returns (InboundStatus);
+  rpc SaveInboundConfig(SaveInboundConfigRequest) returns (InboundStatus);
+}
+
+// InboundConfig (v8.0 Echo) — wire shape of `models.InboundConfig`.
+// Per-provider secret fields are write-only: Save accepts them (and
+// pushes them to the keyring); List / Save responses scrub them and
+// return only the `*_set: bool` companion. Empty secret on update means
+// "leave the existing keyring entry alone" — matches the Slack / Discord
+// URL upsert convention from v7.0 Relay.
+message InboundConfig {
+  string listen_addr = 1;             // e.g. "127.0.0.1:8765"; empty = use default
+  string public_url = 2;              // optional — user-supplied tunnel URL (https://*)
+  bool github_secret_set = 3;
+  string github_secret = 4;           // write-only; never returned
+  bool slack_secret_set = 5;
+  string slack_secret = 6;            // write-only; never returned
+  bool discord_public_key_set = 7;
+  string discord_public_key = 8;      // write-only; never returned
+  string discord_app_id = 9;          // non-secret — surfaced as plain field
+  bool discord_bot_token_set = 10;
+  string discord_bot_token = 11;      // write-only; never returned
+  bool disabled = 12;                 // master toggle (true = no listener)
+}
+
+// InboundStatus (v8.0 Echo) is the response of GetInboundStatus and
+// SaveInboundConfig. The `config` field carries the scrubbed config for
+// rendering; `last_*_delivery_unix` is 0 when no delivery has ever been
+// recorded (per-process counter, not persisted across restarts).
+message InboundStatus {
+  bool listening = 1;                 // true if the HTTP server is currently bound
+  string listen_addr = 2;             // resolved bind address (with default applied)
+  string public_url = 3;              // mirrors config.public_url
+  string bind_error = 4;              // empty on success; populated when bind failed
+  int64 last_github_delivery_unix = 5;
+  int64 last_slack_delivery_unix = 6;
+  int64 last_discord_delivery_unix = 7;
+  string version = 8;                 // build version (e.g. "8.0.0")
+  InboundConfig config = 9;           // scrubbed (no plaintext secrets returned)
+}
+
+message GetInboundStatusRequest {
+  RequestMeta meta = 1;
+}
+
+message SaveInboundConfigRequest {
+  RequestMeta meta = 1;
+  InboundConfig config = 2;
 }

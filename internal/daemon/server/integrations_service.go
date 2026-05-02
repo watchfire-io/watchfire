@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/watchfire-io/watchfire/internal/config"
+	"github.com/watchfire-io/watchfire/internal/daemon/echo"
 	"github.com/watchfire-io/watchfire/internal/daemon/notify"
 	"github.com/watchfire-io/watchfire/internal/daemon/relay"
 	"github.com/watchfire-io/watchfire/internal/models"
@@ -28,12 +29,36 @@ type integrationsService struct {
 	// httpClient is injected for tests (httptest server). Real binary
 	// path uses the default client.
 	httpClient *http.Client
+
+	// server is the parent *Server, used by the v8.0 Echo inbound RPCs
+	// (`GetInboundStatus` / `SaveInboundConfig`) to read the live Echo
+	// listener state and to trigger a restart on config save. Bound
+	// post-construction via bindEchoServer to break the import cycle
+	// between the service handler and the daemon's Server struct.
+	server inboundProvider
+}
+
+// inboundProvider is the narrow interface the integrations service uses
+// to talk back to the parent daemon Server for v8.0 Echo. Defined here
+// (instead of importing *Server) so tests can substitute a fake without
+// pulling the entire server package in.
+type inboundProvider interface {
+	EchoServer() *echo.Server
+	restartEchoServer()
 }
 
 func newIntegrationsService() *integrationsService {
 	return &integrationsService{
 		httpClient: &http.Client{Timeout: 10 * time.Second},
 	}
+}
+
+// bindEchoServer wires the parent Server in after construction so the
+// v8.0 Echo RPCs can read the live listener and trigger a restart on
+// SaveInboundConfig. Called from Server.New right after the service is
+// registered.
+func (s *integrationsService) bindEchoServer(provider inboundProvider) {
+	s.server = provider
 }
 
 // ListIntegrations returns the current scrubbed config for display.

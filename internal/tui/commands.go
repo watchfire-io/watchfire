@@ -602,3 +602,36 @@ func testIntegrationCmd(conn *grpc.ClientConn, kind pb.IntegrationKind, id strin
 		return IntegrationTestedMsg{OK: resp.GetOk(), Message: resp.GetMessage(), StatusCode: resp.GetStatusCode()}
 	}
 }
+
+// getInboundStatusCmd dispatches the v8.0 Echo GetInboundStatus RPC.
+// Returns the status payload through InboundStatusLoadedMsg so the
+// IntegrationsForm's Inbound tab can render the live "listening" pill +
+// per-provider last-delivery timestamps.
+func getInboundStatusCmd(conn *grpc.ClientConn) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewIntegrationsServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		st, err := client.GetInboundStatus(ctx, &pb.GetInboundStatusRequest{})
+		if err != nil {
+			return ErrorMsg{Err: fmt.Errorf("get inbound status: %w", err)}
+		}
+		return InboundStatusLoadedMsg{Status: st}
+	}
+}
+
+// saveInboundConfigCmd persists the v8.0 Echo InboundConfig and triggers
+// an Echo-server restart on the daemon side. Returns the post-restart
+// status so the form refreshes its bind-state pill in the same hop.
+func saveInboundConfigCmd(conn *grpc.ClientConn, cfg *pb.InboundConfig) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewIntegrationsServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		st, err := client.SaveInboundConfig(ctx, &pb.SaveInboundConfigRequest{Config: cfg})
+		if err != nil {
+			return ErrorMsg{Err: fmt.Errorf("save inbound config: %w", err)}
+		}
+		return InboundStatusLoadedMsg{Status: st}
+	}
+}
