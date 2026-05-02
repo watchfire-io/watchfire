@@ -46,12 +46,16 @@ type SlackEndpoint struct {
 }
 
 // DiscordEndpoint targets a Discord webhook URL. Mirrors SlackEndpoint —
-// URL stored in keyring, YAML carries only the reference.
+// URL stored in keyring, YAML carries only the reference. v8.0 Echo adds
+// `GuildID` so inbound interactions delivered against a Discord guild
+// can be routed to the projects the user has wired to that guild
+// (see `internal/daemon/echo/handler_discord.go`).
 type DiscordEndpoint struct {
 	ID             string       `yaml:"id" json:"id"`
 	Label          string       `yaml:"label" json:"label"`
 	URLRef         string       `yaml:"url_ref,omitempty" json:"url_ref,omitempty"`
 	URL            string       `yaml:"-" json:"-"`
+	GuildID        string       `yaml:"guild_id,omitempty" json:"guild_id,omitempty"`
 	EnabledEvents  EventBitmask `yaml:"enabled_events" json:"enabled_events"`
 	ProjectMuteIDs []string     `yaml:"project_mute_ids,omitempty" json:"project_mute_ids,omitempty"`
 }
@@ -85,14 +89,40 @@ func (g GitHubConfig) AutoPRApplies(projectID string) bool {
 	return false
 }
 
+// InboundConfig holds the v8.0 Echo inbound HTTP server configuration.
+// Outbound integrations (the v7.0 fields above) are unaffected — this
+// is purely additive. An empty / zero-value `InboundConfig` means "no
+// inbound listener", preserving v7.0 behaviour for installs that have
+// not opted in.
+//
+// `DiscordPublicKeyRef` is the keyring reference for the Discord
+// application's Ed25519 public key (Discord interactions verify against
+// a single per-application key, not per-guild secrets — see
+// https://discord.com/developers/docs/interactions/receiving-and-responding).
+// `DiscordAppID` and `DiscordBotTokenRef` are needed by the
+// `watchfire integrations register-discord` CLI to register slash
+// commands against a guild on the user's behalf.
+type InboundConfig struct {
+	ListenAddr           string `yaml:"listen_addr,omitempty" json:"listen_addr,omitempty"`
+	PublicURL            string `yaml:"public_url,omitempty" json:"public_url,omitempty"`
+	GitHubSecretRef      string `yaml:"github_secret_ref,omitempty" json:"github_secret_ref,omitempty"`
+	SlackSecretRef       string `yaml:"slack_secret_ref,omitempty" json:"slack_secret_ref,omitempty"`
+	DiscordPublicKeyRef  string `yaml:"discord_public_key_ref,omitempty" json:"discord_public_key_ref,omitempty"`
+	DiscordAppID         string `yaml:"discord_app_id,omitempty" json:"discord_app_id,omitempty"`
+	DiscordBotTokenRef   string `yaml:"discord_bot_token_ref,omitempty" json:"discord_bot_token_ref,omitempty"`
+	Disabled             bool   `yaml:"disabled,omitempty" json:"disabled,omitempty"`
+}
+
 // IntegrationsConfig is the root document persisted at
 // `~/.watchfire/integrations.yaml`. All four adapter types fan out from
-// here; each subset can be empty.
+// here; each subset can be empty. v8.0 Echo adds `Inbound` for the
+// inbound HTTP listener — purely additive, defaults to disabled.
 type IntegrationsConfig struct {
 	Webhooks []WebhookEndpoint `yaml:"webhooks,omitempty" json:"webhooks,omitempty"`
 	Slack    []SlackEndpoint   `yaml:"slack,omitempty" json:"slack,omitempty"`
 	Discord  []DiscordEndpoint `yaml:"discord,omitempty" json:"discord,omitempty"`
 	GitHub   GitHubConfig      `yaml:"github" json:"github"`
+	Inbound  InboundConfig     `yaml:"inbound,omitempty" json:"inbound,omitempty"`
 }
 
 // NewIntegrationsConfig returns a zero-value config. Used by the loader

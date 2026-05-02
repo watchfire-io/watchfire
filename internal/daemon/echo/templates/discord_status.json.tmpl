@@ -1,0 +1,19 @@
+{
+  "type": 4,
+  "data": {
+    "embeds": [
+      {{- range $i, $proj := .Projects }}
+      {{- if $i }},{{ end }}
+      {
+        "title": "{{ $proj.Name }} — current status",
+        "description": "{{- if $proj.Tasks -}}{{- range $j, $task := $proj.Tasks }}{{ if $j }}\n{{ end }}• `#{{ printf "%04d" $task.TaskNumber }}` {{ $task.Title }}{{- end -}}{{- else -}}_No active tasks._{{- end }}",
+        "color": {{ $proj.ColorInt }},
+        "footer": {
+          "text": "Watchfire · {{ $.RenderedAt }}"
+        }
+      }
+      {{- end }}
+    ],
+    "flags": 64
+  }
+}
