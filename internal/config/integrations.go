@@ -103,7 +103,10 @@ func resolveSecretStore() (secretStore, error) {
 		return activeSecretStore, nil
 	}
 	activeStoreInit.Do(func() {
-		s, err := newFileSecretStore()
+		// Prefer the OS keyring (go-keyring); on platforms without a
+		// reachable keyring (Linux without dbus, headless CI) fall
+		// through to the on-disk file store with a one-shot WARN.
+		s, err := chooseSecretStore()
 		if err != nil {
 			activeStoreInitErr = err
 			return

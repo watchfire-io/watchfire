@@ -26,6 +26,7 @@ import (
 	"github.com/watchfire-io/watchfire/internal/daemon/metrics"
 	"github.com/watchfire-io/watchfire/internal/daemon/notify"
 	"github.com/watchfire-io/watchfire/internal/daemon/project"
+	"github.com/watchfire-io/watchfire/internal/daemon/relay"
 	"github.com/watchfire-io/watchfire/internal/daemon/task"
 	"github.com/watchfire-io/watchfire/internal/daemon/tray"
 	"github.com/watchfire-io/watchfire/internal/daemon/watcher"
@@ -46,6 +47,8 @@ type Server struct {
 	watcher        *watcher.Watcher
 	notifyBus      *notify.Bus
 	digestRunner   *digestRunner
+	relayDispatch  *relay.Dispatcher
+	relayCancel    context.CancelFunc
 	updateState    UpdateState
 }
 
@@ -252,6 +255,21 @@ func New(port int) (*Server, error) {
 		digestRunner:   newDigestRunner(notifyBus),
 	}
 
+	// v7.0 Relay outbound dispatcher — subscribes to the same notify.Bus
+	// the GUI / tray consume; fans each notification out to every
+	// configured adapter (Webhook / Slack / Discord) with retry +
+	// circuit-breaker. The factory re-reads integrations.yaml so the
+	// watcher's EventIntegrationsChanged path can call Reload() without
+	// daemon restart.
+	srv.relayDispatch = relay.NewDispatcher(
+		notifyBus,
+		resolveNotificationPayload,
+		buildRelayAdapters,
+	)
+	relayCtx, relayCancel := context.WithCancel(context.Background())
+	srv.relayCancel = relayCancel
+	go srv.relayDispatch.Run(relayCtx)
+
 	// Register services with generated proto descriptors
 	pb.RegisterProjectServiceServer(grpcServer, &projectService{manager: projectMgr, agentMgr: agentMgr})
 	pb.RegisterTaskServiceServer(grpcServer, &taskService{manager: taskMgr})
@@ -327,6 +345,15 @@ func (s *Server) Stop() {
 	if s.digestRunner != nil {
 		s.digestRunner.Stop()
 	}
+	// Stop the v7.0 Relay dispatcher before the bus drains so the
+	// goroutine exits cleanly. Cancel the run context first to nudge
+	// the in-flight Send out of any retry sleep, then wait for Stop().
+	if s.relayCancel != nil {
+		s.relayCancel()
+	}
+	if s.relayDispatch != nil {
+		s.relayDispatch.Stop()
+	}
 	// Stop watcher before agents (prevents new task-done events during shutdown)
 	if s.watcher != nil {
 		s.watcher.Stop()
@@ -386,13 +413,13 @@ func (s *Server) processWatcherEvents() {
 			// the next insights query recomputes from disk.
 			insights.InvalidateProjectCache(event.ProjectID)
 		case watcher.EventIntegrationsChanged:
-			// v7.0 Relay integrations.yaml write — log so the user can
-			// confirm the daemon picked up the edit. The dispatcher
-			// rebuild lives in `internal/daemon/relay` (task 0062);
-			// this server simply notes the event today and lets the
-			// dispatcher subscribe in its own initializer when it
-			// lands.
+			// v7.0 Relay integrations.yaml write — rebuild the
+			// dispatcher's adapter list so URL / mute / event-bitmask
+			// edits take effect without a daemon restart.
 			log.Printf("[integrations-watch] Integrations config changed: %s", event.Path)
+			if s.relayDispatch != nil {
+				s.relayDispatch.Reload()
+			}
 		}
 	}
 }

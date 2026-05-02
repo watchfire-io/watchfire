@@ -1,11 +1,8 @@
 package server
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -142,7 +139,7 @@ func (s *integrationsService) TestIntegration(ctx context.Context, req *pb.TestI
 		if !ok {
 			return &pb.TestIntegrationResponse{Ok: false, Message: "webhook not found"}, nil
 		}
-		return s.deliverTest(ctx, ep.URL, "TASK_FAILED")
+		return s.deliverWebhookTest(ctx, ep)
 	case pb.IntegrationKind_SLACK:
 		ep, ok := findSlack(cfg.Slack, id)
 		if !ok {
@@ -174,45 +171,72 @@ func (s *integrationsService) TestIntegration(ctx context.Context, req *pb.TestI
 	}
 }
 
-func (s *integrationsService) deliverTest(ctx context.Context, endpoint, kind string) (*pb.TestIntegrationResponse, error) {
-	body := map[string]any{
-		"version":     1,
-		"kind":        kind,
-		"emitted_at":  time.Now().UTC().Format(time.RFC3339),
-		"title":       "Watchfire test notification",
-		"body":        "If you can read this, your integration is wired up correctly.",
-		"deep_link":   "watchfire://test",
-		"project_id":  "test",
-		"task_number": 0,
+// deliverWebhookTest renders a synthetic Payload through the real
+// `relay.WebhookAdapter`, exercising the HMAC signing + canonical
+// header set the dispatcher would emit at runtime. One POST per
+// supported notification kind so every wire shape is verified in a
+// single command.
+func (s *integrationsService) deliverWebhookTest(ctx context.Context, ep models.WebhookEndpoint) (*pb.TestIntegrationResponse, error) {
+	if ep.URL == "" {
+		return &pb.TestIntegrationResponse{Ok: false, Message: "webhook URL not set"}, nil
 	}
-	buf, err := json.Marshal(body)
-	if err != nil {
-		return &pb.TestIntegrationResponse{Ok: false, Message: err.Error()}, nil
+	var secret []byte
+	if ep.SecretRef != "" {
+		v, ok := config.LookupIntegrationSecret(ep.SecretRef)
+		if !ok {
+			return &pb.TestIntegrationResponse{Ok: false, Message: "webhook secret not in keyring"}, nil
+		}
+		secret = []byte(v)
 	}
-	r, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(buf))
-	if err != nil {
-		return &pb.TestIntegrationResponse{Ok: false, Message: err.Error()}, nil
-	}
-	r.Header.Set("Content-Type", "application/json")
-	r.Header.Set("X-Watchfire-Event", kind)
-	r.Header.Set("User-Agent", "watchfire-test/1")
+	adapter := relay.NewWebhookAdapter(ep, secret, s.httpClient, nil)
 
-	resp, err := s.httpClient.Do(r)
-	if err != nil {
-		return &pb.TestIntegrationResponse{Ok: false, Message: err.Error()}, nil
+	now := time.Now().UTC()
+	kinds := []notify.Kind{
+		notify.KindTaskFailed,
+		notify.KindRunComplete,
+		notify.KindWeeklyDigest,
 	}
-	defer resp.Body.Close()
-	_, _ = io.Copy(io.Discard, resp.Body)
-	ok := resp.StatusCode >= 200 && resp.StatusCode < 300
-	msg := fmt.Sprintf("HTTP %d", resp.StatusCode)
-	if !ok {
-		msg = fmt.Sprintf("HTTP %d (delivery rejected)", resp.StatusCode)
+	allOK := true
+	var msgs []string
+	for _, kind := range kinds {
+		payload := syntheticWebhookPayload(kind, now)
+		if sendErr := adapter.Send(ctx, payload); sendErr != nil {
+			allOK = false
+			msgs = append(msgs, fmt.Sprintf("%s: %v", kind, sendErr))
+			continue
+		}
+		msgs = append(msgs, fmt.Sprintf("%s: OK", kind))
 	}
 	return &pb.TestIntegrationResponse{
-		Ok:         ok,
-		Message:    msg,
-		StatusCode: int32(resp.StatusCode),
+		Ok:      allOK,
+		Message: strings.Join(msgs, " · "),
 	}, nil
+}
+
+// syntheticWebhookPayload mirrors syntheticSlackPayload / syntheticDiscordPayload
+// for the generic webhook adapter, so a single click of "Test" exercises every
+// canonical Payload kind the dispatcher would emit.
+func syntheticWebhookPayload(kind notify.Kind, now time.Time) relay.Payload {
+	base := relay.Payload{
+		Version:      1,
+		Kind:         string(kind),
+		EmittedAt:    now,
+		ProjectID:    "test-project",
+		ProjectName:  "Watchfire test",
+		ProjectColor: "#3b82f6",
+		TaskNumber:   1,
+		TaskTitle:    "Watchfire webhook adapter test",
+		DeepLink:     "watchfire://project/test-project/task/0001",
+	}
+	switch kind {
+	case notify.KindTaskFailed:
+		base.TaskFailureReason = "synthetic test — your webhook is wired up correctly"
+	case notify.KindWeeklyDigest:
+		base.DigestDate = now.Format("2006-01-02")
+		base.DeepLink = "watchfire://digest/" + base.DigestDate
+		base.DigestBody = "## Watchfire weekly digest test\n\nIf you can read this, your webhook is receiving WEEKLY_DIGEST notifications."
+	}
+	return base
 }
 
 // deliverDiscordTest renders + POSTs one Discord embed per supported
