@@ -21,6 +21,7 @@ import { ProjectCard } from './ProjectCard'
 import { ProjectRow } from './ProjectRow'
 import { EmptyState } from './EmptyState'
 import { FilterChips } from './FilterChips'
+import { StatusBar } from './StatusBar'
 import { cn } from '../../lib/utils'
 import {
   DASHBOARD_FILTERS,
@@ -153,6 +154,13 @@ export function Dashboard() {
             </p>
           </div>
           <LayoutToggle layout={layout} onChange={updateLayout} />
+        </div>
+        <div className="mb-3">
+          <StatusBar
+            projects={projects}
+            tasksByProjectId={tasksByProjectId}
+            agentStatuses={agentStatuses}
+          />
         </div>
         <div className="mb-3">
           <FilterChips active={filter} counts={counts} onChange={updateFilter} />
