@@ -83,6 +83,7 @@ func modelToProtoSettings(s *models.Settings) *pb.Settings {
 			DefaultSandbox:   s.Defaults.DefaultSandbox,
 			DefaultAgent:     s.Defaults.DefaultAgent,
 			Notifications:    notificationsToProto(s.Defaults.Notifications),
+			TerminalShell:    s.Defaults.TerminalShell,
 		},
 		Updates: &pb.UpdatesConfig{
 			CheckOnStartup: s.Updates.CheckOnStartup,

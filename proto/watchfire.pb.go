@@ -2958,6 +2958,7 @@ type DefaultsConfig struct {
 	DefaultSandbox   string                 `protobuf:"bytes,5,opt,name=default_sandbox,json=defaultSandbox,proto3" json:"default_sandbox,omitempty"`
 	DefaultAgent     string                 `protobuf:"bytes,6,opt,name=default_agent,json=defaultAgent,proto3" json:"default_agent,omitempty"`
 	Notifications    *NotificationsConfig   `protobuf:"bytes,7,opt,name=notifications,proto3" json:"notifications,omitempty"`
+	TerminalShell    string                 `protobuf:"bytes,8,opt,name=terminal_shell,json=terminalShell,proto3" json:"terminal_shell,omitempty"` // Empty = login-shell autodetect; non-empty = absolute path used by GUI in-app terminal
 	unknownFields    protoimpl.UnknownFields
 	sizeCache        protoimpl.SizeCache
 }
@@ -3032,6 +3033,13 @@ func (x *DefaultsConfig) GetNotifications() *NotificationsConfig {
 		return x.Notifications
 	}
 	return nil
+}
+
+func (x *DefaultsConfig) GetTerminalShell() string {
+	if x != nil {
+		return x.TerminalShell
+	}
+	return ""
 }
 
 type NotificationsEvents struct {
@@ -4593,7 +4601,7 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"project_id\x18\x02 \x01(\tR\tprojectId\x12!\n" +
 	"\fbranch_names\x18\x03 \x03(\tR\vbranchNames\"!\n" +
 	"\vAgentConfig\x12\x12\n" +
-	"\x04path\x18\x01 \x01(\tR\x04path\"\xa1\x02\n" +
+	"\x04path\x18\x01 \x01(\tR\x04path\"\xc8\x02\n" +
 	"\x0eDefaultsConfig\x12\x1d\n" +
 	"\n" +
 	"auto_merge\x18\x01 \x01(\bR\tautoMerge\x12,\n" +
@@ -4601,7 +4609,8 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\x10auto_start_tasks\x18\x03 \x01(\bR\x0eautoStartTasks\x12'\n" +
 	"\x0fdefault_sandbox\x18\x05 \x01(\tR\x0edefaultSandbox\x12#\n" +
 	"\rdefault_agent\x18\x06 \x01(\tR\fdefaultAgent\x12D\n" +
-	"\rnotifications\x18\a \x01(\v2\x1e.watchfire.NotificationsConfigR\rnotificationsJ\x04\b\x04\x10\x05\"Y\n" +
+	"\rnotifications\x18\a \x01(\v2\x1e.watchfire.NotificationsConfigR\rnotifications\x12%\n" +
+	"\x0eterminal_shell\x18\b \x01(\tR\rterminalShellJ\x04\b\x04\x10\x05\"Y\n" +
 	"\x13NotificationsEvents\x12\x1f\n" +
 	"\vtask_failed\x18\x01 \x01(\bR\n" +
 	"taskFailed\x12!\n" +

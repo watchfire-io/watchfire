@@ -93,6 +93,13 @@ const api = {
   openInIDE: (ide: string, projectPath: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('open-in-ide', ide, projectPath),
 
+  // Pick a shell binary for the in-app terminal (issue #32 / global setting
+  // `defaults.terminal_shell`). Returns the absolute path on selection,
+  // null on cancel. The renderer posts the result through the
+  // SettingsService.UpdateSettings RPC so the daemon validates and persists.
+  browseShellBinary: (): Promise<string | null> =>
+    ipcRenderer.invoke('browse-shell-binary'),
+
   // Bring the main window to the foreground. Used by the focus subscriber
   // when the daemon's tray emits a click so a hidden window comes back
   // into view.

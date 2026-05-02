@@ -92,6 +92,21 @@ async function openInIDE(ide: string, projectPath: string): Promise<{ ok: boolea
 export function setupIpc(): void {
   // PTY handlers
   ipcMain.handle('pty-create', (_ev, cwd: string) => ptyManager.createPty(cwd))
+
+  // Browse for a custom shell binary. Used by the global settings UI's
+  // "Terminal shell" field (issue #32). Returns the absolute path on pick,
+  // null on cancel. The renderer is responsible for posting the result back
+  // through the SettingsService.UpdateSettings RPC; we don't validate here
+  // because the daemon-side `validateExecutablePath` is the source of truth.
+  ipcMain.handle('browse-shell-binary', async () => {
+    const result = await dialog.showOpenDialog({
+      properties: ['openFile'],
+      title: 'Select Shell Binary',
+      defaultPath: '/bin'
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0]
+  })
   ipcMain.handle('pty-write', (_ev, id: string, data: string) => ptyManager.writePty(id, data))
   ipcMain.handle('pty-resize', (_ev, id: string, cols: number, rows: number) => ptyManager.resizePty(id, cols, rows))
   ipcMain.handle('pty-destroy', (_ev, id: string) => ptyManager.destroyPty(id))

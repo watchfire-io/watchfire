@@ -416,11 +416,16 @@ func (m *Model) handleGlobalSettingsKey(msg tea.KeyMsg) tea.Cmd {
 			switch res.Kind {
 			case EditAgentPath:
 				if m.conn != nil {
-					return updateGlobalSettingsCmd(m.conn, nil, map[string]string{res.AgentName: res.Path}, nil)
+					return updateGlobalSettingsCmd(m.conn, nil, map[string]string{res.AgentName: res.Path}, nil, nil)
 				}
 			case EditNotify:
 				if m.conn != nil {
-					return updateGlobalSettingsCmd(m.conn, nil, nil, g.NotificationsProto())
+					return updateGlobalSettingsCmd(m.conn, nil, nil, g.NotificationsProto(), nil)
+				}
+			case EditTerminalShell:
+				if m.conn != nil {
+					ts := res.TerminalShell
+					return updateGlobalSettingsCmd(m.conn, nil, nil, nil, &ts)
 				}
 			}
 			return nil
@@ -448,7 +453,7 @@ func (m *Model) handleGlobalSettingsKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case " ":
 		if g.ToggleNotify() && m.conn != nil {
-			return updateGlobalSettingsCmd(m.conn, nil, nil, g.NotificationsProto())
+			return updateGlobalSettingsCmd(m.conn, nil, nil, g.NotificationsProto(), nil)
 		}
 		return nil
 	case "enter":
@@ -457,13 +462,13 @@ func (m *Model) handleGlobalSettingsKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		// Notify toggles also accept Enter for consistency.
 		if g.ToggleNotify() && m.conn != nil {
-			return updateGlobalSettingsCmd(m.conn, nil, nil, g.NotificationsProto())
+			return updateGlobalSettingsCmd(m.conn, nil, nil, g.NotificationsProto(), nil)
 		}
 		// Default selector: cycle.
 		changed, val := g.CycleDefault()
 		if changed && m.conn != nil {
 			v := val
-			return updateGlobalSettingsCmd(m.conn, &v, nil, nil)
+			return updateGlobalSettingsCmd(m.conn, &v, nil, nil, nil)
 		}
 		return nil
 	}

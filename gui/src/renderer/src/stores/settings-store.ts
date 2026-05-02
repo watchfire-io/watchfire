@@ -15,6 +15,7 @@ interface SettingsState {
       defaultSandbox?: string
       defaultAgent?: string
       notifications?: NotificationsConfig
+      terminalShell?: string
     }
     updates?: {
       checkOnStartup?: boolean

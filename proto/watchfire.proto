@@ -343,6 +343,7 @@ message DefaultsConfig {
   string default_sandbox = 5;
   string default_agent = 6;
   NotificationsConfig notifications = 7;
+  string terminal_shell = 8;                      // Empty = login-shell autodetect; non-empty = absolute path used by GUI in-app terminal
 }
 
 message NotificationsEvents {
