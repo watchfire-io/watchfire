@@ -30,6 +30,20 @@ func newInsightsService() *insightsService {
 	return &insightsService{nowFn: time.Now}
 }
 
+func (s *insightsService) GetGlobalInsights(_ context.Context, req *pb.GetGlobalInsightsRequest) (*pb.GlobalInsights, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "GetGlobalInsightsRequest required")
+	}
+	windowStart := tsToTime(req.GetWindowStart())
+	windowEnd := tsToTime(req.GetWindowEnd())
+
+	data, err := insights.LoadGlobalInsights(windowStart, windowEnd)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return globalInsightsToProto(data), nil
+}
+
 func (s *insightsService) ExportReport(_ context.Context, req *pb.ExportReportRequest) (*pb.ExportReportResponse, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "ExportReportRequest required")
@@ -123,4 +137,60 @@ func resultToProto(r insights.Result) *pb.ExportReportResponse {
 		Content:  r.Content,
 		Mime:     r.Mime,
 	}
+}
+
+// globalInsightsToProto converts the Go aggregator output to its proto
+// counterpart. Cost data isn't yet wired (task 0056); the field-by-field
+// copy stays simple so when 0056 lands the only change is upstream of
+// here.
+func globalInsightsToProto(g *insights.GlobalInsights) *pb.GlobalInsights {
+	if g == nil {
+		return &pb.GlobalInsights{}
+	}
+	out := &pb.GlobalInsights{
+		TasksTotal:       int32(g.TasksTotal),
+		TasksSucceeded:   int32(g.TasksSucceeded),
+		TasksFailed:      int32(g.TasksFailed),
+		TotalDurationMs:  g.TotalDurationMs,
+		TotalCostUsd:     g.TotalCostUSD,
+		TasksMissingCost: int32(g.TasksMissingCost),
+	}
+	if !g.WindowStart.IsZero() {
+		out.WindowStart = timestamppb.New(g.WindowStart)
+	}
+	if !g.WindowEnd.IsZero() {
+		out.WindowEnd = timestamppb.New(g.WindowEnd)
+	}
+	out.TasksByDay = make([]*pb.DayBucket, 0, len(g.TasksByDay))
+	for _, b := range g.TasksByDay {
+		out.TasksByDay = append(out.TasksByDay, &pb.DayBucket{
+			Date:      b.Date,
+			Count:     int32(b.Count),
+			Succeeded: int32(b.Succeeded),
+			Failed:    int32(b.Failed),
+		})
+	}
+	out.TopProjects = make([]*pb.TopProject, 0, len(g.TopProjects))
+	for _, p := range g.TopProjects {
+		out.TopProjects = append(out.TopProjects, &pb.TopProject{
+			ProjectId:    p.ProjectID,
+			ProjectName:  p.ProjectName,
+			ProjectColor: p.ProjectColor,
+			Count:        int32(p.Count),
+			SuccessRate:  p.SuccessRate,
+		})
+	}
+	out.AgentBreakdown = make([]*pb.AgentBreakdown, 0, len(g.AgentBreakdown))
+	for _, a := range g.AgentBreakdown {
+		out.AgentBreakdown = append(out.AgentBreakdown, &pb.AgentBreakdown{
+			Agent:          a.Agent,
+			Count:          int32(a.Count),
+			SuccessRate:    a.SuccessRate,
+			AvgDurationMs:  a.AvgDurationMs,
+			TotalTokensIn:  a.TotalTokensIn,
+			TotalTokensOut: a.TotalTokensOut,
+			TotalCostUsd:   a.TotalCostUSD,
+		})
+	}
+	return out
 }

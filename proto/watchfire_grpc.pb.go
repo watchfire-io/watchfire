@@ -2333,18 +2333,21 @@ var NotificationService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	InsightsService_ExportReport_FullMethodName = "/watchfire.InsightsService/ExportReport"
+	InsightsService_ExportReport_FullMethodName      = "/watchfire.InsightsService/ExportReport"
+	InsightsService_GetGlobalInsights_FullMethodName = "/watchfire.InsightsService/GetGlobalInsights"
 )
 
 // InsightsServiceClient is the client API for InsightsService service.
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// InsightsService handles cross-task analytics export. v6.0 Ember scope is
-// per-task / per-project / fleet rollups in CSV + Markdown. Future v6.x can
-// extend with PDF / HTML / scheduled export without breaking the wire.
+// InsightsService handles cross-task analytics. v6.0 Ember scope is per-task
+// / per-project / fleet rollups in CSV + Markdown plus the dashboard
+// rollup. Future v6.x can extend with PDF / HTML / scheduled export without
+// breaking the wire.
 type InsightsServiceClient interface {
 	ExportReport(ctx context.Context, in *ExportReportRequest, opts ...grpc.CallOption) (*ExportReportResponse, error)
+	GetGlobalInsights(ctx context.Context, in *GetGlobalInsightsRequest, opts ...grpc.CallOption) (*GlobalInsights, error)
 }
 
 type insightsServiceClient struct {
@@ -2365,15 +2368,27 @@ func (c *insightsServiceClient) ExportReport(ctx context.Context, in *ExportRepo
 	return out, nil
 }
 
+func (c *insightsServiceClient) GetGlobalInsights(ctx context.Context, in *GetGlobalInsightsRequest, opts ...grpc.CallOption) (*GlobalInsights, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(GlobalInsights)
+	err := c.cc.Invoke(ctx, InsightsService_GetGlobalInsights_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // InsightsServiceServer is the server API for InsightsService service.
 // All implementations must embed UnimplementedInsightsServiceServer
 // for forward compatibility.
 //
-// InsightsService handles cross-task analytics export. v6.0 Ember scope is
-// per-task / per-project / fleet rollups in CSV + Markdown. Future v6.x can
-// extend with PDF / HTML / scheduled export without breaking the wire.
+// InsightsService handles cross-task analytics. v6.0 Ember scope is per-task
+// / per-project / fleet rollups in CSV + Markdown plus the dashboard
+// rollup. Future v6.x can extend with PDF / HTML / scheduled export without
+// breaking the wire.
 type InsightsServiceServer interface {
 	ExportReport(context.Context, *ExportReportRequest) (*ExportReportResponse, error)
+	GetGlobalInsights(context.Context, *GetGlobalInsightsRequest) (*GlobalInsights, error)
 	mustEmbedUnimplementedInsightsServiceServer()
 }
 
@@ -2386,6 +2401,9 @@ type UnimplementedInsightsServiceServer struct{}
 
 func (UnimplementedInsightsServiceServer) ExportReport(context.Context, *ExportReportRequest) (*ExportReportResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ExportReport not implemented")
+}
+func (UnimplementedInsightsServiceServer) GetGlobalInsights(context.Context, *GetGlobalInsightsRequest) (*GlobalInsights, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetGlobalInsights not implemented")
 }
 func (UnimplementedInsightsServiceServer) mustEmbedUnimplementedInsightsServiceServer() {}
 func (UnimplementedInsightsServiceServer) testEmbeddedByValue()                         {}
@@ -2426,6 +2444,24 @@ func _InsightsService_ExportReport_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _InsightsService_GetGlobalInsights_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetGlobalInsightsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(InsightsServiceServer).GetGlobalInsights(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: InsightsService_GetGlobalInsights_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(InsightsServiceServer).GetGlobalInsights(ctx, req.(*GetGlobalInsightsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // InsightsService_ServiceDesc is the grpc.ServiceDesc for InsightsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2436,6 +2472,10 @@ var InsightsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ExportReport",
 			Handler:    _InsightsService_ExportReport_Handler,
+		},
+		{
+			MethodName: "GetGlobalInsights",
+			Handler:    _InsightsService_GetGlobalInsights_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -67,6 +67,12 @@ type Model struct {
 	// — replaces the showSaved indicator while present, cleared by ClearSavedMsg.
 	statusMessage string
 
+	// v6.0 Ember fleet insights overlay state. Populated when the user
+	// presses `I` (uppercase) — the overlay re-fetches when the window
+	// preset changes (1 / 3 / 9 / 0).
+	fleetInsights       FleetInsights
+	fleetInsightsWindow string
+
 	// Program reference for goroutine Send()
 	program *programRef
 
@@ -306,6 +312,9 @@ func (m Model) View() string {
 			if m.exportPicker != nil {
 				overlayContent = m.exportPicker.View()
 			}
+		case overlayFleetInsights:
+			width := m.width - 8
+			overlayContent = renderFleetInsightsOverlay(m.fleetInsights, width)
 		}
 		if overlayContent != "" {
 			view = renderOverlay(view, overlayContent, m.width, m.height)

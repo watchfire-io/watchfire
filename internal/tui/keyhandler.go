@@ -83,6 +83,12 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		m.exportPicker.OpenForProject(m.projectID, m.project.Path)
 		m.activeOverlay = overlayExport
 		return nil
+
+	case key.Matches(msg, globalKeys.FleetInsights):
+		// Open the v6.0 Ember fleet rollup overlay. The overlay starts
+		// in a "loading" state and dispatches the gRPC fetch so the
+		// box pops up immediately.
+		return m.openFleetInsightsOverlay("30d")
 	}
 
 	// Tab switching (only when left panel focused and not in terminal)
@@ -409,8 +415,42 @@ func (m *Model) handleOverlayKey(msg tea.KeyMsg) tea.Cmd {
 
 	case overlayExport:
 		return m.handleExportPickerKey(msg)
+
+	case overlayFleetInsights:
+		return m.handleFleetInsightsKey(msg)
 	}
 	return nil
+}
+
+// handleFleetInsightsKey handles input while the v6.0 Ember fleet rollup
+// overlay is open. 1 / 3 / 9 / 0 cycle the window; Esc / q close.
+func (m *Model) handleFleetInsightsKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc", "q":
+		m.activeOverlay = overlayNone
+		return nil
+	case "1":
+		return m.openFleetInsightsOverlay("7d")
+	case "3":
+		return m.openFleetInsightsOverlay("30d")
+	case "9":
+		return m.openFleetInsightsOverlay("90d")
+	case "0":
+		return m.openFleetInsightsOverlay("all")
+	}
+	return nil
+}
+
+// openFleetInsightsOverlay flips the overlay on, resets the in-flight
+// state, and dispatches the gRPC fetch.
+func (m *Model) openFleetInsightsOverlay(window string) tea.Cmd {
+	m.fleetInsightsWindow = window
+	m.fleetInsights = FleetInsights{Window: window}
+	m.activeOverlay = overlayFleetInsights
+	if m.conn == nil {
+		return nil
+	}
+	return loadFleetInsightsCmd(m.conn, window)
 }
 
 // handleExportPickerKey routes keys for the v6.0 Ember export overlay.

@@ -623,9 +623,71 @@ message ExportReportResponse {
   string mime = 3;
 }
 
-// InsightsService handles cross-task analytics export. v6.0 Ember scope is
-// per-task / per-project / fleet rollups in CSV + Markdown. Future v6.x can
-// extend with PDF / HTML / scheduled export without breaking the wire.
+// GetGlobalInsightsRequest bounds a fleet-wide rollup query. Both bounds
+// are optional — an unset window_start collapses to "no lower bound" and
+// likewise for window_end. The dashboard typically passes a 30-day window.
+message GetGlobalInsightsRequest {
+  RequestMeta meta = 1;
+  google.protobuf.Timestamp window_start = 2;
+  google.protobuf.Timestamp window_end = 3;
+}
+
+// DayBucket — one calendar day's task counts. Used by both per-project and
+// fleet rollups to render stacked bars / sparklines.
+message DayBucket {
+  string date = 1;       // YYYY-MM-DD (local zone)
+  int32 count = 2;       // succeeded + failed
+  int32 succeeded = 3;
+  int32 failed = 4;
+}
+
+// AgentBreakdown — one row per backend agent that touched tasks in the
+// window. Field set is shared between the per-project and global rollups
+// so the same renderer code works for both surfaces.
+message AgentBreakdown {
+  string agent = 1;
+  int32 count = 2;
+  double success_rate = 3;
+  int64 avg_duration_ms = 4;
+  int64 total_tokens_in = 5;
+  int64 total_tokens_out = 6;
+  double total_cost_usd = 7;
+}
+
+// TopProject — one row of the fleet rollup's top-projects pill list,
+// sorted by completed-task count descending. The dashboard renders these
+// as clickable pills that route to each project's InsightsTab.
+message TopProject {
+  string project_id = 1;
+  string project_name = 2;
+  string project_color = 3;
+  int32 count = 4;
+  double success_rate = 5;
+}
+
+// GlobalInsights is the cross-project rollup the daemon returns from
+// `GetGlobalInsights`. Sums every per-project metric over the window;
+// `tasks_missing_cost` surfaces a partial-data caveat when not every
+// completed task carried a cost number.
+message GlobalInsights {
+  int32 tasks_total = 1;
+  int32 tasks_succeeded = 2;
+  int32 tasks_failed = 3;
+  repeated DayBucket tasks_by_day = 4;
+  repeated TopProject top_projects = 5;
+  repeated AgentBreakdown agent_breakdown = 6;
+  int64 total_duration_ms = 7;
+  double total_cost_usd = 8;
+  int32 tasks_missing_cost = 9;
+  google.protobuf.Timestamp window_start = 10;
+  google.protobuf.Timestamp window_end = 11;
+}
+
+// InsightsService handles cross-task analytics. v6.0 Ember scope is per-task
+// / per-project / fleet rollups in CSV + Markdown plus the dashboard
+// rollup. Future v6.x can extend with PDF / HTML / scheduled export without
+// breaking the wire.
 service InsightsService {
   rpc ExportReport(ExportReportRequest) returns (ExportReportResponse);
+  rpc GetGlobalInsights(GetGlobalInsightsRequest) returns (GlobalInsights);
 }
