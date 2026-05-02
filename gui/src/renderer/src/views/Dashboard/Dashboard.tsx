@@ -20,16 +20,22 @@ import { useTasksStore } from '../../stores/tasks-store'
 import { ProjectCard } from './ProjectCard'
 import { ProjectRow } from './ProjectRow'
 import { EmptyState } from './EmptyState'
+import { FilterChips } from './FilterChips'
 import { cn } from '../../lib/utils'
 import {
+  DASHBOARD_FILTERS,
+  dashboardCounts,
+  filterProjects,
   projectOrderDiffers,
-  sortProjectsByActivity
+  sortProjectsByActivity,
+  type DashboardFilter
 } from '../../lib/dashboard-filters'
 import type { Project } from '../../generated/watchfire_pb'
 
 type DashboardLayout = 'grid' | 'list'
 
 const LAYOUT_KEY = 'wf-dashboard-layout'
+const FILTER_KEY = 'wf-dashboard-filter'
 
 function readSavedLayout(): DashboardLayout {
   try {
@@ -48,6 +54,26 @@ function saveLayout(layout: DashboardLayout): void {
   }
 }
 
+function readSavedFilter(): DashboardFilter {
+  try {
+    const saved = localStorage.getItem(FILTER_KEY)
+    if (saved && (DASHBOARD_FILTERS as string[]).includes(saved)) {
+      return saved as DashboardFilter
+    }
+    return 'all'
+  } catch {
+    return 'all'
+  }
+}
+
+function saveFilter(filter: DashboardFilter): void {
+  try {
+    localStorage.setItem(FILTER_KEY, filter)
+  } catch {
+    /* storage unavailable — ignore */
+  }
+}
+
 export function Dashboard() {
   const projects = useProjectsStore((s) => s.projects)
   const agentStatuses = useProjectsStore((s) => s.agentStatuses)
@@ -55,15 +81,28 @@ export function Dashboard() {
   const reorderProjects = useProjectsStore((s) => s.reorderProjects)
   const tasksByProjectId = useTasksStore((s) => s.tasks)
   const [layout, setLayout] = useState<DashboardLayout>(readSavedLayout)
+  const [filter, setFilter] = useState<DashboardFilter>(readSavedFilter)
 
-  // Filter chips (task 0037) will plug in here as `filteredProjects`.
-  // Auto-sort runs on whatever the filter step produced — for now that is
-  // simply the unfiltered project list.
-  const sortedProjects = useMemo(
-    () => sortProjectsByActivity(projects, tasksByProjectId, agentStatuses),
+  const counts = useMemo(
+    () => dashboardCounts(projects, tasksByProjectId, agentStatuses),
     [projects, tasksByProjectId, agentStatuses]
   )
-  const orderChanged = projectOrderDiffers(projects, sortedProjects)
+
+  const filteredProjects = useMemo(
+    () => filterProjects(projects, filter, tasksByProjectId, agentStatuses),
+    [projects, filter, tasksByProjectId, agentStatuses]
+  )
+
+  const sortedProjects = useMemo(
+    () => sortProjectsByActivity(filteredProjects, tasksByProjectId, agentStatuses),
+    [filteredProjects, tasksByProjectId, agentStatuses]
+  )
+  const orderChanged = projectOrderDiffers(filteredProjects, sortedProjects)
+
+  const updateFilter = (next: DashboardFilter) => {
+    setFilter(next)
+    saveFilter(next)
+  }
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 5 } })
@@ -115,6 +154,9 @@ export function Dashboard() {
           </div>
           <LayoutToggle layout={layout} onChange={updateLayout} />
         </div>
+        <div className="mb-3">
+          <FilterChips active={filter} counts={counts} onChange={updateFilter} />
+        </div>
         {orderChanged && (
           <p
             className="mb-2 text-[11px] text-[var(--wf-text-muted)] italic"
@@ -123,25 +165,40 @@ export function Dashboard() {
             Sorted by activity
           </p>
         )}
-        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
-          {layout === 'grid' ? (
-            <SortableContext items={sortedProjects.map((p) => p.projectId)} strategy={rectSortingStrategy}>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {sortedProjects.map((p) => (
-                  <SortableProjectCard key={p.projectId} project={p} />
-                ))}
-              </div>
-            </SortableContext>
-          ) : (
-            <SortableContext items={sortedProjects.map((p) => p.projectId)} strategy={verticalListSortingStrategy}>
-              <div className="flex flex-col gap-2">
-                {sortedProjects.map((p) => (
-                  <SortableProjectRow key={p.projectId} project={p} />
-                ))}
-              </div>
-            </SortableContext>
-          )}
-        </DndContext>
+        {sortedProjects.length === 0 ? (
+          <div className="mt-6 rounded-[var(--wf-radius-md)] border border-dashed border-[var(--wf-border)] bg-[var(--wf-bg-secondary)] px-4 py-6 text-center">
+            <p className="text-sm text-[var(--wf-text-muted)]">
+              No projects match this filter.
+            </p>
+            <button
+              type="button"
+              onClick={() => updateFilter('all')}
+              className="mt-3 inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-[var(--wf-bg-elevated)] text-[var(--wf-text-secondary)] hover:text-[var(--wf-text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fire-500/50"
+            >
+              Show all
+            </button>
+          </div>
+        ) : (
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            {layout === 'grid' ? (
+              <SortableContext items={sortedProjects.map((p) => p.projectId)} strategy={rectSortingStrategy}>
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {sortedProjects.map((p) => (
+                    <SortableProjectCard key={p.projectId} project={p} />
+                  ))}
+                </div>
+              </SortableContext>
+            ) : (
+              <SortableContext items={sortedProjects.map((p) => p.projectId)} strategy={verticalListSortingStrategy}>
+                <div className="flex flex-col gap-2">
+                  {sortedProjects.map((p) => (
+                    <SortableProjectRow key={p.projectId} project={p} />
+                  ))}
+                </div>
+              </SortableContext>
+            )}
+          </DndContext>
+        )}
       </div>
     </div>
   )
