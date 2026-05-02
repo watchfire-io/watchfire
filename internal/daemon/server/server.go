@@ -22,6 +22,7 @@ import (
 	"github.com/watchfire-io/watchfire/internal/config"
 	"github.com/watchfire-io/watchfire/internal/daemon/agent"
 	"github.com/watchfire-io/watchfire/internal/daemon/agent/prompts"
+	"github.com/watchfire-io/watchfire/internal/daemon/insights"
 	"github.com/watchfire-io/watchfire/internal/daemon/notify"
 	"github.com/watchfire-io/watchfire/internal/daemon/project"
 	"github.com/watchfire-io/watchfire/internal/daemon/task"
@@ -385,7 +386,7 @@ func (s *Server) processWatcherEvents() {
 		switch event.Type {
 		case watcher.EventProjectChanged:
 			log.Printf("[project-watch] Project changed: %s (path: %s)", event.ProjectID, event.Path)
-		case watcher.EventTaskChanged, watcher.EventTaskCreated:
+		case watcher.EventTaskChanged, watcher.EventTaskCreated, watcher.EventTaskDeleted:
 			// Handle both: atomic writes (write tmp → rename) produce Create events
 			// even for existing files, so we can't rely on the distinction.
 			s.handleTaskChanged(event)
@@ -396,6 +397,9 @@ func (s *Server) processWatcherEvents() {
 					log.Printf("[task-watch] Failed to sync next_task_number: %v", err)
 				}
 			}
+			// v6.0 Ember rollup cache cascade — any task-shape change
+			// drops the per-project + global insights caches.
+			insights.InvalidateProjectCache(event.ProjectID)
 		case watcher.EventRefinePhaseEnded:
 			s.handlePhaseEnded(event, agent.WildfirePhaseRefine)
 		case watcher.EventGeneratePhaseEnded:

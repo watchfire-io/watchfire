@@ -22,6 +22,7 @@ import { ProjectRow } from './ProjectRow'
 import { EmptyState } from './EmptyState'
 import { FilterChips } from './FilterChips'
 import { StatusBar } from './StatusBar'
+import { InsightsRollupCard } from './InsightsRollupCard'
 import { ExportPill } from '../../components/ExportPill'
 import { cn } from '../../lib/utils'
 import {
@@ -165,6 +166,9 @@ export function Dashboard() {
             tasksByProjectId={tasksByProjectId}
             agentStatuses={agentStatuses}
           />
+        </div>
+        <div className="mb-4">
+          <InsightsRollupCard />
         </div>
         <div className="mb-3">
           <FilterChips active={filter} counts={counts} onChange={updateFilter} />

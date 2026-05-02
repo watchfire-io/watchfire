@@ -9,6 +9,7 @@ type GlobalKeys struct {
 	Tab            key.Binding
 	GlobalSettings key.Binding
 	Export         key.Binding
+	FleetInsights  key.Binding
 }
 
 var globalKeys = GlobalKeys{
@@ -31,6 +32,10 @@ var globalKeys = GlobalKeys{
 	Export: key.NewBinding(
 		key.WithKeys("ctrl+e"),
 		key.WithHelp("Ctrl+e", "export report"),
+	),
+	FleetInsights: key.NewBinding(
+		key.WithKeys("ctrl+f"),
+		key.WithHelp("Ctrl+f", "fleet insights"),
 	),
 }
 

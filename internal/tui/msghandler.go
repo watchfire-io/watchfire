@@ -190,6 +190,15 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 		cmds = append(cmds, clearErrorAfter(5*time.Second))
 		return true, tea.Batch(cmds...)
 
+	// ── Fleet insights overlay (v6.0 Ember) ───────────────────────
+	case FleetInsightsLoadedMsg:
+		// Drop late responses for stale windows — the user may have
+		// already cycled to a different preset before the RPC returned.
+		if msg.Insights.Window == m.fleetInsightsWindow {
+			m.fleetInsights = msg.Insights
+		}
+		return true, nil
+
 	// ── Log viewer ────────────────────────────────────────────────
 	case LogsLoadedMsg:
 		m.logViewer.SetLogs(msg.Logs)
