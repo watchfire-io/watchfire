@@ -44,6 +44,23 @@ func (s *insightsService) GetGlobalInsights(_ context.Context, req *pb.GetGlobal
 	return globalInsightsToProto(data), nil
 }
 
+func (s *insightsService) GetProjectInsights(_ context.Context, req *pb.GetProjectInsightsRequest) (*pb.ProjectInsights, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "GetProjectInsightsRequest required")
+	}
+	if req.GetProjectId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "project_id required")
+	}
+	windowStart := tsToTime(req.GetWindowStart())
+	windowEnd := tsToTime(req.GetWindowEnd())
+
+	data, err := insights.LoadProjectInsights(req.GetProjectId(), windowStart, windowEnd)
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return projectInsightsToProto(data), nil
+}
+
 func (s *insightsService) ExportReport(_ context.Context, req *pb.ExportReportRequest) (*pb.ExportReportResponse, error) {
 	if req == nil {
 		return nil, status.Error(codes.InvalidArgument, "ExportReportRequest required")
@@ -182,6 +199,55 @@ func globalInsightsToProto(g *insights.GlobalInsights) *pb.GlobalInsights {
 	}
 	out.AgentBreakdown = make([]*pb.AgentBreakdown, 0, len(g.AgentBreakdown))
 	for _, a := range g.AgentBreakdown {
+		out.AgentBreakdown = append(out.AgentBreakdown, &pb.AgentBreakdown{
+			Agent:          a.Agent,
+			Count:          int32(a.Count),
+			SuccessRate:    a.SuccessRate,
+			AvgDurationMs:  a.AvgDurationMs,
+			TotalTokensIn:  a.TotalTokensIn,
+			TotalTokensOut: a.TotalTokensOut,
+			TotalCostUsd:   a.TotalCostUSD,
+		})
+	}
+	return out
+}
+
+// projectInsightsToProto converts the per-project Go aggregator output to
+// its proto counterpart. Same approach as globalInsightsToProto — no fancy
+// translation, just field-by-field copy plus optional Timestamp wrapping.
+func projectInsightsToProto(p *insights.ProjectInsights) *pb.ProjectInsights {
+	if p == nil {
+		return &pb.ProjectInsights{}
+	}
+	out := &pb.ProjectInsights{
+		ProjectId:        p.ProjectID,
+		TasksTotal:       int32(p.TasksTotal),
+		TasksSucceeded:   int32(p.TasksSucceeded),
+		TasksFailed:      int32(p.TasksFailed),
+		TotalDurationMs:  p.TotalDurationMs,
+		AvgDurationMs:    p.AvgDurationMs,
+		P50DurationMs:    p.P50DurationMs,
+		P95DurationMs:    p.P95DurationMs,
+		TotalCostUsd:     p.TotalCostUSD,
+		TasksMissingCost: int32(p.TasksMissingCost),
+	}
+	if !p.WindowStart.IsZero() {
+		out.WindowStart = timestamppb.New(p.WindowStart)
+	}
+	if !p.WindowEnd.IsZero() {
+		out.WindowEnd = timestamppb.New(p.WindowEnd)
+	}
+	out.TasksByDay = make([]*pb.DayBucket, 0, len(p.TasksByDay))
+	for _, b := range p.TasksByDay {
+		out.TasksByDay = append(out.TasksByDay, &pb.DayBucket{
+			Date:      b.Date,
+			Count:     int32(b.Count),
+			Succeeded: int32(b.Succeeded),
+			Failed:    int32(b.Failed),
+		})
+	}
+	out.AgentBreakdown = make([]*pb.AgentBreakdown, 0, len(p.AgentBreakdown))
+	for _, a := range p.AgentBreakdown {
 		out.AgentBreakdown = append(out.AgentBreakdown, &pb.AgentBreakdown{
 			Agent:          a.Agent,
 			Count:          int32(a.Count),

@@ -43,6 +43,7 @@ var helpSections = []helpSection{
 			{"r", "Set task to Ready"},
 			{"t", "Set task to Draft"},
 			{"d", "Mark task Done"},
+			{"i", "Project insights"},
 			{"/", "Search tasks"},
 			{"x", "Delete task (soft)"},
 		},

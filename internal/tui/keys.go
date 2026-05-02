@@ -54,6 +54,7 @@ type TaskListKeys struct {
 	Done     key.Binding
 	Delete   key.Binding
 	Enter    key.Binding
+	Insights key.Binding // v6.0 Ember per-project insights overlay
 }
 
 var taskListKeys = TaskListKeys{
@@ -108,6 +109,10 @@ var taskListKeys = TaskListKeys{
 	Enter: key.NewBinding(
 		key.WithKeys("enter"),
 		key.WithHelp("Enter", "edit"),
+	),
+	Insights: key.NewBinding(
+		key.WithKeys("i"),
+		key.WithHelp("i", "project insights"),
 	),
 }
 

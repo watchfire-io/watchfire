@@ -137,15 +137,91 @@ func InvalidateGlobalCache() {
 	}
 }
 
-// InvalidateProjectCache drops both the per-project rollup cache (set up
-// in 0057) and the fleet `_global.json` cache. The cascade is the
-// contract: any caller that knows a project's metrics changed should
-// just call this and let it fan out.
-//
-// `projectID` is currently unused by the public Go side (we only have the
-// global cache today), but the parameter pins the contract so 0057's
-// per-project cache layer can land additively.
+// InvalidateProjectCache drops both the per-project rollup cache and the
+// fleet `_global.json` cache. The cascade is the contract: any caller
+// that knows a project's metrics changed should just call this and let
+// it fan out.
 func InvalidateProjectCache(projectID string) {
-	_ = projectID // reserved for the per-project cache file added in 0057
+	dropProjectCacheFile(projectID)
 	InvalidateGlobalCache()
+}
+
+// projectCacheFileShape is the on-disk JSON shape for a per-project cache
+// file. Same `map[key]entry` structure as the global cache so the GUI can
+// flip windows without paying for repeated fan-outs.
+type projectCacheFileShape struct {
+	Entries map[string]*ProjectInsights `json:"entries"`
+}
+
+func projectCachePath(projectID string) (string, error) {
+	dir, err := config.GlobalDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(dir, CacheDirName, projectID+".json"), nil
+}
+
+func readProjectCache(projectID string, start, end time.Time) (*ProjectInsights, bool) {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	path, err := projectCachePath(projectID)
+	if err != nil {
+		return nil, false
+	}
+	bytes, err := os.ReadFile(path) //nolint:gosec // path is daemon-controlled
+	if err != nil {
+		return nil, false
+	}
+	var shape projectCacheFileShape
+	if err := json.Unmarshal(bytes, &shape); err != nil {
+		return nil, false
+	}
+	entry, ok := shape.Entries[cacheKey(start, end)]
+	if !ok || entry == nil {
+		return nil, false
+	}
+	return entry, true
+}
+
+func writeProjectCache(out *ProjectInsights) {
+	if out == nil || out.ProjectID == "" {
+		return
+	}
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	if _, err := ensureCacheDir(); err != nil {
+		return
+	}
+	path, err := projectCachePath(out.ProjectID)
+	if err != nil {
+		return
+	}
+	shape := projectCacheFileShape{Entries: map[string]*ProjectInsights{}}
+	if bytes, err := os.ReadFile(path); err == nil { //nolint:gosec // path is daemon-controlled
+		_ = json.Unmarshal(bytes, &shape)
+	}
+	if shape.Entries == nil {
+		shape.Entries = map[string]*ProjectInsights{}
+	}
+	shape.Entries[cacheKey(out.WindowStart, out.WindowEnd)] = out
+	encoded, err := json.MarshalIndent(shape, "", "  ")
+	if err != nil {
+		return
+	}
+	_ = os.WriteFile(path, encoded, 0o644) //nolint:gosec // process-private cache
+}
+
+func dropProjectCacheFile(projectID string) {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	if projectID == "" {
+		return
+	}
+	path, err := projectCachePath(projectID)
+	if err != nil {
+		return
+	}
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return
+	}
 }

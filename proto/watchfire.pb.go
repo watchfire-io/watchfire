@@ -4988,6 +4988,228 @@ func (x *GlobalInsights) GetWindowEnd() *timestamppb.Timestamp {
 	return nil
 }
 
+// GetProjectInsightsRequest scopes a per-project insights query. Both
+// window bounds are optional — leaving them unset queries "all time".
+type GetProjectInsightsRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Meta          *RequestMeta           `protobuf:"bytes,1,opt,name=meta,proto3" json:"meta,omitempty"`
+	ProjectId     string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	WindowStart   *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=window_start,json=windowStart,proto3" json:"window_start,omitempty"`
+	WindowEnd     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=window_end,json=windowEnd,proto3" json:"window_end,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GetProjectInsightsRequest) Reset() {
+	*x = GetProjectInsightsRequest{}
+	mi := &file_proto_watchfire_proto_msgTypes[66]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GetProjectInsightsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GetProjectInsightsRequest) ProtoMessage() {}
+
+func (x *GetProjectInsightsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_watchfire_proto_msgTypes[66]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GetProjectInsightsRequest.ProtoReflect.Descriptor instead.
+func (*GetProjectInsightsRequest) Descriptor() ([]byte, []int) {
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{66}
+}
+
+func (x *GetProjectInsightsRequest) GetMeta() *RequestMeta {
+	if x != nil {
+		return x.Meta
+	}
+	return nil
+}
+
+func (x *GetProjectInsightsRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *GetProjectInsightsRequest) GetWindowStart() *timestamppb.Timestamp {
+	if x != nil {
+		return x.WindowStart
+	}
+	return nil
+}
+
+func (x *GetProjectInsightsRequest) GetWindowEnd() *timestamppb.Timestamp {
+	if x != nil {
+		return x.WindowEnd
+	}
+	return nil
+}
+
+// ProjectInsights is the per-project rollup the daemon returns from
+// `GetProjectInsights`. Same shape primitives as GlobalInsights — the
+// dashboard's per-project Insights tab and the TUI per-project overlay
+// reuse the same renderers.
+type ProjectInsights struct {
+	state            protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId        string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	TasksTotal       int32                  `protobuf:"varint,2,opt,name=tasks_total,json=tasksTotal,proto3" json:"tasks_total,omitempty"`
+	TasksSucceeded   int32                  `protobuf:"varint,3,opt,name=tasks_succeeded,json=tasksSucceeded,proto3" json:"tasks_succeeded,omitempty"`
+	TasksFailed      int32                  `protobuf:"varint,4,opt,name=tasks_failed,json=tasksFailed,proto3" json:"tasks_failed,omitempty"`
+	TasksByDay       []*DayBucket           `protobuf:"bytes,5,rep,name=tasks_by_day,json=tasksByDay,proto3" json:"tasks_by_day,omitempty"`
+	AgentBreakdown   []*AgentBreakdown      `protobuf:"bytes,6,rep,name=agent_breakdown,json=agentBreakdown,proto3" json:"agent_breakdown,omitempty"`
+	TotalDurationMs  int64                  `protobuf:"varint,7,opt,name=total_duration_ms,json=totalDurationMs,proto3" json:"total_duration_ms,omitempty"`
+	AvgDurationMs    int64                  `protobuf:"varint,8,opt,name=avg_duration_ms,json=avgDurationMs,proto3" json:"avg_duration_ms,omitempty"`
+	P50DurationMs    int64                  `protobuf:"varint,9,opt,name=p50_duration_ms,json=p50DurationMs,proto3" json:"p50_duration_ms,omitempty"`
+	P95DurationMs    int64                  `protobuf:"varint,10,opt,name=p95_duration_ms,json=p95DurationMs,proto3" json:"p95_duration_ms,omitempty"`
+	TotalCostUsd     float64                `protobuf:"fixed64,11,opt,name=total_cost_usd,json=totalCostUsd,proto3" json:"total_cost_usd,omitempty"`
+	TasksMissingCost int32                  `protobuf:"varint,12,opt,name=tasks_missing_cost,json=tasksMissingCost,proto3" json:"tasks_missing_cost,omitempty"`
+	WindowStart      *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=window_start,json=windowStart,proto3" json:"window_start,omitempty"`
+	WindowEnd        *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=window_end,json=windowEnd,proto3" json:"window_end,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
+}
+
+func (x *ProjectInsights) Reset() {
+	*x = ProjectInsights{}
+	mi := &file_proto_watchfire_proto_msgTypes[67]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectInsights) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectInsights) ProtoMessage() {}
+
+func (x *ProjectInsights) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_watchfire_proto_msgTypes[67]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectInsights.ProtoReflect.Descriptor instead.
+func (*ProjectInsights) Descriptor() ([]byte, []int) {
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{67}
+}
+
+func (x *ProjectInsights) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *ProjectInsights) GetTasksTotal() int32 {
+	if x != nil {
+		return x.TasksTotal
+	}
+	return 0
+}
+
+func (x *ProjectInsights) GetTasksSucceeded() int32 {
+	if x != nil {
+		return x.TasksSucceeded
+	}
+	return 0
+}
+
+func (x *ProjectInsights) GetTasksFailed() int32 {
+	if x != nil {
+		return x.TasksFailed
+	}
+	return 0
+}
+
+func (x *ProjectInsights) GetTasksByDay() []*DayBucket {
+	if x != nil {
+		return x.TasksByDay
+	}
+	return nil
+}
+
+func (x *ProjectInsights) GetAgentBreakdown() []*AgentBreakdown {
+	if x != nil {
+		return x.AgentBreakdown
+	}
+	return nil
+}
+
+func (x *ProjectInsights) GetTotalDurationMs() int64 {
+	if x != nil {
+		return x.TotalDurationMs
+	}
+	return 0
+}
+
+func (x *ProjectInsights) GetAvgDurationMs() int64 {
+	if x != nil {
+		return x.AvgDurationMs
+	}
+	return 0
+}
+
+func (x *ProjectInsights) GetP50DurationMs() int64 {
+	if x != nil {
+		return x.P50DurationMs
+	}
+	return 0
+}
+
+func (x *ProjectInsights) GetP95DurationMs() int64 {
+	if x != nil {
+		return x.P95DurationMs
+	}
+	return 0
+}
+
+func (x *ProjectInsights) GetTotalCostUsd() float64 {
+	if x != nil {
+		return x.TotalCostUsd
+	}
+	return 0
+}
+
+func (x *ProjectInsights) GetTasksMissingCost() int32 {
+	if x != nil {
+		return x.TasksMissingCost
+	}
+	return 0
+}
+
+func (x *ProjectInsights) GetWindowStart() *timestamppb.Timestamp {
+	if x != nil {
+		return x.WindowStart
+	}
+	return nil
+}
+
+func (x *ProjectInsights) GetWindowEnd() *timestamppb.Timestamp {
+	if x != nil {
+		return x.WindowEnd
+	}
+	return nil
+}
+
 var File_proto_watchfire_proto protoreflect.FileDescriptor
 
 const file_proto_watchfire_proto_rawDesc = "" +
@@ -5497,7 +5719,34 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\fwindow_start\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\vwindowStart\x129\n" +
 	"\n" +
-	"window_end\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\twindowEnd*l\n" +
+	"window_end\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\twindowEnd\"\xe0\x01\n" +
+	"\x19GetProjectInsightsRequest\x12*\n" +
+	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\x12=\n" +
+	"\fwindow_start\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\vwindowStart\x129\n" +
+	"\n" +
+	"window_end\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\twindowEnd\"\x8b\x05\n" +
+	"\x0fProjectInsights\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x1f\n" +
+	"\vtasks_total\x18\x02 \x01(\x05R\n" +
+	"tasksTotal\x12'\n" +
+	"\x0ftasks_succeeded\x18\x03 \x01(\x05R\x0etasksSucceeded\x12!\n" +
+	"\ftasks_failed\x18\x04 \x01(\x05R\vtasksFailed\x126\n" +
+	"\ftasks_by_day\x18\x05 \x03(\v2\x14.watchfire.DayBucketR\n" +
+	"tasksByDay\x12B\n" +
+	"\x0fagent_breakdown\x18\x06 \x03(\v2\x19.watchfire.AgentBreakdownR\x0eagentBreakdown\x12*\n" +
+	"\x11total_duration_ms\x18\a \x01(\x03R\x0ftotalDurationMs\x12&\n" +
+	"\x0favg_duration_ms\x18\b \x01(\x03R\ravgDurationMs\x12&\n" +
+	"\x0fp50_duration_ms\x18\t \x01(\x03R\rp50DurationMs\x12&\n" +
+	"\x0fp95_duration_ms\x18\n" +
+	" \x01(\x03R\rp95DurationMs\x12$\n" +
+	"\x0etotal_cost_usd\x18\v \x01(\x01R\ftotalCostUsd\x12,\n" +
+	"\x12tasks_missing_cost\x18\f \x01(\x05R\x10tasksMissingCost\x12=\n" +
+	"\fwindow_start\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\vwindowStart\x129\n" +
+	"\n" +
+	"window_end\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\twindowEnd*l\n" +
 	"\vFocusTarget\x12\x15\n" +
 	"\x11FOCUS_TARGET_MAIN\x10\x00\x12\x16\n" +
 	"\x12FOCUS_TARGET_TASKS\x10\x01\x12\x15\n" +
@@ -5575,10 +5824,11 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\n" +
 	"ListAgents\x12\x16.google.protobuf.Empty\x1a\x14.watchfire.AgentList2g\n" +
 	"\x13NotificationService\x12P\n" +
-	"\tSubscribe\x12(.watchfire.SubscribeNotificationsRequest\x1a\x17.watchfire.Notification0\x012\xb7\x01\n" +
+	"\tSubscribe\x12(.watchfire.SubscribeNotificationsRequest\x1a\x17.watchfire.Notification0\x012\x8f\x02\n" +
 	"\x0fInsightsService\x12O\n" +
 	"\fExportReport\x12\x1e.watchfire.ExportReportRequest\x1a\x1f.watchfire.ExportReportResponse\x12S\n" +
-	"\x11GetGlobalInsights\x12#.watchfire.GetGlobalInsightsRequest\x1a\x19.watchfire.GlobalInsightsB)Z'github.com/watchfire-io/watchfire/protob\x06proto3"
+	"\x11GetGlobalInsights\x12#.watchfire.GetGlobalInsightsRequest\x1a\x19.watchfire.GlobalInsights\x12V\n" +
+	"\x12GetProjectInsights\x12$.watchfire.GetProjectInsightsRequest\x1a\x1a.watchfire.ProjectInsightsB)Z'github.com/watchfire-io/watchfire/protob\x06proto3"
 
 var (
 	file_proto_watchfire_proto_rawDescOnce sync.Once
@@ -5593,7 +5843,7 @@ func file_proto_watchfire_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_watchfire_proto_enumTypes = make([]protoimpl.EnumInfo, 3)
-var file_proto_watchfire_proto_msgTypes = make([]protoimpl.MessageInfo, 68)
+var file_proto_watchfire_proto_msgTypes = make([]protoimpl.MessageInfo, 70)
 var file_proto_watchfire_proto_goTypes = []any{
 	(FocusTarget)(0),                      // 0: watchfire.FocusTarget
 	(NotificationKind)(0),                 // 1: watchfire.NotificationKind
@@ -5664,25 +5914,27 @@ var file_proto_watchfire_proto_goTypes = []any{
 	(*AgentBreakdown)(nil),                // 66: watchfire.AgentBreakdown
 	(*TopProject)(nil),                    // 67: watchfire.TopProject
 	(*GlobalInsights)(nil),                // 68: watchfire.GlobalInsights
-	nil,                                   // 69: watchfire.Settings.AgentsEntry
-	nil,                                   // 70: watchfire.UpdateSettingsRequest.AgentsEntry
-	(*timestamppb.Timestamp)(nil),         // 71: google.protobuf.Timestamp
-	(*emptypb.Empty)(nil),                 // 72: google.protobuf.Empty
+	(*GetProjectInsightsRequest)(nil),     // 69: watchfire.GetProjectInsightsRequest
+	(*ProjectInsights)(nil),               // 70: watchfire.ProjectInsights
+	nil,                                   // 71: watchfire.Settings.AgentsEntry
+	nil,                                   // 72: watchfire.UpdateSettingsRequest.AgentsEntry
+	(*timestamppb.Timestamp)(nil),         // 73: google.protobuf.Timestamp
+	(*emptypb.Empty)(nil),                 // 74: google.protobuf.Empty
 }
 var file_proto_watchfire_proto_depIdxs = []int32{
-	71,  // 0: watchfire.Project.created_at:type_name -> google.protobuf.Timestamp
-	71,  // 1: watchfire.Project.updated_at:type_name -> google.protobuf.Timestamp
+	73,  // 0: watchfire.Project.created_at:type_name -> google.protobuf.Timestamp
+	73,  // 1: watchfire.Project.updated_at:type_name -> google.protobuf.Timestamp
 	5,   // 2: watchfire.Project.notifications:type_name -> watchfire.ProjectNotifications
 	3,   // 3: watchfire.ProjectId.meta:type_name -> watchfire.RequestMeta
 	4,   // 4: watchfire.ProjectList.projects:type_name -> watchfire.Project
 	3,   // 5: watchfire.CreateProjectRequest.meta:type_name -> watchfire.RequestMeta
 	3,   // 6: watchfire.UpdateProjectRequest.meta:type_name -> watchfire.RequestMeta
 	3,   // 7: watchfire.ReorderProjectsRequest.meta:type_name -> watchfire.RequestMeta
-	71,  // 8: watchfire.Task.created_at:type_name -> google.protobuf.Timestamp
-	71,  // 9: watchfire.Task.started_at:type_name -> google.protobuf.Timestamp
-	71,  // 10: watchfire.Task.completed_at:type_name -> google.protobuf.Timestamp
-	71,  // 11: watchfire.Task.updated_at:type_name -> google.protobuf.Timestamp
-	71,  // 12: watchfire.Task.deleted_at:type_name -> google.protobuf.Timestamp
+	73,  // 8: watchfire.Task.created_at:type_name -> google.protobuf.Timestamp
+	73,  // 9: watchfire.Task.started_at:type_name -> google.protobuf.Timestamp
+	73,  // 10: watchfire.Task.completed_at:type_name -> google.protobuf.Timestamp
+	73,  // 11: watchfire.Task.updated_at:type_name -> google.protobuf.Timestamp
+	73,  // 12: watchfire.Task.deleted_at:type_name -> google.protobuf.Timestamp
 	3,   // 13: watchfire.TaskId.meta:type_name -> watchfire.RequestMeta
 	12,  // 14: watchfire.TaskList.tasks:type_name -> watchfire.Task
 	3,   // 15: watchfire.ListTasksRequest.meta:type_name -> watchfire.RequestMeta
@@ -5692,18 +5944,18 @@ var file_proto_watchfire_proto_depIdxs = []int32{
 	3,   // 19: watchfire.BulkDeleteRequest.meta:type_name -> watchfire.RequestMeta
 	3,   // 20: watchfire.BulkRestoreRequest.meta:type_name -> watchfire.RequestMeta
 	3,   // 21: watchfire.ReorderTasksRequest.meta:type_name -> watchfire.RequestMeta
-	71,  // 22: watchfire.DaemonStatus.started_at:type_name -> google.protobuf.Timestamp
+	73,  // 22: watchfire.DaemonStatus.started_at:type_name -> google.protobuf.Timestamp
 	33,  // 23: watchfire.AgentStatus.issue:type_name -> watchfire.AgentIssue
-	71,  // 24: watchfire.AgentStatus.started_at:type_name -> google.protobuf.Timestamp
+	73,  // 24: watchfire.AgentStatus.started_at:type_name -> google.protobuf.Timestamp
 	3,   // 25: watchfire.StartAgentRequest.meta:type_name -> watchfire.RequestMeta
 	3,   // 26: watchfire.SubscribeScreenRequest.meta:type_name -> watchfire.RequestMeta
 	3,   // 27: watchfire.ScrollbackRequest.meta:type_name -> watchfire.RequestMeta
 	3,   // 28: watchfire.SendInputRequest.meta:type_name -> watchfire.RequestMeta
 	3,   // 29: watchfire.ResizeRequest.meta:type_name -> watchfire.RequestMeta
 	3,   // 30: watchfire.SubscribeRawOutputRequest.meta:type_name -> watchfire.RequestMeta
-	71,  // 31: watchfire.AgentIssue.detected_at:type_name -> google.protobuf.Timestamp
-	71,  // 32: watchfire.AgentIssue.reset_at:type_name -> google.protobuf.Timestamp
-	71,  // 33: watchfire.AgentIssue.cooldown_until:type_name -> google.protobuf.Timestamp
+	73,  // 31: watchfire.AgentIssue.detected_at:type_name -> google.protobuf.Timestamp
+	73,  // 32: watchfire.AgentIssue.reset_at:type_name -> google.protobuf.Timestamp
+	73,  // 33: watchfire.AgentIssue.cooldown_until:type_name -> google.protobuf.Timestamp
 	3,   // 34: watchfire.SubscribeAgentIssuesRequest.meta:type_name -> watchfire.RequestMeta
 	35,  // 35: watchfire.BranchList.branches:type_name -> watchfire.Branch
 	3,   // 36: watchfire.BranchId.meta:type_name -> watchfire.RequestMeta
@@ -5713,7 +5965,7 @@ var file_proto_watchfire_proto_depIdxs = []int32{
 	42,  // 40: watchfire.NotificationsConfig.events:type_name -> watchfire.NotificationsEvents
 	43,  // 41: watchfire.NotificationsConfig.sounds:type_name -> watchfire.NotificationsSounds
 	44,  // 42: watchfire.NotificationsConfig.quiet_hours:type_name -> watchfire.QuietHoursConfig
-	69,  // 43: watchfire.Settings.agents:type_name -> watchfire.Settings.AgentsEntry
+	71,  // 43: watchfire.Settings.agents:type_name -> watchfire.Settings.AgentsEntry
 	41,  // 44: watchfire.Settings.defaults:type_name -> watchfire.DefaultsConfig
 	46,  // 45: watchfire.Settings.updates:type_name -> watchfire.UpdatesConfig
 	47,  // 46: watchfire.Settings.appearance:type_name -> watchfire.AppearanceConfig
@@ -5721,7 +5973,7 @@ var file_proto_watchfire_proto_depIdxs = []int32{
 	41,  // 48: watchfire.UpdateSettingsRequest.defaults:type_name -> watchfire.DefaultsConfig
 	46,  // 49: watchfire.UpdateSettingsRequest.updates:type_name -> watchfire.UpdatesConfig
 	47,  // 50: watchfire.UpdateSettingsRequest.appearance:type_name -> watchfire.AppearanceConfig
-	70,  // 51: watchfire.UpdateSettingsRequest.agents:type_name -> watchfire.UpdateSettingsRequest.AgentsEntry
+	72,  // 51: watchfire.UpdateSettingsRequest.agents:type_name -> watchfire.UpdateSettingsRequest.AgentsEntry
 	50,  // 52: watchfire.AgentList.agents:type_name -> watchfire.AgentInfo
 	3,   // 53: watchfire.SubscribeFocusEventsRequest.meta:type_name -> watchfire.RequestMeta
 	0,   // 54: watchfire.FocusEvent.target:type_name -> watchfire.FocusTarget
@@ -5730,124 +5982,133 @@ var file_proto_watchfire_proto_depIdxs = []int32{
 	3,   // 57: watchfire.GetLogRequest.meta:type_name -> watchfire.RequestMeta
 	55,  // 58: watchfire.LogContent.entry:type_name -> watchfire.LogEntry
 	3,   // 59: watchfire.DeleteLogRequest.meta:type_name -> watchfire.RequestMeta
-	71,  // 60: watchfire.Notification.emitted_at:type_name -> google.protobuf.Timestamp
+	73,  // 60: watchfire.Notification.emitted_at:type_name -> google.protobuf.Timestamp
 	1,   // 61: watchfire.Notification.kind:type_name -> watchfire.NotificationKind
 	3,   // 62: watchfire.SubscribeNotificationsRequest.meta:type_name -> watchfire.RequestMeta
 	3,   // 63: watchfire.ExportReportRequest.meta:type_name -> watchfire.RequestMeta
 	2,   // 64: watchfire.ExportReportRequest.format:type_name -> watchfire.ExportFormat
-	71,  // 65: watchfire.ExportReportRequest.window_start:type_name -> google.protobuf.Timestamp
-	71,  // 66: watchfire.ExportReportRequest.window_end:type_name -> google.protobuf.Timestamp
+	73,  // 65: watchfire.ExportReportRequest.window_start:type_name -> google.protobuf.Timestamp
+	73,  // 66: watchfire.ExportReportRequest.window_end:type_name -> google.protobuf.Timestamp
 	3,   // 67: watchfire.GetGlobalInsightsRequest.meta:type_name -> watchfire.RequestMeta
-	71,  // 68: watchfire.GetGlobalInsightsRequest.window_start:type_name -> google.protobuf.Timestamp
-	71,  // 69: watchfire.GetGlobalInsightsRequest.window_end:type_name -> google.protobuf.Timestamp
+	73,  // 68: watchfire.GetGlobalInsightsRequest.window_start:type_name -> google.protobuf.Timestamp
+	73,  // 69: watchfire.GetGlobalInsightsRequest.window_end:type_name -> google.protobuf.Timestamp
 	65,  // 70: watchfire.GlobalInsights.tasks_by_day:type_name -> watchfire.DayBucket
 	67,  // 71: watchfire.GlobalInsights.top_projects:type_name -> watchfire.TopProject
 	66,  // 72: watchfire.GlobalInsights.agent_breakdown:type_name -> watchfire.AgentBreakdown
-	71,  // 73: watchfire.GlobalInsights.window_start:type_name -> google.protobuf.Timestamp
-	71,  // 74: watchfire.GlobalInsights.window_end:type_name -> google.protobuf.Timestamp
-	40,  // 75: watchfire.Settings.AgentsEntry.value:type_name -> watchfire.AgentConfig
-	40,  // 76: watchfire.UpdateSettingsRequest.AgentsEntry.value:type_name -> watchfire.AgentConfig
-	72,  // 77: watchfire.ProjectService.ListProjects:input_type -> google.protobuf.Empty
-	6,   // 78: watchfire.ProjectService.GetProject:input_type -> watchfire.ProjectId
-	8,   // 79: watchfire.ProjectService.CreateProject:input_type -> watchfire.CreateProjectRequest
-	9,   // 80: watchfire.ProjectService.UpdateProject:input_type -> watchfire.UpdateProjectRequest
-	6,   // 81: watchfire.ProjectService.DeleteProject:input_type -> watchfire.ProjectId
-	6,   // 82: watchfire.ProjectService.GetGitInfo:input_type -> watchfire.ProjectId
-	10,  // 83: watchfire.ProjectService.ReorderProjects:input_type -> watchfire.ReorderProjectsRequest
-	15,  // 84: watchfire.TaskService.ListTasks:input_type -> watchfire.ListTasksRequest
-	13,  // 85: watchfire.TaskService.GetTask:input_type -> watchfire.TaskId
-	16,  // 86: watchfire.TaskService.CreateTask:input_type -> watchfire.CreateTaskRequest
-	17,  // 87: watchfire.TaskService.UpdateTask:input_type -> watchfire.UpdateTaskRequest
-	13,  // 88: watchfire.TaskService.DeleteTask:input_type -> watchfire.TaskId
-	13,  // 89: watchfire.TaskService.RestoreTask:input_type -> watchfire.TaskId
-	6,   // 90: watchfire.TaskService.EmptyTrash:input_type -> watchfire.ProjectId
-	18,  // 91: watchfire.TaskService.BulkUpdateStatus:input_type -> watchfire.BulkUpdateStatusRequest
-	19,  // 92: watchfire.TaskService.BulkDelete:input_type -> watchfire.BulkDeleteRequest
-	20,  // 93: watchfire.TaskService.BulkRestore:input_type -> watchfire.BulkRestoreRequest
-	21,  // 94: watchfire.TaskService.ReorderTasks:input_type -> watchfire.ReorderTasksRequest
-	72,  // 95: watchfire.DaemonService.GetStatus:input_type -> google.protobuf.Empty
-	72,  // 96: watchfire.DaemonService.Shutdown:input_type -> google.protobuf.Empty
-	72,  // 97: watchfire.DaemonService.Ping:input_type -> google.protobuf.Empty
-	52,  // 98: watchfire.DaemonService.SubscribeFocusEvents:input_type -> watchfire.SubscribeFocusEventsRequest
-	54,  // 99: watchfire.LogService.ListLogs:input_type -> watchfire.ListLogsRequest
-	57,  // 100: watchfire.LogService.GetLog:input_type -> watchfire.GetLogRequest
-	59,  // 101: watchfire.LogService.DeleteLog:input_type -> watchfire.DeleteLogRequest
-	24,  // 102: watchfire.AgentService.StartAgent:input_type -> watchfire.StartAgentRequest
-	6,   // 103: watchfire.AgentService.StopAgent:input_type -> watchfire.ProjectId
-	6,   // 104: watchfire.AgentService.GetAgentStatus:input_type -> watchfire.ProjectId
-	26,  // 105: watchfire.AgentService.SubscribeScreen:input_type -> watchfire.SubscribeScreenRequest
-	27,  // 106: watchfire.AgentService.GetScrollback:input_type -> watchfire.ScrollbackRequest
-	29,  // 107: watchfire.AgentService.SendInput:input_type -> watchfire.SendInputRequest
-	30,  // 108: watchfire.AgentService.Resize:input_type -> watchfire.ResizeRequest
-	31,  // 109: watchfire.AgentService.SubscribeRawOutput:input_type -> watchfire.SubscribeRawOutputRequest
-	34,  // 110: watchfire.AgentService.SubscribeAgentIssues:input_type -> watchfire.SubscribeAgentIssuesRequest
-	6,   // 111: watchfire.AgentService.ResumeAgent:input_type -> watchfire.ProjectId
-	6,   // 112: watchfire.BranchService.ListBranches:input_type -> watchfire.ProjectId
-	37,  // 113: watchfire.BranchService.GetBranch:input_type -> watchfire.BranchId
-	38,  // 114: watchfire.BranchService.MergeBranch:input_type -> watchfire.MergeBranchRequest
-	37,  // 115: watchfire.BranchService.DeleteBranch:input_type -> watchfire.BranchId
-	6,   // 116: watchfire.BranchService.PruneBranches:input_type -> watchfire.ProjectId
-	39,  // 117: watchfire.BranchService.BulkMerge:input_type -> watchfire.BulkBranchRequest
-	39,  // 118: watchfire.BranchService.BulkDelete:input_type -> watchfire.BulkBranchRequest
-	72,  // 119: watchfire.SettingsService.GetSettings:input_type -> google.protobuf.Empty
-	49,  // 120: watchfire.SettingsService.UpdateSettings:input_type -> watchfire.UpdateSettingsRequest
-	72,  // 121: watchfire.SettingsService.ListAgents:input_type -> google.protobuf.Empty
-	61,  // 122: watchfire.NotificationService.Subscribe:input_type -> watchfire.SubscribeNotificationsRequest
-	62,  // 123: watchfire.InsightsService.ExportReport:input_type -> watchfire.ExportReportRequest
-	64,  // 124: watchfire.InsightsService.GetGlobalInsights:input_type -> watchfire.GetGlobalInsightsRequest
-	7,   // 125: watchfire.ProjectService.ListProjects:output_type -> watchfire.ProjectList
-	4,   // 126: watchfire.ProjectService.GetProject:output_type -> watchfire.Project
-	4,   // 127: watchfire.ProjectService.CreateProject:output_type -> watchfire.Project
-	4,   // 128: watchfire.ProjectService.UpdateProject:output_type -> watchfire.Project
-	72,  // 129: watchfire.ProjectService.DeleteProject:output_type -> google.protobuf.Empty
-	11,  // 130: watchfire.ProjectService.GetGitInfo:output_type -> watchfire.GitInfo
-	7,   // 131: watchfire.ProjectService.ReorderProjects:output_type -> watchfire.ProjectList
-	14,  // 132: watchfire.TaskService.ListTasks:output_type -> watchfire.TaskList
-	12,  // 133: watchfire.TaskService.GetTask:output_type -> watchfire.Task
-	12,  // 134: watchfire.TaskService.CreateTask:output_type -> watchfire.Task
-	12,  // 135: watchfire.TaskService.UpdateTask:output_type -> watchfire.Task
-	12,  // 136: watchfire.TaskService.DeleteTask:output_type -> watchfire.Task
-	12,  // 137: watchfire.TaskService.RestoreTask:output_type -> watchfire.Task
-	72,  // 138: watchfire.TaskService.EmptyTrash:output_type -> google.protobuf.Empty
-	14,  // 139: watchfire.TaskService.BulkUpdateStatus:output_type -> watchfire.TaskList
-	14,  // 140: watchfire.TaskService.BulkDelete:output_type -> watchfire.TaskList
-	14,  // 141: watchfire.TaskService.BulkRestore:output_type -> watchfire.TaskList
-	14,  // 142: watchfire.TaskService.ReorderTasks:output_type -> watchfire.TaskList
-	22,  // 143: watchfire.DaemonService.GetStatus:output_type -> watchfire.DaemonStatus
-	72,  // 144: watchfire.DaemonService.Shutdown:output_type -> google.protobuf.Empty
-	72,  // 145: watchfire.DaemonService.Ping:output_type -> google.protobuf.Empty
-	53,  // 146: watchfire.DaemonService.SubscribeFocusEvents:output_type -> watchfire.FocusEvent
-	56,  // 147: watchfire.LogService.ListLogs:output_type -> watchfire.LogList
-	58,  // 148: watchfire.LogService.GetLog:output_type -> watchfire.LogContent
-	72,  // 149: watchfire.LogService.DeleteLog:output_type -> google.protobuf.Empty
-	23,  // 150: watchfire.AgentService.StartAgent:output_type -> watchfire.AgentStatus
-	72,  // 151: watchfire.AgentService.StopAgent:output_type -> google.protobuf.Empty
-	23,  // 152: watchfire.AgentService.GetAgentStatus:output_type -> watchfire.AgentStatus
-	25,  // 153: watchfire.AgentService.SubscribeScreen:output_type -> watchfire.ScreenBuffer
-	28,  // 154: watchfire.AgentService.GetScrollback:output_type -> watchfire.ScrollbackLines
-	72,  // 155: watchfire.AgentService.SendInput:output_type -> google.protobuf.Empty
-	72,  // 156: watchfire.AgentService.Resize:output_type -> google.protobuf.Empty
-	32,  // 157: watchfire.AgentService.SubscribeRawOutput:output_type -> watchfire.RawOutputChunk
-	33,  // 158: watchfire.AgentService.SubscribeAgentIssues:output_type -> watchfire.AgentIssue
-	23,  // 159: watchfire.AgentService.ResumeAgent:output_type -> watchfire.AgentStatus
-	36,  // 160: watchfire.BranchService.ListBranches:output_type -> watchfire.BranchList
-	35,  // 161: watchfire.BranchService.GetBranch:output_type -> watchfire.Branch
-	35,  // 162: watchfire.BranchService.MergeBranch:output_type -> watchfire.Branch
-	72,  // 163: watchfire.BranchService.DeleteBranch:output_type -> google.protobuf.Empty
-	36,  // 164: watchfire.BranchService.PruneBranches:output_type -> watchfire.BranchList
-	36,  // 165: watchfire.BranchService.BulkMerge:output_type -> watchfire.BranchList
-	72,  // 166: watchfire.BranchService.BulkDelete:output_type -> google.protobuf.Empty
-	48,  // 167: watchfire.SettingsService.GetSettings:output_type -> watchfire.Settings
-	48,  // 168: watchfire.SettingsService.UpdateSettings:output_type -> watchfire.Settings
-	51,  // 169: watchfire.SettingsService.ListAgents:output_type -> watchfire.AgentList
-	60,  // 170: watchfire.NotificationService.Subscribe:output_type -> watchfire.Notification
-	63,  // 171: watchfire.InsightsService.ExportReport:output_type -> watchfire.ExportReportResponse
-	68,  // 172: watchfire.InsightsService.GetGlobalInsights:output_type -> watchfire.GlobalInsights
-	125, // [125:173] is the sub-list for method output_type
-	77,  // [77:125] is the sub-list for method input_type
-	77,  // [77:77] is the sub-list for extension type_name
-	77,  // [77:77] is the sub-list for extension extendee
-	0,   // [0:77] is the sub-list for field type_name
+	73,  // 73: watchfire.GlobalInsights.window_start:type_name -> google.protobuf.Timestamp
+	73,  // 74: watchfire.GlobalInsights.window_end:type_name -> google.protobuf.Timestamp
+	3,   // 75: watchfire.GetProjectInsightsRequest.meta:type_name -> watchfire.RequestMeta
+	73,  // 76: watchfire.GetProjectInsightsRequest.window_start:type_name -> google.protobuf.Timestamp
+	73,  // 77: watchfire.GetProjectInsightsRequest.window_end:type_name -> google.protobuf.Timestamp
+	65,  // 78: watchfire.ProjectInsights.tasks_by_day:type_name -> watchfire.DayBucket
+	66,  // 79: watchfire.ProjectInsights.agent_breakdown:type_name -> watchfire.AgentBreakdown
+	73,  // 80: watchfire.ProjectInsights.window_start:type_name -> google.protobuf.Timestamp
+	73,  // 81: watchfire.ProjectInsights.window_end:type_name -> google.protobuf.Timestamp
+	40,  // 82: watchfire.Settings.AgentsEntry.value:type_name -> watchfire.AgentConfig
+	40,  // 83: watchfire.UpdateSettingsRequest.AgentsEntry.value:type_name -> watchfire.AgentConfig
+	74,  // 84: watchfire.ProjectService.ListProjects:input_type -> google.protobuf.Empty
+	6,   // 85: watchfire.ProjectService.GetProject:input_type -> watchfire.ProjectId
+	8,   // 86: watchfire.ProjectService.CreateProject:input_type -> watchfire.CreateProjectRequest
+	9,   // 87: watchfire.ProjectService.UpdateProject:input_type -> watchfire.UpdateProjectRequest
+	6,   // 88: watchfire.ProjectService.DeleteProject:input_type -> watchfire.ProjectId
+	6,   // 89: watchfire.ProjectService.GetGitInfo:input_type -> watchfire.ProjectId
+	10,  // 90: watchfire.ProjectService.ReorderProjects:input_type -> watchfire.ReorderProjectsRequest
+	15,  // 91: watchfire.TaskService.ListTasks:input_type -> watchfire.ListTasksRequest
+	13,  // 92: watchfire.TaskService.GetTask:input_type -> watchfire.TaskId
+	16,  // 93: watchfire.TaskService.CreateTask:input_type -> watchfire.CreateTaskRequest
+	17,  // 94: watchfire.TaskService.UpdateTask:input_type -> watchfire.UpdateTaskRequest
+	13,  // 95: watchfire.TaskService.DeleteTask:input_type -> watchfire.TaskId
+	13,  // 96: watchfire.TaskService.RestoreTask:input_type -> watchfire.TaskId
+	6,   // 97: watchfire.TaskService.EmptyTrash:input_type -> watchfire.ProjectId
+	18,  // 98: watchfire.TaskService.BulkUpdateStatus:input_type -> watchfire.BulkUpdateStatusRequest
+	19,  // 99: watchfire.TaskService.BulkDelete:input_type -> watchfire.BulkDeleteRequest
+	20,  // 100: watchfire.TaskService.BulkRestore:input_type -> watchfire.BulkRestoreRequest
+	21,  // 101: watchfire.TaskService.ReorderTasks:input_type -> watchfire.ReorderTasksRequest
+	74,  // 102: watchfire.DaemonService.GetStatus:input_type -> google.protobuf.Empty
+	74,  // 103: watchfire.DaemonService.Shutdown:input_type -> google.protobuf.Empty
+	74,  // 104: watchfire.DaemonService.Ping:input_type -> google.protobuf.Empty
+	52,  // 105: watchfire.DaemonService.SubscribeFocusEvents:input_type -> watchfire.SubscribeFocusEventsRequest
+	54,  // 106: watchfire.LogService.ListLogs:input_type -> watchfire.ListLogsRequest
+	57,  // 107: watchfire.LogService.GetLog:input_type -> watchfire.GetLogRequest
+	59,  // 108: watchfire.LogService.DeleteLog:input_type -> watchfire.DeleteLogRequest
+	24,  // 109: watchfire.AgentService.StartAgent:input_type -> watchfire.StartAgentRequest
+	6,   // 110: watchfire.AgentService.StopAgent:input_type -> watchfire.ProjectId
+	6,   // 111: watchfire.AgentService.GetAgentStatus:input_type -> watchfire.ProjectId
+	26,  // 112: watchfire.AgentService.SubscribeScreen:input_type -> watchfire.SubscribeScreenRequest
+	27,  // 113: watchfire.AgentService.GetScrollback:input_type -> watchfire.ScrollbackRequest
+	29,  // 114: watchfire.AgentService.SendInput:input_type -> watchfire.SendInputRequest
+	30,  // 115: watchfire.AgentService.Resize:input_type -> watchfire.ResizeRequest
+	31,  // 116: watchfire.AgentService.SubscribeRawOutput:input_type -> watchfire.SubscribeRawOutputRequest
+	34,  // 117: watchfire.AgentService.SubscribeAgentIssues:input_type -> watchfire.SubscribeAgentIssuesRequest
+	6,   // 118: watchfire.AgentService.ResumeAgent:input_type -> watchfire.ProjectId
+	6,   // 119: watchfire.BranchService.ListBranches:input_type -> watchfire.ProjectId
+	37,  // 120: watchfire.BranchService.GetBranch:input_type -> watchfire.BranchId
+	38,  // 121: watchfire.BranchService.MergeBranch:input_type -> watchfire.MergeBranchRequest
+	37,  // 122: watchfire.BranchService.DeleteBranch:input_type -> watchfire.BranchId
+	6,   // 123: watchfire.BranchService.PruneBranches:input_type -> watchfire.ProjectId
+	39,  // 124: watchfire.BranchService.BulkMerge:input_type -> watchfire.BulkBranchRequest
+	39,  // 125: watchfire.BranchService.BulkDelete:input_type -> watchfire.BulkBranchRequest
+	74,  // 126: watchfire.SettingsService.GetSettings:input_type -> google.protobuf.Empty
+	49,  // 127: watchfire.SettingsService.UpdateSettings:input_type -> watchfire.UpdateSettingsRequest
+	74,  // 128: watchfire.SettingsService.ListAgents:input_type -> google.protobuf.Empty
+	61,  // 129: watchfire.NotificationService.Subscribe:input_type -> watchfire.SubscribeNotificationsRequest
+	62,  // 130: watchfire.InsightsService.ExportReport:input_type -> watchfire.ExportReportRequest
+	64,  // 131: watchfire.InsightsService.GetGlobalInsights:input_type -> watchfire.GetGlobalInsightsRequest
+	69,  // 132: watchfire.InsightsService.GetProjectInsights:input_type -> watchfire.GetProjectInsightsRequest
+	7,   // 133: watchfire.ProjectService.ListProjects:output_type -> watchfire.ProjectList
+	4,   // 134: watchfire.ProjectService.GetProject:output_type -> watchfire.Project
+	4,   // 135: watchfire.ProjectService.CreateProject:output_type -> watchfire.Project
+	4,   // 136: watchfire.ProjectService.UpdateProject:output_type -> watchfire.Project
+	74,  // 137: watchfire.ProjectService.DeleteProject:output_type -> google.protobuf.Empty
+	11,  // 138: watchfire.ProjectService.GetGitInfo:output_type -> watchfire.GitInfo
+	7,   // 139: watchfire.ProjectService.ReorderProjects:output_type -> watchfire.ProjectList
+	14,  // 140: watchfire.TaskService.ListTasks:output_type -> watchfire.TaskList
+	12,  // 141: watchfire.TaskService.GetTask:output_type -> watchfire.Task
+	12,  // 142: watchfire.TaskService.CreateTask:output_type -> watchfire.Task
+	12,  // 143: watchfire.TaskService.UpdateTask:output_type -> watchfire.Task
+	12,  // 144: watchfire.TaskService.DeleteTask:output_type -> watchfire.Task
+	12,  // 145: watchfire.TaskService.RestoreTask:output_type -> watchfire.Task
+	74,  // 146: watchfire.TaskService.EmptyTrash:output_type -> google.protobuf.Empty
+	14,  // 147: watchfire.TaskService.BulkUpdateStatus:output_type -> watchfire.TaskList
+	14,  // 148: watchfire.TaskService.BulkDelete:output_type -> watchfire.TaskList
+	14,  // 149: watchfire.TaskService.BulkRestore:output_type -> watchfire.TaskList
+	14,  // 150: watchfire.TaskService.ReorderTasks:output_type -> watchfire.TaskList
+	22,  // 151: watchfire.DaemonService.GetStatus:output_type -> watchfire.DaemonStatus
+	74,  // 152: watchfire.DaemonService.Shutdown:output_type -> google.protobuf.Empty
+	74,  // 153: watchfire.DaemonService.Ping:output_type -> google.protobuf.Empty
+	53,  // 154: watchfire.DaemonService.SubscribeFocusEvents:output_type -> watchfire.FocusEvent
+	56,  // 155: watchfire.LogService.ListLogs:output_type -> watchfire.LogList
+	58,  // 156: watchfire.LogService.GetLog:output_type -> watchfire.LogContent
+	74,  // 157: watchfire.LogService.DeleteLog:output_type -> google.protobuf.Empty
+	23,  // 158: watchfire.AgentService.StartAgent:output_type -> watchfire.AgentStatus
+	74,  // 159: watchfire.AgentService.StopAgent:output_type -> google.protobuf.Empty
+	23,  // 160: watchfire.AgentService.GetAgentStatus:output_type -> watchfire.AgentStatus
+	25,  // 161: watchfire.AgentService.SubscribeScreen:output_type -> watchfire.ScreenBuffer
+	28,  // 162: watchfire.AgentService.GetScrollback:output_type -> watchfire.ScrollbackLines
+	74,  // 163: watchfire.AgentService.SendInput:output_type -> google.protobuf.Empty
+	74,  // 164: watchfire.AgentService.Resize:output_type -> google.protobuf.Empty
+	32,  // 165: watchfire.AgentService.SubscribeRawOutput:output_type -> watchfire.RawOutputChunk
+	33,  // 166: watchfire.AgentService.SubscribeAgentIssues:output_type -> watchfire.AgentIssue
+	23,  // 167: watchfire.AgentService.ResumeAgent:output_type -> watchfire.AgentStatus
+	36,  // 168: watchfire.BranchService.ListBranches:output_type -> watchfire.BranchList
+	35,  // 169: watchfire.BranchService.GetBranch:output_type -> watchfire.Branch
+	35,  // 170: watchfire.BranchService.MergeBranch:output_type -> watchfire.Branch
+	74,  // 171: watchfire.BranchService.DeleteBranch:output_type -> google.protobuf.Empty
+	36,  // 172: watchfire.BranchService.PruneBranches:output_type -> watchfire.BranchList
+	36,  // 173: watchfire.BranchService.BulkMerge:output_type -> watchfire.BranchList
+	74,  // 174: watchfire.BranchService.BulkDelete:output_type -> google.protobuf.Empty
+	48,  // 175: watchfire.SettingsService.GetSettings:output_type -> watchfire.Settings
+	48,  // 176: watchfire.SettingsService.UpdateSettings:output_type -> watchfire.Settings
+	51,  // 177: watchfire.SettingsService.ListAgents:output_type -> watchfire.AgentList
+	60,  // 178: watchfire.NotificationService.Subscribe:output_type -> watchfire.Notification
+	63,  // 179: watchfire.InsightsService.ExportReport:output_type -> watchfire.ExportReportResponse
+	68,  // 180: watchfire.InsightsService.GetGlobalInsights:output_type -> watchfire.GlobalInsights
+	70,  // 181: watchfire.InsightsService.GetProjectInsights:output_type -> watchfire.ProjectInsights
+	133, // [133:182] is the sub-list for method output_type
+	84,  // [84:133] is the sub-list for method input_type
+	84,  // [84:84] is the sub-list for extension type_name
+	84,  // [84:84] is the sub-list for extension extendee
+	0,   // [0:84] is the sub-list for field type_name
 }
 
 func init() { file_proto_watchfire_proto_init() }
@@ -5874,7 +6135,7 @@ func file_proto_watchfire_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_watchfire_proto_rawDesc), len(file_proto_watchfire_proto_rawDesc)),
 			NumEnums:      3,
-			NumMessages:   68,
+			NumMessages:   70,
 			NumExtensions: 0,
 			NumServices:   9,
 		},

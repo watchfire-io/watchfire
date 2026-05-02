@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ListTodo, FileText, Trash2, Settings, GitBranch, Globe, Circle, PanelRightClose, PanelRight, KeyRound } from 'lucide-react'
+import { ListTodo, FileText, Trash2, Settings, GitBranch, Globe, Circle, PanelRightClose, PanelRight, KeyRound, Sparkles } from 'lucide-react'
 import { useAppStore } from '../../stores/app-store'
 import { useProjectsStore } from '../../stores/projects-store'
 import { useTasksStore } from '../../stores/tasks-store'
@@ -14,6 +14,7 @@ import { DefinitionTab } from './DefinitionTab'
 import { SecretsTab } from './SecretsTab'
 import { TrashTab } from './TrashTab'
 import { SettingsTab } from './SettingsTab'
+import { InsightsTab } from './InsightsTab'
 import { RightPanel } from './RightPanel/RightPanel'
 import { BottomPanel } from './BottomPanel/BottomPanel'
 import { useTerminalStore } from '../../stores/terminal-store'
@@ -21,11 +22,12 @@ import { ModesControl } from './ModesControl'
 import { OpenInIDEButton } from './OpenInIDEButton'
 import { ExportPill } from '../../components/ExportPill'
 
-type CenterTab = 'tasks' | 'definition' | 'secrets' | 'trash' | 'settings'
+type CenterTab = 'tasks' | 'definition' | 'insights' | 'secrets' | 'trash' | 'settings'
 
 const CENTER_TABS: { key: CenterTab; icon: typeof ListTodo; label: string }[] = [
   { key: 'tasks', icon: ListTodo, label: 'Tasks' },
   { key: 'definition', icon: FileText, label: 'Definition' },
+  { key: 'insights', icon: Sparkles, label: 'Insights' },
   { key: 'secrets', icon: KeyRound, label: 'Secrets' },
   { key: 'trash', icon: Trash2, label: 'Trash' },
   { key: 'settings', icon: Settings, label: 'Settings' }
@@ -212,6 +214,7 @@ export function ProjectView() {
             <div className="flex-1 flex flex-col overflow-hidden">
               {centerTab === 'tasks' && <TasksTab projectId={projectId} />}
               {centerTab === 'definition' && <DefinitionTab projectId={projectId} project={project} />}
+              {centerTab === 'insights' && <InsightsTab projectId={projectId} />}
               {centerTab === 'secrets' && <SecretsTab projectId={projectId} project={project} />}
               {centerTab === 'trash' && <TrashTab projectId={projectId} />}
               {centerTab === 'settings' && <SettingsTab projectId={projectId} project={project} />}

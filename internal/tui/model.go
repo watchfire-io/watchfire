@@ -73,6 +73,11 @@ type Model struct {
 	fleetInsights       FleetInsights
 	fleetInsightsWindow string
 
+	// v6.0 Ember per-project insights overlay state. Opened with `i` on
+	// the task list; same window cycling as the fleet overlay.
+	projectInsights       ProjectInsights
+	projectInsightsWindow string
+
 	// Program reference for goroutine Send()
 	program *programRef
 
@@ -315,6 +320,13 @@ func (m Model) View() string {
 		case overlayFleetInsights:
 			width := m.width - 8
 			overlayContent = renderFleetInsightsOverlay(m.fleetInsights, width)
+		case overlayProjectInsights:
+			width := m.width - 8
+			projectName := ""
+			if m.project != nil {
+				projectName = m.project.Name
+			}
+			overlayContent = renderProjectInsightsOverlay(m.projectInsights, projectName, width)
 		}
 		if overlayContent != "" {
 			view = renderOverlay(view, overlayContent, m.width, m.height)
