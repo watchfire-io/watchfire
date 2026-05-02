@@ -1,4 +1,4 @@
-import { ipcMain, dialog, shell, BrowserWindow } from 'electron'
+import { ipcMain, dialog, shell, BrowserWindow, Notification } from 'electron'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { spawn } from 'child_process'
@@ -144,4 +144,44 @@ export function setupIpc(): void {
     win.show()
     win.focus()
   })
+
+  // Show a native OS notification. The renderer subscribes to the daemon's
+  // NotificationService.Subscribe stream, decides whether to play its own
+  // sound (via the bundled WAV files), and then hands the metadata off here
+  // so Electron can attribute the system toast / banner properly. We pass
+  // `silent: true` unconditionally — the renderer is the source of sound
+  // truth (so the OS and the renderer never double-fire), and the optional
+  // .wav playback was wired up in task 0051.
+  ipcMain.handle(
+    'notifications:emit',
+    (
+      _event,
+      payload: { id: string; kind: string; projectId: string; taskNumber: number; title: string; body: string }
+    ) => {
+      if (!Notification.isSupported()) return
+      const n = new Notification({
+        title: payload.title || 'Watchfire',
+        body: payload.body,
+        silent: true
+      })
+      // Click → focus the GUI window and route to the failing project's
+      // TasksTab. The renderer-side focus-store pattern is reused: dispatch
+      // an IPC event that App listens to and turns into a requestFocus.
+      n.on('click', () => {
+        const wins = BrowserWindow.getAllWindows()
+        if (wins.length === 0) return
+        const win = wins[0]
+        if (win.isMinimized()) win.restore()
+        win.show()
+        win.focus()
+        if (payload.projectId) {
+          win.webContents.send('notifications:click', {
+            projectId: payload.projectId,
+            taskNumber: payload.taskNumber
+          })
+        }
+      })
+      n.show()
+    }
+  )
 }

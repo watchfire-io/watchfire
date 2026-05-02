@@ -26,6 +26,9 @@ export default function App() {
   const setView = useAppStore((s) => s.setView)
   const startFocus = useFocusStore((s) => s.start)
   const stopFocus = useFocusStore((s) => s.stop)
+  const startNotifications = useNotificationsStore((s) => s.start)
+  const stopNotifications = useNotificationsStore((s) => s.stop)
+  const requestFocus = useAppStore((s) => s.requestFocus)
   const [daemonShutdown, setDaemonShutdown] = useState(false)
 
   // Listen for daemon shutdown from main process
@@ -34,8 +37,23 @@ export default function App() {
       setDaemonShutdown(true)
       stopReconnect()
       stopFocus()
+      stopNotifications()
     })
-  }, [stopReconnect, stopFocus])
+  }, [stopReconnect, stopFocus, stopNotifications])
+
+  // When the user clicks an OS notification, route to the failing project's
+  // TasksTab. Main process focuses the window first, so this just handles
+  // the in-renderer routing.
+  useEffect(() => {
+    window.watchfire.onNotificationClick(({ projectId, taskNumber }) => {
+      if (!projectId) return
+      requestFocus({
+        projectId,
+        target: 'tasks',
+        taskNumber: taskNumber || undefined
+      })
+    })
+  }, [requestFocus])
 
   // Open the tray-driven focus stream when the daemon connects so a click
   // in the menu bar can route the GUI to a specific project / tab. The
@@ -43,8 +61,12 @@ export default function App() {
   useEffect(() => {
     if (!connected) return
     startFocus()
-    return () => stopFocus()
-  }, [connected, startFocus, stopFocus])
+    startNotifications()
+    return () => {
+      stopFocus()
+      stopNotifications()
+    }
+  }, [connected, startFocus, stopFocus, startNotifications, stopNotifications])
 
   // Global keyboard shortcuts
   const handleKeyDown = useCallback(

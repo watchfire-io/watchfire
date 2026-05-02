@@ -542,3 +542,40 @@ service SettingsService {
   rpc UpdateSettings(UpdateSettingsRequest) returns (Settings);
   rpc ListAgents(google.protobuf.Empty) returns (AgentList);
 }
+
+// ============================================================================
+// Notification Messages
+// ============================================================================
+
+// NotificationKind enumerates the high-level reasons the daemon emits a
+// notification. STUCK_AGENT is reserved for a future task; only TASK_FAILED
+// and RUN_COMPLETE ship in the v5.0 Pulse release.
+enum NotificationKind {
+  TASK_FAILED = 0;
+  RUN_COMPLETE = 1;
+  STUCK_AGENT = 2;
+}
+
+// Notification is a single user-facing event the daemon emits when something
+// the user cares about happens (a task fails, an autonomous run finishes, …).
+// Mirrors the JSONL record written to ~/.watchfire/logs/<project_id>/notifications.log.
+message Notification {
+  string id = 1;                              // Stable hash; duplicates collapse
+  string project_id = 2;
+  int32 task_number = 3;                      // 0 when not task-scoped
+  string title = 4;
+  string body = 5;
+  google.protobuf.Timestamp emitted_at = 6;
+  NotificationKind kind = 7;
+}
+
+message SubscribeNotificationsRequest {
+  RequestMeta meta = 1;
+}
+
+// NotificationService streams desktop-notification events to subscribed
+// clients (the GUI shows them as native OS notifications; the tray reads
+// the JSONL fallback log written by the daemon for headless runs).
+service NotificationService {
+  rpc Subscribe(SubscribeNotificationsRequest) returns (stream Notification);
+}
