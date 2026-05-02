@@ -442,6 +442,24 @@ service DaemonService {
   rpc GetStatus(google.protobuf.Empty) returns (DaemonStatus);
   rpc Shutdown(google.protobuf.Empty) returns (google.protobuf.Empty);
   rpc Ping(google.protobuf.Empty) returns (google.protobuf.Empty);
+  rpc SubscribeFocusEvents(SubscribeFocusEventsRequest) returns (stream FocusEvent);
+}
+
+// FocusTarget identifies which view in the GUI a focus event is targeting.
+enum FocusTarget {
+  FOCUS_TARGET_MAIN = 0;   // Project's main / dashboard view
+  FOCUS_TARGET_TASKS = 1;  // Project's TasksTab
+  FOCUS_TARGET_TASK = 2;   // Specific task within a project
+}
+
+message SubscribeFocusEventsRequest {
+  RequestMeta meta = 1;
+}
+
+message FocusEvent {
+  string project_id = 1;
+  FocusTarget target = 2;
+  int32 task_number = 3;  // Only meaningful when target == FOCUS_TARGET_TASK
 }
 
 // LogService handles session log retrieval

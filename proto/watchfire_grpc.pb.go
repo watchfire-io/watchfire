@@ -840,9 +840,10 @@ var TaskService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	DaemonService_GetStatus_FullMethodName = "/watchfire.DaemonService/GetStatus"
-	DaemonService_Shutdown_FullMethodName  = "/watchfire.DaemonService/Shutdown"
-	DaemonService_Ping_FullMethodName      = "/watchfire.DaemonService/Ping"
+	DaemonService_GetStatus_FullMethodName            = "/watchfire.DaemonService/GetStatus"
+	DaemonService_Shutdown_FullMethodName             = "/watchfire.DaemonService/Shutdown"
+	DaemonService_Ping_FullMethodName                 = "/watchfire.DaemonService/Ping"
+	DaemonService_SubscribeFocusEvents_FullMethodName = "/watchfire.DaemonService/SubscribeFocusEvents"
 )
 
 // DaemonServiceClient is the client API for DaemonService service.
@@ -854,6 +855,7 @@ type DaemonServiceClient interface {
 	GetStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*DaemonStatus, error)
 	Shutdown(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	Ping(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	SubscribeFocusEvents(ctx context.Context, in *SubscribeFocusEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FocusEvent], error)
 }
 
 type daemonServiceClient struct {
@@ -894,6 +896,25 @@ func (c *daemonServiceClient) Ping(ctx context.Context, in *emptypb.Empty, opts 
 	return out, nil
 }
 
+func (c *daemonServiceClient) SubscribeFocusEvents(ctx context.Context, in *SubscribeFocusEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[FocusEvent], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &DaemonService_ServiceDesc.Streams[0], DaemonService_SubscribeFocusEvents_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[SubscribeFocusEventsRequest, FocusEvent]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DaemonService_SubscribeFocusEventsClient = grpc.ServerStreamingClient[FocusEvent]
+
 // DaemonServiceServer is the server API for DaemonService service.
 // All implementations must embed UnimplementedDaemonServiceServer
 // for forward compatibility.
@@ -903,6 +924,7 @@ type DaemonServiceServer interface {
 	GetStatus(context.Context, *emptypb.Empty) (*DaemonStatus, error)
 	Shutdown(context.Context, *emptypb.Empty) (*emptypb.Empty, error)
 	Ping(context.Context, *emptypb.Empty) (*emptypb.Empty, error)
+	SubscribeFocusEvents(*SubscribeFocusEventsRequest, grpc.ServerStreamingServer[FocusEvent]) error
 	mustEmbedUnimplementedDaemonServiceServer()
 }
 
@@ -921,6 +943,9 @@ func (UnimplementedDaemonServiceServer) Shutdown(context.Context, *emptypb.Empty
 }
 func (UnimplementedDaemonServiceServer) Ping(context.Context, *emptypb.Empty) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method Ping not implemented")
+}
+func (UnimplementedDaemonServiceServer) SubscribeFocusEvents(*SubscribeFocusEventsRequest, grpc.ServerStreamingServer[FocusEvent]) error {
+	return status.Error(codes.Unimplemented, "method SubscribeFocusEvents not implemented")
 }
 func (UnimplementedDaemonServiceServer) mustEmbedUnimplementedDaemonServiceServer() {}
 func (UnimplementedDaemonServiceServer) testEmbeddedByValue()                       {}
@@ -997,6 +1022,17 @@ func _DaemonService_Ping_Handler(srv interface{}, ctx context.Context, dec func(
 	return interceptor(ctx, in, info, handler)
 }
 
+func _DaemonService_SubscribeFocusEvents_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(SubscribeFocusEventsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(DaemonServiceServer).SubscribeFocusEvents(m, &grpc.GenericServerStream[SubscribeFocusEventsRequest, FocusEvent]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type DaemonService_SubscribeFocusEventsServer = grpc.ServerStreamingServer[FocusEvent]
+
 // DaemonService_ServiceDesc is the grpc.ServiceDesc for DaemonService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1017,7 +1053,13 @@ var DaemonService_ServiceDesc = grpc.ServiceDesc{
 			Handler:    _DaemonService_Ping_Handler,
 		},
 	},
-	Streams:  []grpc.StreamDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "SubscribeFocusEvents",
+			Handler:       _DaemonService_SubscribeFocusEvents_Handler,
+			ServerStreams: true,
+		},
+	},
 	Metadata: "proto/watchfire.proto",
 }
 

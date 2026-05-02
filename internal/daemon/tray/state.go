@@ -11,6 +11,16 @@ type DaemonState interface {
 	StartAgent(projectID, mode string)
 	RequestShutdown()
 	UpdateAvailable() (available bool, version string)
+
+	// FailedTaskCounts returns a per-project count of tasks where
+	// status==done && success==false. Used to drive the "Needs attention"
+	// section of the tray menu.
+	FailedTaskCounts() map[string]int
+
+	// LogsDir returns the absolute path to the global logs directory
+	// (typically `~/.watchfire/logs/`). Used by the Notifications submenu
+	// to read each project's `notifications.log` file.
+	LogsDir() string
 }
 
 // AgentInfo describes a running agent for display in the tray menu.

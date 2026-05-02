@@ -51,6 +51,9 @@ interface WatchfireAPI {
 
   // Open a project path in an external IDE / file manager
   openInIDE(ide: string, projectPath: string): Promise<{ ok: boolean; error?: string }>
+
+  // Bring the main window to the foreground
+  focusWindow(): Promise<void>
 }
 
 declare global {

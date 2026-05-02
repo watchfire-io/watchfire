@@ -1,4 +1,4 @@
-import { ipcMain, dialog, shell } from 'electron'
+import { ipcMain, dialog, shell, BrowserWindow } from 'electron'
 import { existsSync } from 'fs'
 import { join } from 'path'
 import { spawn } from 'child_process'
@@ -131,5 +131,17 @@ export function setupIpc(): void {
 
   ipcMain.handle('open-in-ide', (_event, ide: string, projectPath: string) => {
     return openInIDE(ide, projectPath)
+  })
+
+  // Bring the main window to the foreground. Called by the renderer's focus
+  // subscriber on every incoming tray event so a click in the menu bar
+  // always lands the user back on the GUI.
+  ipcMain.handle('focus-window', () => {
+    const wins = BrowserWindow.getAllWindows()
+    if (wins.length === 0) return
+    const win = wins[0]
+    if (win.isMinimized()) win.restore()
+    win.show()
+    win.focus()
   })
 }

@@ -9,6 +9,8 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/watchfire-io/watchfire/internal/config"
+	"github.com/watchfire-io/watchfire/internal/daemon/focus"
+	"github.com/watchfire-io/watchfire/internal/daemon/tray"
 	pb "github.com/watchfire-io/watchfire/proto"
 )
 
@@ -55,4 +57,48 @@ func (s *daemonService) Shutdown(_ context.Context, _ *emptypb.Empty) (*emptypb.
 		_ = p.Signal(os.Interrupt)
 	}()
 	return &emptypb.Empty{}, nil
+}
+
+// SubscribeFocusEvents streams tray-emitted focus events to subscribers (the
+// GUI). Each event maps a click in the tray menu to a "bring this view to the
+// foreground" request the GUI honours by focusing its window and routing.
+func (s *daemonService) SubscribeFocusEvents(_ *pb.SubscribeFocusEventsRequest, stream pb.DaemonService_SubscribeFocusEventsServer) error {
+	bus := tray.FocusBus()
+	if bus == nil {
+		// Headless build — no events will ever fire, but the stream stays
+		// open so the GUI can attach.
+		<-stream.Context().Done()
+		return nil
+	}
+	ch, cancel := bus.Subscribe()
+	defer cancel()
+
+	for {
+		select {
+		case <-stream.Context().Done():
+			return nil
+		case ev, ok := <-ch:
+			if !ok {
+				return nil
+			}
+			if err := stream.Send(&pb.FocusEvent{
+				ProjectId:  ev.ProjectID,
+				Target:     focusTargetToProto(ev.Target),
+				TaskNumber: ev.TaskNumber,
+			}); err != nil {
+				return err
+			}
+		}
+	}
+}
+
+func focusTargetToProto(t focus.Target) pb.FocusTarget {
+	switch t {
+	case focus.TargetTasks:
+		return pb.FocusTarget_FOCUS_TARGET_TASKS
+	case focus.TargetTask:
+		return pb.FocusTarget_FOCUS_TARGET_TASK
+	default:
+		return pb.FocusTarget_FOCUS_TARGET_MAIN
+	}
 }
