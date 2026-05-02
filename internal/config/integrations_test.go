@@ -231,6 +231,49 @@ func TestSecretKeyForIntegrationStable(t *testing.T) {
 	}
 }
 
+// TestIntegrationsRoundTripInboundConfig covers the v8.0 Echo InboundConfig
+// fields: empty config round-trips empty, populated config preserves the
+// listen address + public URL + Discord app id + keyring references, and
+// the new DiscordEndpoint.GuildID survives the YAML cycle. v7.0 outbound
+// behaviour is unchanged — the new fields are additive.
+func TestIntegrationsRoundTripInboundConfig(t *testing.T) {
+	withTempHome(t)
+	withFakeKeyring(t)
+
+	cfg := &models.IntegrationsConfig{
+		Discord: []models.DiscordEndpoint{{
+			ID:      "dc-1",
+			Label:   "team",
+			URL:     "https://discord.com/api/webhooks/x/y",
+			GuildID: "guild-123",
+		}},
+		Inbound: models.InboundConfig{
+			ListenAddr:          "127.0.0.1:8765",
+			PublicURL:           "https://watchfire.ngrok.app",
+			DiscordPublicKeyRef: "watchfire.echo.discord.public_key",
+			DiscordAppID:        "app-1",
+			DiscordBotTokenRef:  "watchfire.echo.discord.bot_token",
+		},
+	}
+	if err := SaveIntegrations(cfg); err != nil {
+		t.Fatalf("SaveIntegrations: %v", err)
+	}
+	got, err := LoadIntegrations()
+	if err != nil {
+		t.Fatalf("LoadIntegrations: %v", err)
+	}
+	if got.Inbound.ListenAddr != cfg.Inbound.ListenAddr ||
+		got.Inbound.PublicURL != cfg.Inbound.PublicURL ||
+		got.Inbound.DiscordPublicKeyRef != cfg.Inbound.DiscordPublicKeyRef ||
+		got.Inbound.DiscordAppID != cfg.Inbound.DiscordAppID ||
+		got.Inbound.DiscordBotTokenRef != cfg.Inbound.DiscordBotTokenRef {
+		t.Fatalf("inbound config round-trip mismatch: %+v", got.Inbound)
+	}
+	if len(got.Discord) != 1 || got.Discord[0].GuildID != "guild-123" {
+		t.Fatalf("discord guild_id round-trip mismatch: %+v", got.Discord)
+	}
+}
+
 func contains(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {
 		if s[i:i+len(sub)] == sub {
