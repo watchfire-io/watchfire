@@ -6,6 +6,7 @@ import { getSettingsClient } from '../../lib/grpc-client'
 import { DefaultsSection } from './DefaultsSection'
 import { AppearanceSection } from './AppearanceSection'
 import { AgentPathsSection } from './AgentPathsSection'
+import { NotificationsSection } from './NotificationsSection'
 import { UpdatesSection } from './UpdatesSection'
 import { AboutSection } from './AboutSection'
 
@@ -65,6 +66,7 @@ export function GlobalSettings() {
             <AppearanceSection settings={settings} />
             <DefaultsSection settings={settings} agents={agents} agentsLoaded={agentsLoaded} />
             <AgentPathsSection settings={settings} agents={agents} agentsLoaded={agentsLoaded} />
+            <NotificationsSection settings={settings} />
             <UpdatesSection settings={settings} />
           </>
         )}

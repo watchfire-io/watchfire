@@ -18,7 +18,12 @@ func LoadSettings() (*models.Settings, error) {
 	if err != nil {
 		return nil, err
 	}
-	return LoadYAMLOrDefault(path, models.NewSettings)
+	s, err := LoadYAMLOrDefault(path, models.NewSettings)
+	if err != nil {
+		return nil, err
+	}
+	s.Normalize()
+	return s, nil
 }
 
 // SaveSettings saves the global settings to ~/.watchfire/settings.yaml.

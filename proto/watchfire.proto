@@ -40,6 +40,11 @@ message Project {
   int32 next_task_number = 15;
   int32 position = 16;                          // Display ordering in GUI
   string secrets_instructions = 17;             // Content of secrets/instructions.md
+  ProjectNotifications notifications = 18;      // Per-project notification overrides
+}
+
+message ProjectNotifications {
+  bool muted = 1;                               // If true, suppress all notifications for this project
 }
 
 message ProjectId {
@@ -74,6 +79,7 @@ message UpdateProjectRequest {
   optional bool auto_start_tasks = 9;
   optional string definition = 10;
   optional string secrets_instructions = 11;
+  optional bool notifications_muted = 12;       // Per-project notification mute
 }
 
 message ReorderProjectsRequest {
@@ -336,6 +342,32 @@ message DefaultsConfig {
   reserved 4;                                     // was default_branch
   string default_sandbox = 5;
   string default_agent = 6;
+  NotificationsConfig notifications = 7;
+}
+
+message NotificationsEvents {
+  bool task_failed = 1;
+  bool run_complete = 2;
+}
+
+message NotificationsSounds {
+  bool enabled = 1;
+  bool task_failed = 2;
+  bool run_complete = 3;
+  double volume = 4;                              // 0.0..1.0
+}
+
+message QuietHoursConfig {
+  bool enabled = 1;
+  string start = 2;                               // "HH:MM" 24h local time
+  string end = 3;                                 // "HH:MM" 24h local time
+}
+
+message NotificationsConfig {
+  bool enabled = 1;                               // Master toggle
+  NotificationsEvents events = 2;
+  NotificationsSounds sounds = 3;
+  QuietHoursConfig quiet_hours = 4;
 }
 
 message UpdatesConfig {

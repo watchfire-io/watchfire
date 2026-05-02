@@ -27,6 +27,9 @@ func modelToProtoProject(pwe project.ProjectWithEntry) *pb.Project {
 		UpdatedAt:           timestamppb.New(p.UpdatedAt),
 		NextTaskNumber:      int32(p.NextTaskNumber),
 		Position:            int32(pwe.Position),
+		Notifications: &pb.ProjectNotifications{
+			Muted: p.Notifications.Muted,
+		},
 	}
 }
 
@@ -79,6 +82,7 @@ func modelToProtoSettings(s *models.Settings) *pb.Settings {
 			AutoStartTasks:   s.Defaults.AutoStartTasks,
 			DefaultSandbox:   s.Defaults.DefaultSandbox,
 			DefaultAgent:     s.Defaults.DefaultAgent,
+			Notifications:    notificationsToProto(s.Defaults.Notifications),
 		},
 		Updates: &pb.UpdatesConfig{
 			CheckOnStartup: s.Updates.CheckOnStartup,
@@ -89,4 +93,48 @@ func modelToProtoSettings(s *models.Settings) *pb.Settings {
 			Theme: s.Appearance.Theme,
 		},
 	}
+}
+
+func notificationsToProto(n models.NotificationsConfig) *pb.NotificationsConfig {
+	return &pb.NotificationsConfig{
+		Enabled: n.Enabled,
+		Events: &pb.NotificationsEvents{
+			TaskFailed:  n.Events.TaskFailed,
+			RunComplete: n.Events.RunComplete,
+		},
+		Sounds: &pb.NotificationsSounds{
+			Enabled:     n.Sounds.Enabled,
+			TaskFailed:  n.Sounds.TaskFailed,
+			RunComplete: n.Sounds.RunComplete,
+			Volume:      n.Sounds.Volume,
+		},
+		QuietHours: &pb.QuietHoursConfig{
+			Enabled: n.QuietHours.Enabled,
+			Start:   n.QuietHours.Start,
+			End:     n.QuietHours.End,
+		},
+	}
+}
+
+func notificationsFromProto(p *pb.NotificationsConfig) models.NotificationsConfig {
+	if p == nil {
+		return models.DefaultNotifications()
+	}
+	out := models.NotificationsConfig{Enabled: p.Enabled}
+	if p.Events != nil {
+		out.Events.TaskFailed = p.Events.TaskFailed
+		out.Events.RunComplete = p.Events.RunComplete
+	}
+	if p.Sounds != nil {
+		out.Sounds.Enabled = p.Sounds.Enabled
+		out.Sounds.TaskFailed = p.Sounds.TaskFailed
+		out.Sounds.RunComplete = p.Sounds.RunComplete
+		out.Sounds.Volume = p.Sounds.Volume
+	}
+	if p.QuietHours != nil {
+		out.QuietHours.Enabled = p.QuietHours.Enabled
+		out.QuietHours.Start = p.QuietHours.Start
+		out.QuietHours.End = p.QuietHours.End
+	}
+	return out
 }

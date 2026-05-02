@@ -30,6 +30,7 @@ export function SettingsTab({ projectId, project }: Props) {
   const [autoMerge, setAutoMerge] = useState(project.autoMerge)
   const [autoDelete, setAutoDelete] = useState(project.autoDeleteBranch)
   const [autoStart, setAutoStart] = useState(project.autoStartTasks)
+  const [muted, setMuted] = useState(project.notifications?.muted ?? false)
   const [defaultAgent, setDefaultAgent] = useState(project.defaultAgent)
   const [agents, setAgents] = useState<AgentInfo[]>([])
   const [agentsLoaded, setAgentsLoaded] = useState(false)
@@ -41,6 +42,7 @@ export function SettingsTab({ projectId, project }: Props) {
     setAutoMerge(project.autoMerge)
     setAutoDelete(project.autoDeleteBranch)
     setAutoStart(project.autoStartTasks)
+    setMuted(project.notifications?.muted ?? false)
     setDefaultAgent(project.defaultAgent)
   }, [project])
 
@@ -186,6 +188,12 @@ export function SettingsTab({ projectId, project }: Props) {
           onChange={(v) => { setAutoStart(v); save({ autoStartTasks: v }) }}
           label="Auto-start tasks"
           description="Chain to the next ready task automatically"
+        />
+        <Toggle
+          checked={muted}
+          onChange={(v) => { setMuted(v); save({ notificationsMuted: v }) }}
+          label="Mute notifications for this project"
+          description="Suppress task-failed and run-complete notifications globally for this project"
         />
       </div>
 

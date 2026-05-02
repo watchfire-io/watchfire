@@ -22,10 +22,11 @@ const (
 	EventTaskChanged
 	EventTaskCreated
 	EventTaskDeleted
-	EventRefinePhaseEnded   // refine_done.yaml created
-	EventGeneratePhaseEnded // generate_done.yaml created
-	EventDefinitionDone     // definition_done.yaml created
-	EventTasksDone          // tasks_done.yaml created
+	EventRefinePhaseEnded     // refine_done.yaml created
+	EventGeneratePhaseEnded   // generate_done.yaml created
+	EventDefinitionDone       // definition_done.yaml created
+	EventTasksDone            // tasks_done.yaml created
+	EventGlobalSettingsChanged // ~/.watchfire/settings.yaml written
 )
 
 // Signal file names for phase completion.
@@ -223,6 +224,16 @@ func (w *Watcher) processFileChange(path string, op fsnotify.Op) {
 	if filename == config.ProjectsFileName {
 		w.eventsChan <- Event{
 			Type: EventProjectsIndexChanged,
+			Path: path,
+		}
+		return
+	}
+
+	// Check for global settings.yaml — re-read so notification gates and
+	// other global prefs take effect without a daemon restart.
+	if filename == config.SettingsFileName {
+		w.eventsChan <- Event{
+			Type: EventGlobalSettingsChanged,
 			Path: path,
 		}
 		return

@@ -374,6 +374,14 @@ func (s *Server) processWatcherEvents() {
 			s.handleGenerateModeEnded(event, agent.ModeGenerateDefinition)
 		case watcher.EventTasksDone:
 			s.handleGenerateModeEnded(event, agent.ModeGenerateTasks)
+		case watcher.EventGlobalSettingsChanged:
+			// Settings are read on demand by gates that consult them
+			// (notification dispatch, agent resolution, etc.) — config.LoadSettings
+			// is called per-check, so a fresh edit takes effect on the next event
+			// without explicit cache invalidation here. Logging confirms the
+			// daemon noticed the change, which is useful for diagnosing UX
+			// reports of "I changed it but nothing happened."
+			log.Printf("[settings-watch] Global settings changed: %s", event.Path)
 		}
 	}
 }
