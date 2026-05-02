@@ -340,6 +340,9 @@ func updateProjectCmd(conn *grpc.ClientConn, projectID string, updates map[strin
 		if v, ok := updates["auto_start_tasks"].(bool); ok {
 			req.AutoStartTasks = &v
 		}
+		if v, ok := updates["notifications_muted"].(bool); ok {
+			req.NotificationsMuted = &v
+		}
 
 		project, err := client.UpdateProject(ctx, req)
 		if err != nil {
@@ -440,18 +443,20 @@ func getSettingsCmd(conn *grpc.ClientConn) tea.Cmd {
 	}
 }
 
-// updateGlobalSettingsCmd sends an UpdateSettings RPC. defaultAgent is
-// a pointer so callers can omit it; when non-nil (including empty) the
-// defaults block is sent. agents carries a merge of agent path edits;
-// nil means no change. A nil pointer / nil map sends no change at all.
-func updateGlobalSettingsCmd(conn *grpc.ClientConn, defaultAgent *string, agents map[string]string) tea.Cmd {
+// updateGlobalSettingsCmd sends an UpdateSettings RPC. defaultAgent is a
+// pointer so callers can omit it; when non-nil (including empty) the defaults
+// block is sent. agents carries a merge of agent path edits; nil means no
+// change. notifications, when non-nil, replaces the notifications block in
+// defaults; the daemon validates it before persisting and rolls back on
+// malformed quiet-hours values. Any of these nil → no change for that field.
+func updateGlobalSettingsCmd(conn *grpc.ClientConn, defaultAgent *string, agents map[string]string, notifications *pb.NotificationsConfig) tea.Cmd {
 	return func() tea.Msg {
 		client := pb.NewSettingsServiceClient(conn)
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
 		req := &pb.UpdateSettingsRequest{}
-		if defaultAgent != nil {
+		if defaultAgent != nil || notifications != nil {
 			// Load current defaults so we don't zero out the other fields.
 			cur, err := client.GetSettings(ctx, &emptypb.Empty{})
 			if err != nil {
@@ -461,7 +466,12 @@ func updateGlobalSettingsCmd(conn *grpc.ClientConn, defaultAgent *string, agents
 			if d == nil {
 				d = &pb.DefaultsConfig{}
 			}
-			d.DefaultAgent = *defaultAgent
+			if defaultAgent != nil {
+				d.DefaultAgent = *defaultAgent
+			}
+			if notifications != nil {
+				d.Notifications = notifications
+			}
 			req.Defaults = d
 		}
 		if agents != nil {

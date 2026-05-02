@@ -62,6 +62,11 @@ func (s *SettingsForm) LoadFromProject(project *pb.Project) {
 	agentOptions := buildAgentCycleOptions()
 	agentIdx := agentCycleIndex(agentOptions, project.DefaultAgent)
 
+	muted := false
+	if project.Notifications != nil {
+		muted = project.Notifications.Muted
+	}
+
 	s.fields = []SettingsField{
 		{Label: "Name", Key: "name", Value: project.Name, Type: fieldText},
 		{Label: "Color", Key: "color", Value: project.Color, Type: fieldText},
@@ -69,6 +74,7 @@ func (s *SettingsForm) LoadFromProject(project *pb.Project) {
 		{Label: "Auto-merge", Key: "auto_merge", BoolValue: project.AutoMerge, Type: fieldToggle},
 		{Label: "Auto-delete Branch", Key: "auto_delete_branch", BoolValue: project.AutoDeleteBranch, Type: fieldToggle},
 		{Label: "Auto-start Tasks", Key: "auto_start_tasks", BoolValue: project.AutoStartTasks, Type: fieldToggle},
+		{Label: "Mute Notifications", Key: "notifications_muted", BoolValue: muted, Type: fieldToggle},
 	}
 }
 

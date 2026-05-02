@@ -52,6 +52,7 @@ type UpdateOptions struct {
 	AutoStartTasks      *bool
 	Definition          *string
 	SecretsInstructions *string
+	NotificationsMuted  *bool
 }
 
 // ListProjects returns all registered projects with their index entry data.
@@ -238,6 +239,9 @@ func (m *Manager) UpdateProject(opts UpdateOptions) (ProjectWithEntry, error) {
 	}
 	if opts.SecretsInstructions != nil {
 		p.SecretsInstructions = *opts.SecretsInstructions
+	}
+	if opts.NotificationsMuted != nil {
+		p.Notifications.Muted = *opts.NotificationsMuted
 	}
 
 	p.UpdatedAt = time.Now().UTC()

@@ -85,6 +85,9 @@ func (s *projectService) UpdateProject(_ context.Context, req *pb.UpdateProjectR
 	if req.SecretsInstructions != nil {
 		opts.SecretsInstructions = req.SecretsInstructions
 	}
+	if req.NotificationsMuted != nil {
+		opts.NotificationsMuted = req.NotificationsMuted
+	}
 
 	pwe, err := s.manager.UpdateProject(opts)
 	if err != nil {

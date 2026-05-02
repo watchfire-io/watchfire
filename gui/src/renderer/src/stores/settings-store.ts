@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Settings } from '../generated/watchfire_pb'
+import type { NotificationsConfig, Settings } from '../generated/watchfire_pb'
 import { getSettingsClient } from '../lib/grpc-client'
 
 interface SettingsState {
@@ -14,6 +14,7 @@ interface SettingsState {
       autoStartTasks?: boolean
       defaultSandbox?: string
       defaultAgent?: string
+      notifications?: NotificationsConfig
     }
     updates?: {
       checkOnStartup?: boolean
@@ -27,7 +28,7 @@ interface SettingsState {
   }) => Promise<void>
 }
 
-export const useSettingsStore = create<SettingsState>((set, get) => ({
+export const useSettingsStore = create<SettingsState>((set) => ({
   settings: null,
   loading: false,
 
@@ -45,9 +46,9 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   updateSettings: async (updates) => {
     const client = getSettingsClient()
     const settings = await client.updateSettings({
-      defaults: updates.defaults,
-      updates: updates.updates,
-      appearance: updates.appearance,
+      defaults: updates.defaults as never,
+      updates: updates.updates as never,
+      appearance: updates.appearance as never,
       agents: updates.agents
     })
     set({ settings })

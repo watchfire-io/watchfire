@@ -51,6 +51,28 @@ func (s *settingsService) UpdateSettings(_ context.Context, req *pb.UpdateSettin
 			}
 		}
 		settings.Defaults.DefaultAgent = req.Defaults.DefaultAgent
+
+		if req.Defaults.Notifications != nil {
+			incoming := notificationsFromProto(req.Defaults.Notifications)
+			// Roll back malformed quiet-hours strings to the defaults rather than
+			// persist garbage that would silently swallow notifications later. The
+			// caller is expected to surface this to the user; we return an error
+			// so the GUI/TUI can flash a settings-save error toast / status-bar
+			// message.
+			if incoming.QuietHours.Start != "" && !models.IsValidTimeOfDay(incoming.QuietHours.Start) {
+				return nil, fmt.Errorf("invalid quiet_hours.start %q (expected HH:MM)", incoming.QuietHours.Start)
+			}
+			if incoming.QuietHours.End != "" && !models.IsValidTimeOfDay(incoming.QuietHours.End) {
+				return nil, fmt.Errorf("invalid quiet_hours.end %q (expected HH:MM)", incoming.QuietHours.End)
+			}
+			if incoming.Sounds.Volume < 0 {
+				incoming.Sounds.Volume = 0
+			}
+			if incoming.Sounds.Volume > 1 {
+				incoming.Sounds.Volume = 1
+			}
+			settings.Defaults.Notifications = incoming
+		}
 	}
 
 	if req.Updates != nil {

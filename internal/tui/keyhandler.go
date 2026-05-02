@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"fmt"
+
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -406,9 +408,20 @@ func (m *Model) handleGlobalSettingsKey(msg tea.KeyMsg) tea.Cmd {
 	if g.IsEditing() {
 		switch msg.Type {
 		case tea.KeyEnter:
-			changed, agent, path := g.FinishEdit()
-			if changed && m.conn != nil {
-				return updateGlobalSettingsCmd(m.conn, nil, map[string]string{agent: path})
+			res := g.FinishEdit()
+			if res.Err != "" {
+				m.err = fmt.Errorf("%s", res.Err)
+				return nil
+			}
+			switch res.Kind {
+			case EditAgentPath:
+				if m.conn != nil {
+					return updateGlobalSettingsCmd(m.conn, nil, map[string]string{res.AgentName: res.Path}, nil)
+				}
+			case EditNotify:
+				if m.conn != nil {
+					return updateGlobalSettingsCmd(m.conn, nil, nil, g.NotificationsProto())
+				}
 			}
 			return nil
 		case tea.KeyEscape:
@@ -433,15 +446,24 @@ func (m *Model) handleGlobalSettingsKey(msg tea.KeyMsg) tea.Cmd {
 	case "down", "j":
 		g.MoveDown()
 		return nil
+	case " ":
+		if g.ToggleNotify() && m.conn != nil {
+			return updateGlobalSettingsCmd(m.conn, nil, nil, g.NotificationsProto())
+		}
+		return nil
 	case "enter":
 		if g.StartEdit() {
 			return nil
+		}
+		// Notify toggles also accept Enter for consistency.
+		if g.ToggleNotify() && m.conn != nil {
+			return updateGlobalSettingsCmd(m.conn, nil, nil, g.NotificationsProto())
 		}
 		// Default selector: cycle.
 		changed, val := g.CycleDefault()
 		if changed && m.conn != nil {
 			v := val
-			return updateGlobalSettingsCmd(m.conn, &v, nil)
+			return updateGlobalSettingsCmd(m.conn, &v, nil, nil)
 		}
 		return nil
 	}
