@@ -23,6 +23,7 @@ import (
 	"github.com/watchfire-io/watchfire/internal/daemon/agent"
 	"github.com/watchfire-io/watchfire/internal/daemon/agent/prompts"
 	"github.com/watchfire-io/watchfire/internal/daemon/insights"
+	"github.com/watchfire-io/watchfire/internal/daemon/metrics"
 	"github.com/watchfire-io/watchfire/internal/daemon/notify"
 	"github.com/watchfire-io/watchfire/internal/daemon/project"
 	"github.com/watchfire-io/watchfire/internal/daemon/task"
@@ -451,6 +452,12 @@ func (s *Server) handleTaskChanged(event watcher.Event) {
 	// "any state-change to done can produce a notification" semantics.
 	projectName := s.projectNameForID(event.ProjectID)
 	emitTaskFailed(s.notifyBus, event.ProjectID, projectPath, projectName, t)
+
+	// v6.0 Ember per-task metrics capture. Non-blocking and best-effort:
+	// the goroutine waits briefly for the session log to land, runs the
+	// per-backend parser, and persists `<n>.metrics.yaml`. Parser failure
+	// degrades to duration-only metrics with a WARN log line.
+	go metrics.CaptureFromTask(projectPath, event.ProjectID, t)
 
 	// Use StopAgentForTask to atomically verify the agent is still working on
 	// this specific task before stopping. Run in a goroutine to avoid blocking
