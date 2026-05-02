@@ -1,0 +1,12 @@
+{
+  "username": "Watchfire",
+  "avatar_url": "https://watchfire.app/icon-256.png",
+  "embeds": [{
+    "title": "Watchfire — your week",
+    "description": {{ digestSnippet .DigestBody 800 | jsonStr }},
+    "url": {{ .DeepLink | jsonStr }},
+    "color": 2278750,
+    "timestamp": {{ rfc3339 .EmittedAt | jsonStr }},
+    "footer": { "text": "Weekly digest" }
+  }]
+}

@@ -1,0 +1,12 @@
+{
+  "username": "Watchfire",
+  "avatar_url": "https://watchfire.app/icon-256.png",
+  "embeds": [{
+    "title": "Watchfire — your week",
+    "description": "## This week\n\n- 12 tasks completed across 3 projects\n- 2 failures",
+    "url": "watchfire://digest/2026-05-02",
+    "color": 2278750,
+    "timestamp": "2026-05-02T12:34:56Z",
+    "footer": { "text": "Weekly digest" }
+  }]
+}
