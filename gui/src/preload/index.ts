@@ -91,7 +91,12 @@ const api = {
 
   // Open a project path in an external IDE / file manager
   openInIDE: (ide: string, projectPath: string): Promise<{ ok: boolean; error?: string }> =>
-    ipcRenderer.invoke('open-in-ide', ide, projectPath)
+    ipcRenderer.invoke('open-in-ide', ide, projectPath),
+
+  // Bring the main window to the foreground. Used by the focus subscriber
+  // when the daemon's tray emits a click so a hidden window comes back
+  // into view.
+  focusWindow: (): Promise<void> => ipcRenderer.invoke('focus-window')
 }
 
 contextBridge.exposeInMainWorld('watchfire', api)

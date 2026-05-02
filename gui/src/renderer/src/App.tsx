@@ -1,6 +1,7 @@
 import { useEffect, useCallback, useState } from 'react'
 import { useAutoReconnect } from './hooks/useAutoReconnect'
 import { useAppStore } from './stores/app-store'
+import { useFocusStore } from './stores/focus-store'
 import { Sidebar } from './components/Sidebar'
 import { Dashboard } from './views/Dashboard/Dashboard'
 import { AddProjectWizard } from './views/AddProject/AddProjectWizard'
@@ -13,6 +14,8 @@ export default function App() {
   const view = useAppStore((s) => s.view)
   const connected = useAppStore((s) => s.connected)
   const setView = useAppStore((s) => s.setView)
+  const startFocus = useFocusStore((s) => s.start)
+  const stopFocus = useFocusStore((s) => s.stop)
   const [daemonShutdown, setDaemonShutdown] = useState(false)
 
   // Listen for daemon shutdown from main process
@@ -20,8 +23,18 @@ export default function App() {
     window.watchfire.onDaemonShutdown(() => {
       setDaemonShutdown(true)
       stopReconnect()
+      stopFocus()
     })
-  }, [stopReconnect])
+  }, [stopReconnect, stopFocus])
+
+  // Open the tray-driven focus stream when the daemon connects so a click
+  // in the menu bar can route the GUI to a specific project / tab. The
+  // stream auto-reconnects on transient errors via the focus store.
+  useEffect(() => {
+    if (!connected) return
+    startFocus()
+    return () => stopFocus()
+  }, [connected, startFocus, stopFocus])
 
   // Global keyboard shortcuts
   const handleKeyDown = useCallback(

@@ -352,6 +352,10 @@ func (s *Server) Stop() {
 // processWatcherEvents listens for file system events and handles them.
 func (s *Server) processWatcherEvents() {
 	for event := range s.watcher.Events() {
+		// Every relevant fs change can move tray menu state — refresh on
+		// the way out. The tray's own debounce coalesces a flurry of events
+		// into a single rebuild at ≤ 4 Hz, so this is cheap to call eagerly.
+		tray.Refresh()
 		switch event.Type {
 		case watcher.EventProjectChanged:
 			log.Printf("[project-watch] Project changed: %s (path: %s)", event.ProjectID, event.Path)
@@ -613,4 +617,39 @@ func (t *TrayState) RequestShutdown() {
 		return
 	}
 	_ = p.Signal(syscall.SIGINT)
+}
+
+// FailedTaskCounts returns a per-project count of done-and-failed tasks.
+// Used by the tray's "Needs attention" section.
+func (t *TrayState) FailedTaskCounts() map[string]int {
+	index, err := config.LoadProjectsIndex()
+	if err != nil {
+		return nil
+	}
+	counts := make(map[string]int, len(index.Projects))
+	for _, entry := range index.Projects {
+		tasks, err := t.srv.taskManager.ListTasks(entry.Path, task.ListOptions{})
+		if err != nil {
+			continue
+		}
+		n := 0
+		for _, ts := range tasks {
+			if ts.Status == models.TaskStatusDone && ts.Success != nil && !*ts.Success {
+				n++
+			}
+		}
+		if n > 0 {
+			counts[entry.ProjectID] = n
+		}
+	}
+	return counts
+}
+
+// LogsDir returns the absolute path to the global logs directory.
+func (t *TrayState) LogsDir() string {
+	dir, err := config.GlobalLogsDir()
+	if err != nil {
+		return ""
+	}
+	return dir
 }

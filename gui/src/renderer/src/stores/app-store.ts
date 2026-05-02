@@ -17,6 +17,16 @@ function safeSetItem(key: string, value: string): void {
 }
 
 export type AppView = 'dashboard' | 'project' | 'add-project' | 'settings'
+export type FocusRequestTarget = 'main' | 'tasks' | 'task'
+
+export interface FocusRequest {
+  // Monotonic id so consumers can detect a fresh request even when the
+  // payload (projectId / target) is identical to the previous one.
+  id: number
+  projectId: string
+  target: FocusRequestTarget
+  taskNumber?: number
+}
 
 interface AppState {
   view: AppView
@@ -25,13 +35,17 @@ interface AppState {
   daemonPort: number | null
   theme: 'system' | 'light' | 'dark'
   sidebarCollapsed: boolean
+  focusRequest: FocusRequest | null
 
   setView: (view: AppView) => void
   selectProject: (projectId: string) => void
   setConnected: (connected: boolean, port?: number) => void
   setTheme: (theme: 'system' | 'light' | 'dark') => void
   toggleSidebar: () => void
+  requestFocus: (req: Omit<FocusRequest, 'id'>) => void
 }
+
+let focusRequestSeq = 0
 
 export const useAppStore = create<AppState>((set) => ({
   view: 'dashboard',
@@ -40,6 +54,7 @@ export const useAppStore = create<AppState>((set) => ({
   daemonPort: null,
   theme: 'system',
   sidebarCollapsed: safeGetItem('wf-sidebar-collapsed') === 'true',
+  focusRequest: null,
 
   setView: (view) => set({ view }),
 
@@ -64,5 +79,12 @@ export const useAppStore = create<AppState>((set) => ({
       const next = !s.sidebarCollapsed
       safeSetItem('wf-sidebar-collapsed', String(next))
       return { sidebarCollapsed: next }
+    }),
+
+  requestFocus: (req) =>
+    set({
+      view: req.projectId ? 'project' : 'dashboard',
+      selectedProjectId: req.projectId || null,
+      focusRequest: { id: ++focusRequestSeq, ...req }
     })
 }))

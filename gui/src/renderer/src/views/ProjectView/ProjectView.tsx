@@ -55,6 +55,16 @@ export function ProjectView() {
     localStorage.setItem('wf-right-panel-open', String(rightPanelOpen))
   }, [rightPanelOpen])
 
+  // Honour tray-driven focus requests: when a focus event lands on this
+  // project, switch the center tab to match the requested target.
+  const focusRequest = useAppStore((s) => s.focusRequest)
+  useEffect(() => {
+    if (!focusRequest || focusRequest.projectId !== projectId) return
+    if (focusRequest.target === 'tasks' || focusRequest.target === 'task') {
+      setCenterTab('tasks')
+    }
+  }, [focusRequest, projectId])
+
   const project = projects.find((p) => p.projectId === projectId)
   const isAgentRunning = agentStatus?.isRunning
 

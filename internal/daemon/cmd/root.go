@@ -212,6 +212,20 @@ func (l *lazyDaemonState) RequestShutdown() {
 	}
 }
 
+func (l *lazyDaemonState) FailedTaskCounts() map[string]int {
+	if srv := l.getSrv(); srv != nil {
+		return server.NewTrayState(srv).FailedTaskCounts()
+	}
+	return nil
+}
+
+func (l *lazyDaemonState) LogsDir() string {
+	if srv := l.getSrv(); srv != nil {
+		return server.NewTrayState(srv).LogsDir()
+	}
+	return ""
+}
+
 // waitForPort polls until a TCP connection to the given port succeeds or the timeout expires.
 func waitForPort(port int, timeout time.Duration) error {
 	deadline := time.Now().Add(timeout)
