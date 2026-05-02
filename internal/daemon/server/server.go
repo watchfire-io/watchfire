@@ -43,6 +43,7 @@ type Server struct {
 	agentManager   *agent.Manager
 	watcher        *watcher.Watcher
 	notifyBus      *notify.Bus
+	digestRunner   *digestRunner
 	updateState    UpdateState
 }
 
@@ -284,6 +285,7 @@ func New(port int) (*Server, error) {
 		agentManager:   agentMgr,
 		watcher:        w,
 		notifyBus:      notifyBus,
+		digestRunner:   newDigestRunner(notifyBus),
 	}
 
 	// Register services with generated proto descriptors
@@ -301,6 +303,14 @@ func New(port int) (*Server, error) {
 
 	// Start background update check
 	srv.startUpdateCheck()
+
+	// Start the v6.0 Ember weekly-digest scheduler. Self-gates internally
+	// against `defaults.notifications.events.weekly_digest`, so leaving it
+	// running unconditionally is fine; the gate suppresses the emit, the
+	// runner still persists the rendered digest under ~/.watchfire/digests/.
+	if srv.digestRunner != nil {
+		srv.digestRunner.Start()
+	}
 
 	return srv, nil
 }
@@ -347,6 +357,10 @@ func (s *Server) Serve() error {
 func (s *Server) Stop() {
 	// Flush analytics
 	analytics.Close()
+	// Stop weekly-digest scheduler (no-op if not started).
+	if s.digestRunner != nil {
+		s.digestRunner.Stop()
+	}
 	// Stop watcher before agents (prevents new task-done events during shutdown)
 	if s.watcher != nil {
 		s.watcher.Stop()
@@ -679,6 +693,17 @@ func (t *TrayState) FailedTaskCounts() map[string]int {
 // LogsDir returns the absolute path to the global logs directory.
 func (t *TrayState) LogsDir() string {
 	dir, err := config.GlobalLogsDir()
+	if err != nil {
+		return ""
+	}
+	return dir
+}
+
+// DigestsDir returns the absolute path to the global digests directory
+// (~/.watchfire/digests/). Used by the tray's Notifications submenu to
+// surface the most recent weekly digest as the topmost row.
+func (t *TrayState) DigestsDir() string {
+	dir, err := config.GlobalDigestsDir()
 	if err != nil {
 		return ""
 	}

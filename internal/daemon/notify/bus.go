@@ -19,8 +19,9 @@ import (
 type Kind string
 
 const (
-	KindTaskFailed  Kind = "TASK_FAILED"
-	KindRunComplete Kind = "RUN_COMPLETE"
+	KindTaskFailed   Kind = "TASK_FAILED"
+	KindRunComplete  Kind = "RUN_COMPLETE"
+	KindWeeklyDigest Kind = "WEEKLY_DIGEST"
 )
 
 // Notification is a single notification event fanned out over the Bus.
@@ -120,6 +121,26 @@ func AppendLogLine(n Notification) error {
 		return err
 	}
 	path := filepath.Join(projectLogsDir, "notifications.log")
+	return appendJSONL(path, n)
+}
+
+// AppendGlobalLogLine appends a single Notification record to the fleet-wide
+// `~/.watchfire/logs/digests.log`. Used for WEEKLY_DIGEST notifications which
+// span all projects and have no `ProjectID`. The tray's notifications submenu
+// reads this file in addition to the per-project `notifications.log`s.
+func AppendGlobalLogLine(n Notification) error {
+	if err := config.EnsureGlobalLogsDir(); err != nil {
+		return err
+	}
+	logsDir, err := config.GlobalLogsDir()
+	if err != nil {
+		return err
+	}
+	path := filepath.Join(logsDir, "digests.log")
+	return appendJSONL(path, n)
+}
+
+func appendJSONL(path string, n Notification) error {
 	f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err

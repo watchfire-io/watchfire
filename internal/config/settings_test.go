@@ -18,8 +18,9 @@ func TestSettingsRoundTripAllFieldsSet(t *testing.T) {
 	want.Defaults.Notifications = models.NotificationsConfig{
 		Enabled: true,
 		Events: models.NotificationsEvents{
-			TaskFailed:  false,
-			RunComplete: true,
+			TaskFailed:   false,
+			RunComplete:  true,
+			WeeklyDigest: true,
 		},
 		Sounds: models.NotificationsSounds{
 			Enabled:     false,
@@ -32,6 +33,7 @@ func TestSettingsRoundTripAllFieldsSet(t *testing.T) {
 			Start:   "22:00",
 			End:     "08:00",
 		},
+		DigestSchedule: "FRI 17:00",
 	}
 
 	if err := SaveSettings(want); err != nil {

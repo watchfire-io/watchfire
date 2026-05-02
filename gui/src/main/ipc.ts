@@ -1,6 +1,7 @@
 import { ipcMain, dialog, shell, BrowserWindow, Notification } from 'electron'
-import { existsSync } from 'fs'
+import { existsSync, readFileSync, readdirSync, statSync } from 'fs'
 import { join } from 'path'
+import { homedir } from 'os'
 import { spawn } from 'child_process'
 import { getDaemonInfo, ensureDaemon } from './daemon'
 import { installCLI, needsInstall } from './cli-installer'
@@ -179,9 +180,8 @@ export function setupIpc(): void {
         body: payload.body,
         silent: true
       })
-      // Click → focus the GUI window and route to the failing project's
-      // TasksTab. The renderer-side focus-store pattern is reused: dispatch
-      // an IPC event that App listens to and turns into a requestFocus.
+      // Click → focus the GUI window and route by kind. WEEKLY_DIGEST opens
+      // the digest modal; TASK_FAILED / RUN_COMPLETE route to the project.
       n.on('click', () => {
         const wins = BrowserWindow.getAllWindows()
         if (wins.length === 0) return
@@ -189,14 +189,53 @@ export function setupIpc(): void {
         if (win.isMinimized()) win.restore()
         win.show()
         win.focus()
-        if (payload.projectId) {
-          win.webContents.send('notifications:click', {
-            projectId: payload.projectId,
-            taskNumber: payload.taskNumber
-          })
-        }
+        win.webContents.send('notifications:click', {
+          kind: payload.kind,
+          projectId: payload.projectId,
+          taskNumber: payload.taskNumber
+        })
       })
       n.show()
     }
   )
+
+  // v6.0 Ember — read a single digest's persisted Markdown. The daemon's
+  // digest scheduler writes one file per fire date under
+  // `~/.watchfire/digests/<YYYY-MM-DD>.md`; the GUI's DigestModal reads it
+  // back here via IPC rather than streaming the body over gRPC (the body
+  // is already on the local filesystem; no need to round-trip).
+  ipcMain.handle('digests:read', (_event, dateKey: string) => {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return null
+    const path = join(homedir(), '.watchfire', 'digests', `${dateKey}.md`)
+    if (!existsSync(path)) return null
+    try {
+      return readFileSync(path, 'utf-8')
+    } catch {
+      return null
+    }
+  })
+
+  // v6.0 Ember — list available digests, newest first. Returns the date keys
+  // (e.g. ["2026-05-04", "2026-04-27", ...]) so the in-app notification
+  // center can populate a "Digests" tab without re-reading every file.
+  ipcMain.handle('digests:list', () => {
+    const dir = join(homedir(), '.watchfire', 'digests')
+    if (!existsSync(dir)) return []
+    try {
+      const out: { date: string; mtimeMs: number }[] = []
+      for (const name of readdirSync(dir)) {
+        if (!/^\d{4}-\d{2}-\d{2}\.md$/.test(name)) continue
+        try {
+          const st = statSync(join(dir, name))
+          out.push({ date: name.slice(0, 10), mtimeMs: st.mtimeMs })
+        } catch {
+          /* ignore */
+        }
+      }
+      out.sort((a, b) => b.mtimeMs - a.mtimeMs)
+      return out.map((e) => e.date)
+    } catch {
+      return []
+    }
+  })
 }

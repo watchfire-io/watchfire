@@ -122,6 +122,49 @@ func readNotificationsFile(path string) ([]notificationLogRecord, error) {
 	return out, nil
 }
 
+// LoadLatestDigest scans `~/.watchfire/digests/` for the most recently-modified
+// `<YYYY-MM-DD>.md` file and returns a DigestEntry pointing at it. The empty
+// DigestEntry is returned when no digest has ever fired (the tray hides the
+// row in that case). I/O errors are silently swallowed — the tray must keep
+// rendering even when the digests directory is missing.
+func LoadLatestDigest(digestsDir string) DigestEntry {
+	entries, err := os.ReadDir(digestsDir)
+	if err != nil {
+		return DigestEntry{}
+	}
+	var best DigestEntry
+	var bestTime time.Time
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		if len(name) != len("YYYY-MM-DD.md") || !hasSuffix(name, ".md") {
+			continue
+		}
+		dateKey := name[:len(name)-3]
+		// Validate date format up front so a junk file in the directory can't
+		// claim "latest".
+		t, err := time.ParseInLocation("2006-01-02", dateKey, time.Local)
+		if err != nil {
+			continue
+		}
+		info, err := e.Info()
+		if err != nil {
+			continue
+		}
+		if info.ModTime().After(bestTime) {
+			bestTime = info.ModTime()
+			best = DigestEntry{Date: dateKey, EmittedAt: t}
+		}
+	}
+	return best
+}
+
+func hasSuffix(s, suffix string) bool {
+	return len(s) >= len(suffix) && s[len(s)-len(suffix):] == suffix
+}
+
 // formatAge renders a duration as a short relative string suitable for the
 // menu subtitle (e.g. "2m ago", "1h ago"). Floors to the largest unit that
 // fits, matching the GUI's relative-time helper.

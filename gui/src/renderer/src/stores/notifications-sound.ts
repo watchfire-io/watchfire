@@ -8,7 +8,7 @@ import type { NotificationsSounds } from '../generated/watchfire_pb'
 // the `NotificationService` stream in task 0049 — once that ships, this type
 // switches to importing the generated enum and the string literals stay
 // compatible at the runtime level.
-export type NotificationKind = 'TASK_FAILED' | 'RUN_COMPLETE'
+export type NotificationKind = 'TASK_FAILED' | 'RUN_COMPLETE' | 'WEEKLY_DIGEST'
 
 // Defaults match `internal/models/settings.go:DefaultNotifications`. Used
 // when the settings RPC reply hasn't landed yet OR fields are absent in an

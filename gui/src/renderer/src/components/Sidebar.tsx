@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
-import { LayoutDashboard, Plus, Settings, PanelLeftClose, PanelLeft, Wifi, WifiOff, Trash2 } from 'lucide-react'
+import { LayoutDashboard, Plus, Settings, PanelLeftClose, PanelLeft, Wifi, WifiOff, Trash2, Bell } from 'lucide-react'
+import { useDigestStore } from '../stores/digest-store'
+import { useNotificationsStore } from '../stores/notifications-store'
 import { DndContext, closestCenter, type DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -138,6 +140,7 @@ export function Sidebar() {
 
       {/* Footer */}
       <div className="flex flex-col gap-0.5 px-2 py-2 border-t border-[var(--wf-border)]">
+        <NotificationCenterButton collapsed={collapsed} />
         <SidebarItem
           icon={<Settings size={16} />}
           label="Settings"
@@ -250,6 +253,101 @@ function SidebarItem({ icon, label, active, collapsed, onClick }: SidebarItemPro
       <span className="shrink-0 flex items-center justify-center w-4 h-4">{icon}</span>
       {!collapsed && <span className="truncate text-sm">{label}</span>}
     </button>
+  )
+}
+
+// NotificationCenterButton renders a bell icon that opens a small dropdown
+// listing recent live notifications + recent weekly digests. v6.0 Ember
+// surfaces saved digests here so a user who missed the OS toast can still
+// re-open the most recent week's summary in one click.
+function NotificationCenterButton({ collapsed }: { collapsed: boolean }) {
+  const [open, setOpen] = useState(false)
+  const recent = useNotificationsStore((s) => s.recent)
+  const digestList = useDigestStore((s) => s.list)
+  const refreshDigests = useDigestStore((s) => s.refreshList)
+  const openDigest = useDigestStore((s) => s.open)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    void refreshDigests()
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    window.addEventListener('mousedown', handler)
+    return () => window.removeEventListener('mousedown', handler)
+  }, [open, refreshDigests])
+
+  const total = recent.length + digestList.length
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        onClick={() => setOpen((v) => !v)}
+        title={collapsed ? 'Notifications' : undefined}
+        className={cn(
+          'flex items-center gap-2 px-2.5 py-1.5 rounded-[var(--wf-radius-md)] text-sm transition-colors w-full text-left',
+          'text-[var(--wf-text-secondary)] hover:bg-[var(--wf-bg-elevated)] hover:text-[var(--wf-text-primary)]',
+          collapsed && 'justify-center px-0'
+        )}
+      >
+        <span className="shrink-0 relative flex items-center justify-center w-4 h-4">
+          <Bell size={16} />
+          {total > 0 && (
+            <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[14px] h-[14px] px-1 text-[9px] rounded-full bg-fire-500 text-white">
+              {total > 9 ? '9+' : total}
+            </span>
+          )}
+        </span>
+        {!collapsed && <span className="truncate text-sm">Notifications</span>}
+      </button>
+      {open && (
+        <div className="absolute bottom-full left-0 mb-2 z-[150] w-72 max-h-80 overflow-y-auto bg-[var(--wf-bg-elevated)] border border-[var(--wf-border)] rounded-[var(--wf-radius-md)] shadow-wf-lg p-2 space-y-2">
+          {digestList.length > 0 && (
+            <div>
+              <div className="text-[10px] font-semibold uppercase text-[var(--wf-text-muted)] px-1 mb-1">
+                Digests
+              </div>
+              <ul className="space-y-0.5">
+                {digestList.slice(0, 4).map((date) => (
+                  <li key={date}>
+                    <button
+                      onClick={() => {
+                        void openDigest(date)
+                        setOpen(false)
+                      }}
+                      className="w-full text-left px-2 py-1 rounded text-xs text-[var(--wf-text-secondary)] hover:bg-[var(--wf-bg-primary)] hover:text-[var(--wf-text-primary)]"
+                    >
+                      📊 Weekly digest · {date}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {recent.length > 0 && (
+            <div>
+              <div className="text-[10px] font-semibold uppercase text-[var(--wf-text-muted)] px-1 mb-1">
+                Recent
+              </div>
+              <ul className="space-y-0.5">
+                {recent.slice(0, 8).map((n) => (
+                  <li key={n.id} className="px-2 py-1 rounded text-xs text-[var(--wf-text-secondary)]">
+                    <div className="font-medium text-[var(--wf-text-primary)] truncate">{n.title || n.kind}</div>
+                    {n.body && <div className="truncate text-[var(--wf-text-muted)]">{n.body}</div>}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {total === 0 && (
+            <div className="text-xs text-[var(--wf-text-muted)] px-2 py-3 text-center">
+              Nothing here yet.
+            </div>
+          )}
+        </div>
+      )}
+    </div>
   )
 }
 

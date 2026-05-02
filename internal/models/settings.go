@@ -12,8 +12,9 @@ type AgentConfig struct {
 
 // NotificationsEvents holds per-event toggles.
 type NotificationsEvents struct {
-	TaskFailed   bool `yaml:"task_failed"`
-	RunComplete  bool `yaml:"run_complete"`
+	TaskFailed    bool `yaml:"task_failed"`
+	RunComplete   bool `yaml:"run_complete"`
+	WeeklyDigest  bool `yaml:"weekly_digest"`
 }
 
 // NotificationsSounds holds sound prefs for notifications.
@@ -35,10 +36,14 @@ type QuietHoursConfig struct {
 
 // NotificationsConfig holds the user's global notification preferences.
 type NotificationsConfig struct {
-	Enabled     bool                `yaml:"enabled"`
-	Events      NotificationsEvents `yaml:"events"`
-	Sounds      NotificationsSounds `yaml:"sounds"`
-	QuietHours  QuietHoursConfig    `yaml:"quiet_hours"`
+	Enabled    bool                `yaml:"enabled"`
+	Events     NotificationsEvents `yaml:"events"`
+	Sounds     NotificationsSounds `yaml:"sounds"`
+	QuietHours QuietHoursConfig    `yaml:"quiet_hours"`
+	// DigestSchedule controls when WEEKLY_DIGEST notifications fire. Cron-ish
+	// syntax: "MON HH:MM", "TUE HH:MM", ..., "DAILY HH:MM". Default "MON 09:00"
+	// (Monday 09:00 local). Honoured by `internal/daemon/server/digest.go`.
+	DigestSchedule string `yaml:"digest_schedule"`
 }
 
 // DefaultNotifications returns the default notification preferences.
@@ -46,8 +51,9 @@ func DefaultNotifications() NotificationsConfig {
 	return NotificationsConfig{
 		Enabled: true,
 		Events: NotificationsEvents{
-			TaskFailed:  true,
-			RunComplete: true,
+			TaskFailed:   true,
+			RunComplete:  true,
+			WeeklyDigest: false,
 		},
 		Sounds: NotificationsSounds{
 			Enabled:     true,
@@ -60,8 +66,13 @@ func DefaultNotifications() NotificationsConfig {
 			Start:   "22:00",
 			End:     "08:00",
 		},
+		DigestSchedule: DefaultDigestSchedule,
 	}
 }
+
+// DefaultDigestSchedule is the default cadence for the weekly digest:
+// every Monday at 09:00 local time.
+const DefaultDigestSchedule = "MON 09:00"
 
 // DefaultsConfig holds default settings for new projects.
 type DefaultsConfig struct {
@@ -120,10 +131,11 @@ func (s *Settings) Normalize() {
 	n := &s.Defaults.Notifications
 
 	// If the entire block looks unset (zero-value struct), apply all defaults.
-	if !n.Enabled && !n.Events.TaskFailed && !n.Events.RunComplete &&
+	if !n.Enabled && !n.Events.TaskFailed && !n.Events.RunComplete && !n.Events.WeeklyDigest &&
 		!n.Sounds.Enabled && !n.Sounds.TaskFailed && !n.Sounds.RunComplete &&
 		n.Sounds.Volume == 0 &&
-		!n.QuietHours.Enabled && n.QuietHours.Start == "" && n.QuietHours.End == "" {
+		!n.QuietHours.Enabled && n.QuietHours.Start == "" && n.QuietHours.End == "" &&
+		n.DigestSchedule == "" {
 		s.Defaults.Notifications = def
 		return
 	}
@@ -133,6 +145,9 @@ func (s *Settings) Normalize() {
 	}
 	if n.QuietHours.End == "" {
 		n.QuietHours.End = def.QuietHours.End
+	}
+	if n.DigestSchedule == "" {
+		n.DigestSchedule = def.DigestSchedule
 	}
 }
 

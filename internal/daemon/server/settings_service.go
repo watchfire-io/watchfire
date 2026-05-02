@@ -85,6 +85,13 @@ func (s *settingsService) UpdateSettings(_ context.Context, req *pb.UpdateSettin
 			if incoming.Sounds.Volume > 1 {
 				incoming.Sounds.Volume = 1
 			}
+			if incoming.DigestSchedule != "" {
+				if _, ok := models.ParseDigestSchedule(incoming.DigestSchedule); !ok {
+					return nil, fmt.Errorf("invalid digest_schedule %q (expected MON HH:MM / DAILY HH:MM)", incoming.DigestSchedule)
+				}
+			} else {
+				incoming.DigestSchedule = models.DefaultDigestSchedule
+			}
 			settings.Defaults.Notifications = incoming
 		}
 	}

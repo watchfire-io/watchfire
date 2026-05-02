@@ -349,6 +349,7 @@ message DefaultsConfig {
 message NotificationsEvents {
   bool task_failed = 1;
   bool run_complete = 2;
+  bool weekly_digest = 3;                           // v6.0 Ember
 }
 
 message NotificationsSounds {
@@ -369,6 +370,7 @@ message NotificationsConfig {
   NotificationsEvents events = 2;
   NotificationsSounds sounds = 3;
   QuietHoursConfig quiet_hours = 4;
+  string digest_schedule = 5;                     // v6.0 Ember — "MON 09:00" / "DAILY 17:00" etc.
 }
 
 message UpdatesConfig {
@@ -448,9 +450,10 @@ service DaemonService {
 
 // FocusTarget identifies which view in the GUI a focus event is targeting.
 enum FocusTarget {
-  FOCUS_TARGET_MAIN = 0;   // Project's main / dashboard view
-  FOCUS_TARGET_TASKS = 1;  // Project's TasksTab
-  FOCUS_TARGET_TASK = 2;   // Specific task within a project
+  FOCUS_TARGET_MAIN = 0;    // Project's main / dashboard view
+  FOCUS_TARGET_TASKS = 1;   // Project's TasksTab
+  FOCUS_TARGET_TASK = 2;    // Specific task within a project
+  FOCUS_TARGET_DIGEST = 3;  // Open the weekly digest modal (v6.0 Ember)
 }
 
 message SubscribeFocusEventsRequest {
@@ -460,7 +463,8 @@ message SubscribeFocusEventsRequest {
 message FocusEvent {
   string project_id = 1;
   FocusTarget target = 2;
-  int32 task_number = 3;  // Only meaningful when target == FOCUS_TARGET_TASK
+  int32 task_number = 3;     // Only meaningful when target == FOCUS_TARGET_TASK
+  string digest_date = 4;    // YYYY-MM-DD identifying the digest file (FOCUS_TARGET_DIGEST)
 }
 
 // LogService handles session log retrieval
@@ -549,12 +553,13 @@ service SettingsService {
 // ============================================================================
 
 // NotificationKind enumerates the high-level reasons the daemon emits a
-// notification. STUCK_AGENT is reserved for a future task; only TASK_FAILED
-// and RUN_COMPLETE ship in the v5.0 Pulse release.
+// notification. STUCK_AGENT is reserved for a future task; TASK_FAILED and
+// RUN_COMPLETE ship in v5.0 Pulse, WEEKLY_DIGEST in v6.0 Ember.
 enum NotificationKind {
   TASK_FAILED = 0;
   RUN_COMPLETE = 1;
   STUCK_AGENT = 2;
+  WEEKLY_DIGEST = 3;
 }
 
 // Notification is a single user-facing event the daemon emits when something

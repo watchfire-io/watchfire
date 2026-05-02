@@ -18,6 +18,7 @@ const DEFAULTS: NonNullable<NotificationsConfig> = {
     $typeName: 'watchfire.NotificationsEvents',
     taskFailed: true,
     runComplete: true,
+    weeklyDigest: false,
   },
   sounds: {
     $typeName: 'watchfire.NotificationsSounds',
@@ -32,7 +33,17 @@ const DEFAULTS: NonNullable<NotificationsConfig> = {
     start: '22:00',
     end: '08:00',
   },
+  digestSchedule: 'MON 09:00',
 } as unknown as NotificationsConfig
+
+// Schedule presets surfaced in the dropdown. The value matches the cron-ish
+// string the daemon's `models.ParseDigestSchedule` accepts.
+const SCHEDULE_PRESETS: { value: string; label: string }[] = [
+  { value: 'MON 09:00', label: 'Mon 09:00' },
+  { value: 'MON 18:00', label: 'Mon 18:00' },
+  { value: 'FRI 17:00', label: 'Fri 17:00' },
+  { value: 'DAILY 09:00', label: 'Daily 09:00' }
+]
 
 function readPrefs(settings: Settings): NotificationsConfig {
   // The daemon always populates the block on GetSettings (Normalize fills in
@@ -89,6 +100,16 @@ export function NotificationsSection({ settings }: Props) {
     push({
       ...prefs,
       events: { ...prefs.events!, runComplete: v }
+    } as NotificationsConfig)
+  const setEventWeeklyDigest = (v: boolean) =>
+    push({
+      ...prefs,
+      events: { ...prefs.events!, weeklyDigest: v }
+    } as NotificationsConfig)
+  const setDigestSchedule = (v: string) =>
+    push({
+      ...prefs,
+      digestSchedule: v
     } as NotificationsConfig)
   const setSoundsEnabled = (v: boolean) =>
     push({
@@ -165,6 +186,37 @@ export function NotificationsSection({ settings }: Props) {
           label="Notify on run complete"
           disabled={!prefs.enabled}
         />
+      </div>
+
+      <h4 className="font-heading font-semibold text-xs text-[var(--wf-text-muted)] uppercase tracking-wider mt-6 mb-3">
+        Weekly Digest
+      </h4>
+      <div className="space-y-4">
+        <Toggle
+          checked={prefs.events?.weeklyDigest ?? false}
+          onChange={setEventWeeklyDigest}
+          label="Send a weekly digest"
+          description="A Markdown summary of the past 7 days, delivered as a notification"
+          disabled={!prefs.enabled}
+        />
+        <div className="flex flex-col gap-1.5">
+          <label className="text-sm font-medium text-[var(--wf-text-secondary)]">Schedule</label>
+          <select
+            value={prefs.digestSchedule || 'MON 09:00'}
+            onChange={(e) => setDigestSchedule(e.target.value)}
+            disabled={!prefs.enabled || !(prefs.events?.weeklyDigest ?? false)}
+            className="bg-[var(--wf-bg-elevated)] border border-[var(--wf-border)] rounded-[var(--wf-radius-md)] px-3 py-1.5 text-sm text-[var(--wf-text-primary)] focus:outline-none focus:ring-2 focus:ring-fire-500/50 disabled:opacity-50"
+          >
+            {SCHEDULE_PRESETS.map((p) => (
+              <option key={p.value} value={p.value}>
+                {p.label}
+              </option>
+            ))}
+            {!SCHEDULE_PRESETS.some((p) => p.value === prefs.digestSchedule) && prefs.digestSchedule && (
+              <option value={prefs.digestSchedule}>{prefs.digestSchedule} (custom)</option>
+            )}
+          </select>
+        </div>
       </div>
 
       <h4 className="font-heading font-semibold text-xs text-[var(--wf-text-muted)] uppercase tracking-wider mt-6 mb-3">

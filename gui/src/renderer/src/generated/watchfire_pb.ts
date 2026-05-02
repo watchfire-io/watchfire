@@ -1542,6 +1542,13 @@ export type NotificationsEvents = Message<"watchfire.NotificationsEvents"> & {
    * @generated from field: bool run_complete = 2;
    */
   runComplete: boolean;
+
+  /**
+   * v6.0 Ember
+   *
+   * @generated from field: bool weekly_digest = 3;
+   */
+  weeklyDigest: boolean;
 };
 
 /**
@@ -1641,6 +1648,13 @@ export type NotificationsConfig = Message<"watchfire.NotificationsConfig"> & {
    * @generated from field: watchfire.QuietHoursConfig quiet_hours = 4;
    */
   quietHours?: QuietHoursConfig;
+
+  /**
+   * v6.0 Ember — "MON 09:00" / "DAILY 17:00" etc.
+   *
+   * @generated from field: string digest_schedule = 5;
+   */
+  digestSchedule: string;
 };
 
 /**
@@ -1866,6 +1880,13 @@ export type FocusEvent = Message<"watchfire.FocusEvent"> & {
    * @generated from field: int32 task_number = 3;
    */
   taskNumber: number;
+
+  /**
+   * YYYY-MM-DD identifying the digest file (FOCUS_TARGET_DIGEST)
+   *
+   * @generated from field: string digest_date = 4;
+   */
+  digestDate: string;
 };
 
 /**
@@ -2145,6 +2166,13 @@ export enum FocusTarget {
    * @generated from enum value: FOCUS_TARGET_TASK = 2;
    */
   TASK = 2,
+
+  /**
+   * Open the weekly digest modal (v6.0 Ember)
+   *
+   * @generated from enum value: FOCUS_TARGET_DIGEST = 3;
+   */
+  DIGEST = 3,
 }
 
 /**
@@ -2155,8 +2183,8 @@ export const FocusTargetSchema: GenEnum<FocusTarget> = /*@__PURE__*/
 
 /**
  * NotificationKind enumerates the high-level reasons the daemon emits a
- * notification. STUCK_AGENT is reserved for a future task; only TASK_FAILED
- * and RUN_COMPLETE ship in the v5.0 Pulse release.
+ * notification. STUCK_AGENT is reserved for a future task; TASK_FAILED and
+ * RUN_COMPLETE ship in v5.0 Pulse, WEEKLY_DIGEST in v6.0 Ember.
  *
  * @generated from enum watchfire.NotificationKind
  */
@@ -2175,6 +2203,11 @@ export enum NotificationKind {
    * @generated from enum value: STUCK_AGENT = 2;
    */
   STUCK_AGENT = 2,
+
+  /**
+   * @generated from enum value: WEEKLY_DIGEST = 3;
+   */
+  WEEKLY_DIGEST = 3,
 }
 
 /**

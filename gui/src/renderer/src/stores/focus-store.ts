@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { getDaemonClient } from '../lib/grpc-client'
 import { FocusTarget } from '../generated/watchfire_pb'
 import { useAppStore, type FocusRequestTarget } from './app-store'
+import { useDigestStore } from './digest-store'
 
 // Module-level subscription handle — we never want more than one stream open
 // at a time across the renderer's lifetime.
@@ -37,6 +38,13 @@ async function consume(abort: AbortController): Promise<void> {
         await window.watchfire.focusWindow()
       } catch {
         /* ignore */
+      }
+      // v6.0 Ember — DIGEST target opens the modal with the named date,
+      // bypassing the project / task routing path.
+      if (ev.target === FocusTarget.DIGEST) {
+        const date = ev.digestDate
+        if (date) void useDigestStore.getState().open(date)
+        continue
       }
       // No project ID means "open Watchfire / dashboard" — drop the project
       // selection and switch to dashboard view.

@@ -85,6 +85,7 @@ func (s *daemonService) SubscribeFocusEvents(_ *pb.SubscribeFocusEventsRequest, 
 				ProjectId:  ev.ProjectID,
 				Target:     focusTargetToProto(ev.Target),
 				TaskNumber: ev.TaskNumber,
+				DigestDate: ev.DigestDate,
 			}); err != nil {
 				return err
 			}
@@ -98,6 +99,8 @@ func focusTargetToProto(t focus.Target) pb.FocusTarget {
 		return pb.FocusTarget_FOCUS_TARGET_TASKS
 	case focus.TargetTask:
 		return pb.FocusTarget_FOCUS_TARGET_TASK
+	case focus.TargetDigest:
+		return pb.FocusTarget_FOCUS_TARGET_DIGEST
 	default:
 		return pb.FocusTarget_FOCUS_TARGET_MAIN
 	}

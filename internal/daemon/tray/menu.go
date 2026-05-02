@@ -3,6 +3,7 @@ package tray
 import (
 	"fmt"
 	"sort"
+	"time"
 )
 
 // MaxIdleProjects caps the number of idle project rows in the Idle section.
@@ -23,6 +24,7 @@ const (
 	ClickFocusMain      ClickKind = "focus_main"
 	ClickFocusTasks     ClickKind = "focus_tasks"
 	ClickFocusTask      ClickKind = "focus_task"
+	ClickFocusDigest    ClickKind = "focus_digest"
 	ClickOpenWatchfire  ClickKind = "open_watchfire"
 	ClickOpenDashboard  ClickKind = "open_dashboard"
 	ClickOpenNotifLog   ClickKind = "open_notif_log"
@@ -37,6 +39,8 @@ type ClickAction struct {
 	Kind       ClickKind
 	ProjectID  string
 	TaskNumber int32
+	// DigestDate is the YYYY-MM-DD identifier for ClickFocusDigest actions.
+	DigestDate string
 }
 
 // MenuNode is the unit of the tray menu tree. Section headers are rendered
@@ -100,9 +104,21 @@ type MenuInputs struct {
 	// NotificationsTodayCount is the unclamped count for the "Notifications
 	// (N today)" header. May exceed len(Notifications) when capped.
 	NotificationsTodayCount int
+	// LatestDigest is the most recently-emitted weekly digest, or zero-value
+	// when none exists. Surfaced as the topmost row in the Notifications
+	// submenu (v6.0 Ember).
+	LatestDigest DigestEntry
 	// UpdateAvailable, when true, surfaces the "Update Available — vX" row.
 	UpdateAvailable bool
 	UpdateVersion   string
+}
+
+// DigestEntry is a single weekly-digest summary surfaced in the tray.
+type DigestEntry struct {
+	// Date is the YYYY-MM-DD key the digest was persisted under.
+	Date string
+	// EmittedAt is the wall-clock timestamp the digest was emitted at.
+	EmittedAt time.Time
 }
 
 // BuildMenu builds the static menu tree the tray should render for the given
@@ -228,6 +244,19 @@ func BuildMenu(in MenuInputs) []MenuNode {
 		Title:   fmt.Sprintf("Notifications (%d today) ▸", in.NotificationsTodayCount),
 		OnClick: ClickAction{Kind: ClickReloadNotifs},
 	}
+
+	// v6.0 Ember — surface the most recent weekly digest as the topmost item.
+	if in.LatestDigest.Date != "" {
+		notifRoot.Children = append(notifRoot.Children, MenuNode{
+			Title:    fmt.Sprintf("📊 Weekly digest · %s", digestRelativeLabel(in.LatestDigest.EmittedAt, time.Now())),
+			Subtitle: in.LatestDigest.Date,
+			OnClick: ClickAction{
+				Kind:       ClickFocusDigest,
+				DigestDate: in.LatestDigest.Date,
+			},
+		})
+	}
+
 	for i, n := range in.Notifications {
 		if i >= MaxNotifications {
 			break
@@ -338,6 +367,30 @@ func truncate(s string, n int) string {
 		return "…"
 	}
 	return s[:n-1] + "…"
+}
+
+// digestRelativeLabel returns a short relative descriptor for the digest's
+// emit time — "today", "yesterday", or "last <Mon>". Used as the tray's
+// "📊 Weekly digest · last Mon" subtitle so the user can tell at a glance
+// when the most recent digest dropped.
+func digestRelativeLabel(emittedAt, now time.Time) string {
+	emitted := emittedAt.Local()
+	yEY, yEM, yED := emitted.Date()
+	yY, yM, yD := now.Local().Date()
+
+	emittedDay := time.Date(yEY, yEM, yED, 0, 0, 0, 0, emitted.Location())
+	today := time.Date(yY, yM, yD, 0, 0, 0, 0, now.Location())
+
+	switch days := int(today.Sub(emittedDay).Hours() / 24); {
+	case days <= 0:
+		return "today"
+	case days == 1:
+		return "yesterday"
+	case days < 7:
+		return "last " + emitted.Format("Mon")
+	default:
+		return emitted.Format("Mon, Jan 2")
+	}
 }
 
 func notificationRowTitle(n NotificationLogEntry) string {

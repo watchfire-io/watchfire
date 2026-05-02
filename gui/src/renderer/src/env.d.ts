@@ -68,7 +68,13 @@ interface WatchfireAPI {
     title: string
     body: string
   }): Promise<void>
-  onNotificationClick(callback: (payload: { projectId: string; taskNumber: number }) => void): void
+  onNotificationClick(
+    callback: (payload: { kind?: string; projectId: string; taskNumber: number }) => void
+  ): void
+
+  // v6.0 Ember — weekly digest reads
+  readDigest(dateKey: string): Promise<string | null>
+  listDigests(): Promise<string[]>
 }
 
 declare global {

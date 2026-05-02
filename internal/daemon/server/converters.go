@@ -100,8 +100,9 @@ func notificationsToProto(n models.NotificationsConfig) *pb.NotificationsConfig 
 	return &pb.NotificationsConfig{
 		Enabled: n.Enabled,
 		Events: &pb.NotificationsEvents{
-			TaskFailed:  n.Events.TaskFailed,
-			RunComplete: n.Events.RunComplete,
+			TaskFailed:   n.Events.TaskFailed,
+			RunComplete:  n.Events.RunComplete,
+			WeeklyDigest: n.Events.WeeklyDigest,
 		},
 		Sounds: &pb.NotificationsSounds{
 			Enabled:     n.Sounds.Enabled,
@@ -114,6 +115,7 @@ func notificationsToProto(n models.NotificationsConfig) *pb.NotificationsConfig 
 			Start:   n.QuietHours.Start,
 			End:     n.QuietHours.End,
 		},
+		DigestSchedule: n.DigestSchedule,
 	}
 }
 
@@ -125,6 +127,7 @@ func notificationsFromProto(p *pb.NotificationsConfig) models.NotificationsConfi
 	if p.Events != nil {
 		out.Events.TaskFailed = p.Events.TaskFailed
 		out.Events.RunComplete = p.Events.RunComplete
+		out.Events.WeeklyDigest = p.Events.WeeklyDigest
 	}
 	if p.Sounds != nil {
 		out.Sounds.Enabled = p.Sounds.Enabled
@@ -137,5 +140,6 @@ func notificationsFromProto(p *pb.NotificationsConfig) models.NotificationsConfi
 		out.QuietHours.Start = p.QuietHours.Start
 		out.QuietHours.End = p.QuietHours.End
 	}
+	out.DigestSchedule = p.DigestSchedule
 	return out
 }

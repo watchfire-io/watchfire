@@ -86,6 +86,8 @@ function pbKindToString(k: PbNotificationKind): NotificationKind {
   switch (k) {
     case PbNotificationKind.RUN_COMPLETE:
       return 'RUN_COMPLETE'
+    case PbNotificationKind.WEEKLY_DIGEST:
+      return 'WEEKLY_DIGEST'
     case PbNotificationKind.TASK_FAILED:
     default:
       return 'TASK_FAILED'

@@ -14,17 +14,21 @@ import (
 type Target int
 
 const (
-	TargetMain  Target = 0
-	TargetTasks Target = 1
-	TargetTask  Target = 2
+	TargetMain   Target = 0
+	TargetTasks  Target = 1
+	TargetTask   Target = 2
+	TargetDigest Target = 3 // v6.0 Ember — open the weekly digest modal
 )
 
 // Event is a single focus request — bring the GUI's view of ProjectID into
-// focus, optionally on a specific task.
+// focus, optionally on a specific task. For TargetDigest, ProjectID is empty
+// and DigestDate carries the YYYY-MM-DD identifying the digest file under
+// ~/.watchfire/digests/.
 type Event struct {
-	ProjectID  string
-	Target     Target
-	TaskNumber int32
+	ProjectID   string
+	Target      Target
+	TaskNumber  int32
+	DigestDate  string
 }
 
 // Bus fans an Event out to every subscriber. Subscribers receive a buffered

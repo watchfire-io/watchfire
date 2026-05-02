@@ -55,6 +55,8 @@ func notifyKindToProto(k notify.Kind) pb.NotificationKind {
 		return pb.NotificationKind_RUN_COMPLETE
 	case notify.KindTaskFailed:
 		return pb.NotificationKind_TASK_FAILED
+	case notify.KindWeeklyDigest:
+		return pb.NotificationKind_WEEKLY_DIGEST
 	default:
 		return pb.NotificationKind_TASK_FAILED
 	}
