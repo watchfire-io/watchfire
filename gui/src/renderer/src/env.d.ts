@@ -54,6 +54,17 @@ interface WatchfireAPI {
 
   // Bring the main window to the foreground
   focusWindow(): Promise<void>
+
+  // Native OS notifications (v5.0 Pulse)
+  emitNotification(payload: {
+    id: string
+    kind: string
+    projectId: string
+    taskNumber: number
+    title: string
+    body: string
+  }): Promise<void>
+  onNotificationClick(callback: (payload: { projectId: string; taskNumber: number }) => void): void
 }
 
 declare global {

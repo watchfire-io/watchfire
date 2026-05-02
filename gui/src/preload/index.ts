@@ -96,7 +96,29 @@ const api = {
   // Bring the main window to the foreground. Used by the focus subscriber
   // when the daemon's tray emits a click so a hidden window comes back
   // into view.
-  focusWindow: (): Promise<void> => ipcRenderer.invoke('focus-window')
+  focusWindow: (): Promise<void> => ipcRenderer.invoke('focus-window'),
+
+  // Show a native OS notification. The renderer relays each message it
+  // receives from the daemon's NotificationService.Subscribe stream so
+  // Electron's Notification API can produce the platform-correct toast /
+  // banner with proper app attribution.
+  emitNotification: (payload: {
+    id: string
+    kind: string
+    projectId: string
+    taskNumber: number
+    title: string
+    body: string
+  }): Promise<void> => ipcRenderer.invoke('notifications:emit', payload),
+
+  // Subscribe to "user clicked the OS notification" events from the main
+  // process. Used by App.tsx to route the GUI to the failing project's
+  // TasksTab.
+  onNotificationClick: (
+    callback: (payload: { projectId: string; taskNumber: number }) => void
+  ): void => {
+    ipcRenderer.on('notifications:click', (_ev, payload) => callback(payload))
+  }
 }
 
 contextBridge.exposeInMainWorld('watchfire', api)

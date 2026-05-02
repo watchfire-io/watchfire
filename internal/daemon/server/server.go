@@ -294,6 +294,7 @@ func New(port int) (*Server, error) {
 	pb.RegisterLogServiceServer(grpcServer, &logService{projectMgr: projectMgr})
 	pb.RegisterBranchServiceServer(grpcServer, &branchService{})
 	pb.RegisterSettingsServiceServer(grpcServer, &settingsService{})
+	pb.RegisterNotificationServiceServer(grpcServer, &notificationService{bus: notifyBus})
 
 	// Start watcher event processing loop
 	go srv.processWatcherEvents()
@@ -421,6 +422,12 @@ func (s *Server) handleTaskChanged(event watcher.Event) {
 		return
 	}
 
+	// Emit TASK_FAILED before stopping the agent. The emit is gated on
+	// success=false inside emitTaskFailed; calling unconditionally keeps the
+	// "any state-change to done can produce a notification" semantics.
+	projectName := s.projectNameForID(event.ProjectID)
+	emitTaskFailed(s.notifyBus, event.ProjectID, projectPath, projectName, t)
+
 	// Use StopAgentForTask to atomically verify the agent is still working on
 	// this specific task before stopping. Run in a goroutine to avoid blocking
 	// the event processing loop — StopAgent can take up to 5+ seconds.
@@ -520,6 +527,20 @@ func (s *Server) projectPathForID(projectID string) string {
 		return ""
 	}
 	return entry.Path
+}
+
+// projectNameForID resolves a project ID to its display name. Returns the
+// empty string if the project isn't registered or the index can't be loaded.
+func (s *Server) projectNameForID(projectID string) string {
+	index, err := config.LoadProjectsIndex()
+	if err != nil {
+		return ""
+	}
+	entry := index.FindProject(projectID)
+	if entry == nil {
+		return ""
+	}
+	return entry.Name
 }
 
 // TrayState adapts a Server to the tray.DaemonState interface.

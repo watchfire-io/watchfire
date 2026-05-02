@@ -2218,3 +2218,116 @@ var SettingsService_ServiceDesc = grpc.ServiceDesc{
 	Streams:  []grpc.StreamDesc{},
 	Metadata: "proto/watchfire.proto",
 }
+
+const (
+	NotificationService_Subscribe_FullMethodName = "/watchfire.NotificationService/Subscribe"
+)
+
+// NotificationServiceClient is the client API for NotificationService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+//
+// NotificationService streams desktop-notification events to subscribed
+// clients (the GUI shows them as native OS notifications; the tray reads
+// the JSONL fallback log written by the daemon for headless runs).
+type NotificationServiceClient interface {
+	Subscribe(ctx context.Context, in *SubscribeNotificationsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Notification], error)
+}
+
+type notificationServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewNotificationServiceClient(cc grpc.ClientConnInterface) NotificationServiceClient {
+	return &notificationServiceClient{cc}
+}
+
+func (c *notificationServiceClient) Subscribe(ctx context.Context, in *SubscribeNotificationsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[Notification], error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	stream, err := c.cc.NewStream(ctx, &NotificationService_ServiceDesc.Streams[0], NotificationService_Subscribe_FullMethodName, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	x := &grpc.GenericClientStream[SubscribeNotificationsRequest, Notification]{ClientStream: stream}
+	if err := x.ClientStream.SendMsg(in); err != nil {
+		return nil, err
+	}
+	if err := x.ClientStream.CloseSend(); err != nil {
+		return nil, err
+	}
+	return x, nil
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type NotificationService_SubscribeClient = grpc.ServerStreamingClient[Notification]
+
+// NotificationServiceServer is the server API for NotificationService service.
+// All implementations must embed UnimplementedNotificationServiceServer
+// for forward compatibility.
+//
+// NotificationService streams desktop-notification events to subscribed
+// clients (the GUI shows them as native OS notifications; the tray reads
+// the JSONL fallback log written by the daemon for headless runs).
+type NotificationServiceServer interface {
+	Subscribe(*SubscribeNotificationsRequest, grpc.ServerStreamingServer[Notification]) error
+	mustEmbedUnimplementedNotificationServiceServer()
+}
+
+// UnimplementedNotificationServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedNotificationServiceServer struct{}
+
+func (UnimplementedNotificationServiceServer) Subscribe(*SubscribeNotificationsRequest, grpc.ServerStreamingServer[Notification]) error {
+	return status.Error(codes.Unimplemented, "method Subscribe not implemented")
+}
+func (UnimplementedNotificationServiceServer) mustEmbedUnimplementedNotificationServiceServer() {}
+func (UnimplementedNotificationServiceServer) testEmbeddedByValue()                             {}
+
+// UnsafeNotificationServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to NotificationServiceServer will
+// result in compilation errors.
+type UnsafeNotificationServiceServer interface {
+	mustEmbedUnimplementedNotificationServiceServer()
+}
+
+func RegisterNotificationServiceServer(s grpc.ServiceRegistrar, srv NotificationServiceServer) {
+	// If the following call panics, it indicates UnimplementedNotificationServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&NotificationService_ServiceDesc, srv)
+}
+
+func _NotificationService_Subscribe_Handler(srv interface{}, stream grpc.ServerStream) error {
+	m := new(SubscribeNotificationsRequest)
+	if err := stream.RecvMsg(m); err != nil {
+		return err
+	}
+	return srv.(NotificationServiceServer).Subscribe(m, &grpc.GenericServerStream[SubscribeNotificationsRequest, Notification]{ServerStream: stream})
+}
+
+// This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
+type NotificationService_SubscribeServer = grpc.ServerStreamingServer[Notification]
+
+// NotificationService_ServiceDesc is the grpc.ServiceDesc for NotificationService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var NotificationService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "watchfire.NotificationService",
+	HandlerType: (*NotificationServiceServer)(nil),
+	Methods:     []grpc.MethodDesc{},
+	Streams: []grpc.StreamDesc{
+		{
+			StreamName:    "Subscribe",
+			Handler:       _NotificationService_Subscribe_Handler,
+			ServerStreams: true,
+		},
+	},
+	Metadata: "proto/watchfire.proto",
+}
