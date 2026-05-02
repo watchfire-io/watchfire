@@ -78,6 +78,10 @@ type Model struct {
 	projectInsights       ProjectInsights
 	projectInsightsWindow string
 
+	// v6.0 Ember inline diff viewer overlay state. Opened with `d` on a
+	// completed task; the gRPC fetch populates Data on completion.
+	taskDiff taskDiffState
+
 	// Program reference for goroutine Send()
 	program *programRef
 
@@ -327,6 +331,10 @@ func (m Model) View() string {
 				projectName = m.project.Name
 			}
 			overlayContent = renderProjectInsightsOverlay(m.projectInsights, projectName, width)
+		case overlayTaskDiff:
+			width := m.width - 6
+			height := m.height - 4
+			overlayContent = renderTaskDiffOverlay(m.taskDiff, width, height)
 		}
 		if overlayContent != "" {
 			view = renderOverlay(view, overlayContent, m.width, m.height)

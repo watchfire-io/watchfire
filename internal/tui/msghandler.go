@@ -206,6 +206,18 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 		}
 		return true, nil
 
+	// ── Inline diff viewer overlay (v6.0 Ember) ───────────────────
+	case TaskDiffLoadedMsg:
+		// Late responses for a different task get dropped — the user
+		// could have closed and re-opened the overlay on another task
+		// before the in-flight RPC returned.
+		if msg.TaskNumber == m.taskDiff.TaskNumber {
+			m.taskDiff.Loading = false
+			m.taskDiff.Data = msg.Data
+			m.taskDiff.Err = msg.Err
+		}
+		return true, nil
+
 	// ── Log viewer ────────────────────────────────────────────────
 	case LogsLoadedMsg:
 		m.logViewer.SetLogs(msg.Logs)

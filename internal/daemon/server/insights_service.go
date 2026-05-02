@@ -9,6 +9,8 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/watchfire-io/watchfire/internal/config"
+	"github.com/watchfire-io/watchfire/internal/daemon/diff"
 	"github.com/watchfire-io/watchfire/internal/daemon/insights"
 	pb "github.com/watchfire-io/watchfire/proto"
 )
@@ -113,6 +115,37 @@ func (s *insightsService) ExportReport(_ context.Context, req *pb.ExportReportRe
 	default:
 		return nil, status.Error(codes.InvalidArgument, "ExportReportRequest.scope must be set")
 	}
+}
+
+// GetTaskDiff returns the structured per-task diff for the v6.0 Ember
+// inline diff viewer. Resolution path lives in `internal/daemon/diff` —
+// pre-merge (branch still exists) and post-merge (branch deleted, merge
+// commit found via `--grep`) are both handled there.
+func (s *insightsService) GetTaskDiff(_ context.Context, req *pb.GetTaskDiffRequest) (*pb.FileDiffSet, error) {
+	if req == nil {
+		return nil, status.Error(codes.InvalidArgument, "GetTaskDiffRequest required")
+	}
+	if req.GetProjectId() == "" {
+		return nil, status.Error(codes.InvalidArgument, "project_id required")
+	}
+	if req.GetTaskNumber() <= 0 {
+		return nil, status.Error(codes.InvalidArgument, "task_number required")
+	}
+
+	index, err := config.LoadProjectsIndex()
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	entry := index.FindProject(req.GetProjectId())
+	if entry == nil {
+		return nil, status.Errorf(codes.NotFound, "project %s not found", req.GetProjectId())
+	}
+
+	out, err := diff.TaskDiff(entry.Path, req.GetProjectId(), int(req.GetTaskNumber()))
+	if err != nil {
+		return nil, status.Error(codes.Internal, err.Error())
+	}
+	return diffSetToProto(out), nil
 }
 
 func (s *insightsService) now() time.Time {
@@ -259,4 +292,70 @@ func projectInsightsToProto(p *insights.ProjectInsights) *pb.ProjectInsights {
 		})
 	}
 	return out
+}
+
+// diffSetToProto converts the diff package's FileDiffSet to its proto
+// counterpart. Field-by-field copy; the on-the-wire enum values are kept
+// in sync with the diff package's string constants.
+func diffSetToProto(set *diff.FileDiffSet) *pb.FileDiffSet {
+	if set == nil {
+		return &pb.FileDiffSet{}
+	}
+	out := &pb.FileDiffSet{
+		TotalAdditions: int32(set.TotalAdditions),
+		TotalDeletions: int32(set.TotalDeletions),
+		Truncated:      set.Truncated,
+	}
+	out.Files = make([]*pb.FileDiff, 0, len(set.Files))
+	for _, f := range set.Files {
+		fd := &pb.FileDiff{
+			Path:    f.Path,
+			Status:  fileStatusToProto(f.Status),
+			OldPath: f.OldPath,
+		}
+		fd.Hunks = make([]*pb.Hunk, 0, len(f.Hunks))
+		for _, h := range f.Hunks {
+			hp := &pb.Hunk{
+				OldStart: int32(h.OldStart),
+				OldLines: int32(h.OldLines),
+				NewStart: int32(h.NewStart),
+				NewLines: int32(h.NewLines),
+				Header:   h.Header,
+			}
+			hp.Lines = make([]*pb.DiffLine, 0, len(h.Lines))
+			for _, l := range h.Lines {
+				hp.Lines = append(hp.Lines, &pb.DiffLine{
+					Kind: lineKindToProto(l.Kind),
+					Text: l.Text,
+				})
+			}
+			fd.Hunks = append(fd.Hunks, hp)
+		}
+		out.Files = append(out.Files, fd)
+	}
+	return out
+}
+
+func fileStatusToProto(s diff.FileStatus) pb.FileDiff_Status {
+	switch s {
+	case diff.StatusAdded:
+		return pb.FileDiff_ADDED
+	case diff.StatusDeleted:
+		return pb.FileDiff_DELETED
+	case diff.StatusRenamed:
+		return pb.FileDiff_RENAMED
+	default:
+		return pb.FileDiff_MODIFIED
+	}
+}
+
+func lineKindToProto(k diff.LineKind) pb.DiffLine_Kind {
+	switch k {
+	case diff.LineAdd:
+		return pb.DiffLine_ADD
+	case diff.LineDel:
+		return pb.DiffLine_DEL
+	default:
+		return pb.DiffLine_CONTEXT
+	}
 }
