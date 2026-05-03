@@ -51,10 +51,15 @@ const discordEphemeralFlag = 64
 // handler scope FindProjects to the requesting `guild_id` per request
 // — the same daemon serving multiple guilds doesn't accidentally leak
 // projects across them.
+//
+// `RefundOnReplay` is the per-IP rate-limit refund callback wired by
+// the parent Server when the limiter is enabled. nil = no-op (disables
+// the legitimate-retry refund without breaking the handler).
 type DiscordHandlerConfig struct {
 	ResolvePublicKey   func() (ed25519.PublicKey, error)
 	Idempotency        *Cache
 	CommandContextFor  func(guildID, userID string) CommandContext
+	RefundOnReplay     func(r *http.Request)
 	Logger             *log.Logger
 }
 
@@ -164,6 +169,9 @@ func (h *discordHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// produce the same response shape (PONG-equivalent for type 1,
 	// ack-with-no-action for type 2) but should not double-act.
 	if interaction.ID != "" && h.cfg.Idempotency.Seen(interaction.ID) {
+		if h.cfg.RefundOnReplay != nil {
+			h.cfg.RefundOnReplay(r)
+		}
 		h.cfg.Logger.Printf("INFO: echo: discord interaction %s replayed, returning ack", interaction.ID)
 		writeDiscordAck(w)
 		return

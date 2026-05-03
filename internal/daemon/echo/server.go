@@ -36,11 +36,12 @@ const shutdownDrain = 5 * time.Second
 
 // Server wraps an http.Server with per-provider handler registration
 // and the cross-cutting middlewares every Echo route shares: 1 MiB
-// body cap, common log format, panic recovery.
+// body cap, per-IP rate limit, common log format, panic recovery.
 type Server struct {
-	cfg    models.InboundConfig
-	logger *log.Logger
-	mux    *http.ServeMux
+	cfg     models.InboundConfig
+	logger  *log.Logger
+	mux     *http.ServeMux
+	limiter *RateLimiter
 
 	mu             sync.Mutex
 	listener       net.Listener
@@ -61,17 +62,27 @@ func New(cfg models.InboundConfig, logger *log.Logger) *Server {
 	if cfg.ListenAddr == "" {
 		cfg.ListenAddr = DefaultListenAddr
 	}
+	perMin := cfg.RateLimitPerMin
+	if perMin == 0 {
+		perMin = DefaultRateLimitPerMin
+	}
 	mux := http.NewServeMux()
 	s := &Server{
 		cfg:            cfg,
 		logger:         logger,
 		mux:            mux,
+		limiter:        NewRateLimiter(perMin),
 		lastDeliveries: make(map[string]time.Time),
 	}
 
 	mux.HandleFunc("GET /echo/health", s.health)
 	return s
 }
+
+// Limiter exposes the per-IP rate limiter for tests + handlers that
+// need to refund a token after detecting an idempotent replay. Returns
+// nil when the limiter is disabled (RateLimitPerMin <= 0).
+func (s *Server) Limiter() *RateLimiter { return s.limiter }
 
 // RecordDelivery stamps a per-provider last-delivery timestamp. Echo
 // handlers call this after successfully verifying + processing an inbound
@@ -197,8 +208,15 @@ func (s *Server) Run(ctx context.Context) error {
 }
 
 // wrap applies the cross-cutting middlewares Echo handlers share:
-// body-size cap, panic recovery. Per-handler concerns (signature
-// verification, idempotency) stay inside the handlers themselves.
+// per-IP rate limit, body-size cap, panic recovery. Per-handler
+// concerns (signature verification, idempotency) stay inside the
+// handlers themselves.
+//
+// The rate-limit gate runs before the body is buffered and before the
+// per-handler verify path so a malformed-signature flood from one IP
+// can't pin the daemon's CPU. The IP is threaded into r.Context() so
+// handlers can call `s.RefundRateLimit(r)` from the idempotency-cache
+// hit branch — see commentary on `RateLimiter.Refund`.
 func (s *Server) wrap(h http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
@@ -207,6 +225,16 @@ func (s *Server) wrap(h http.Handler) http.Handler {
 				http.Error(w, "internal error", http.StatusInternalServerError)
 			}
 		}()
+		ip := clientIP(r)
+		if allowed, warn := s.limiter.Allow(ip); !allowed {
+			if warn {
+				s.logger.Printf("WARN: echo: rate limit exceeded for %s on %s (further 429s suppressed for ~1m)", ip, r.URL.Path)
+			}
+			w.Header().Set("Retry-After", "60")
+			http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+			return
+		}
+		r = withRateLimitIP(r, ip)
 		r.Body = http.MaxBytesReader(w, r.Body, MaxBodyBytes)
 		h.ServeHTTP(w, r)
 	})

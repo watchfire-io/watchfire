@@ -43,6 +43,9 @@ export function InboundSection() {
   const [listenAddr, setListenAddr] = useState('')
   const [publicUrl, setPublicUrl] = useState('')
   const [disabled, setDisabled] = useState(false)
+  // rateLimit is held as a string to keep the empty-input case ("") distinct
+  // from "0" (= use default). Parsed at save time. Negative values disable.
+  const [rateLimit, setRateLimit] = useState('')
   const [discordAppId, setDiscordAppId] = useState('')
   const [githubSecret, setGithubSecret] = useState('')
   const [slackSecret, setSlackSecret] = useState('')
@@ -56,11 +59,17 @@ export function InboundSection() {
     setPublicUrl(inbound.config.publicUrl ?? '')
     setDisabled(inbound.config.disabled ?? false)
     setDiscordAppId(inbound.config.discordAppId ?? '')
+    setRateLimit(
+      inbound.config.rateLimitPerMin === 0 || inbound.config.rateLimitPerMin == null
+        ? ''
+        : String(inbound.config.rateLimitPerMin)
+    )
   }, [
     inbound?.config?.listenAddr,
     inbound?.config?.publicUrl,
     inbound?.config?.disabled,
-    inbound?.config?.discordAppId
+    inbound?.config?.discordAppId,
+    inbound?.config?.rateLimitPerMin
   ])
 
   // Initial fetch + poll on a 5s interval while mounted.
@@ -74,6 +83,13 @@ export function InboundSection() {
     }
   }, [fetchInbound])
 
+  const parseRateLimit = (v: string): number => {
+    const trimmed = v.trim()
+    if (trimmed === '') return 0
+    const n = Number.parseInt(trimmed, 10)
+    return Number.isFinite(n) ? n : 0
+  }
+
   const handleSaveAddress = async () => {
     try {
       await saveInbound({
@@ -81,6 +97,7 @@ export function InboundSection() {
         publicUrl,
         disabled,
         discordAppId,
+        rateLimitPerMin: parseRateLimit(rateLimit),
         githubSecret: '',
         slackSecret: '',
         discordPublicKey: '',
@@ -108,6 +125,7 @@ export function InboundSection() {
         publicUrl,
         disabled,
         discordAppId,
+        rateLimitPerMin: parseRateLimit(rateLimit),
         githubSecret: '',
         slackSecret: '',
         discordPublicKey: '',
@@ -204,6 +222,20 @@ export function InboundSection() {
           Set this to your tunneled URL (ngrok / Cloudflare Tunnel) so providers reach the
           listener over the public internet. Must start with <code className="font-mono">https://</code>.
         </p>
+        <div data-setting-field-id="inbound-rate-limit">
+          <Input
+            label="Rate limit (requests / minute / IP)"
+            type="number"
+            value={rateLimit}
+            onChange={(e) => setRateLimit(e.target.value)}
+            placeholder="30 (default) — 0 = use default, negative = disable"
+          />
+          <p className="text-xs text-[var(--wf-text-muted)] mt-1">
+            Per-IP token bucket applied across all <code className="font-mono">/echo/*</code> routes.
+            Defends the verify path against malformed-signature floods. Leave empty (or <code className="font-mono">0</code>)
+            for the 30 / min default; set <code className="font-mono">-1</code> to disable entirely.
+          </p>
+        </div>
         <div className="flex flex-wrap gap-2 pt-1">
           <Button variant="secondary" size="sm" onClick={() => handleCopyProviderUrl('github')}>
             Copy as GitHub URL

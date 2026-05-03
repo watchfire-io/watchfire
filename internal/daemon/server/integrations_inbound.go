@@ -67,6 +67,7 @@ func (s *integrationsService) SaveInboundConfig(_ context.Context, req *pb.SaveI
 	merged.PublicURL = in.GetPublicUrl()
 	merged.DiscordAppID = in.GetDiscordAppId()
 	merged.Disabled = in.GetDisabled()
+	merged.RateLimitPerMin = int(in.GetRateLimitPerMin())
 
 	if v := in.GetGithubSecret(); v != "" {
 		if putErr := config.PutIntegrationSecret(inboundSecretKeyGitHub, v); putErr != nil {
@@ -169,6 +170,7 @@ func scrubInboundConfigToProto(in models.InboundConfig) *pb.InboundConfig {
 		DiscordAppId:         in.DiscordAppID,
 		DiscordBotTokenSet:   keyringHas(in.DiscordBotTokenRef),
 		Disabled:             in.Disabled,
+		RateLimitPerMin:      int32(in.RateLimitPerMin),
 	}
 }
 

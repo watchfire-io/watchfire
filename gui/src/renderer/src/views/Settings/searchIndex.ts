@@ -80,6 +80,7 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
 
   { category: 'inbound', fieldId: 'inbound-listen-addr', label: 'Inbound listen address', keywords: ['port', 'host', 'echo', 'http'] },
   { category: 'inbound', fieldId: 'inbound-public-url', label: 'Public URL', keywords: ['ngrok', 'tunnel', 'url', 'https'] },
+  { category: 'inbound', fieldId: 'inbound-rate-limit', label: 'Inbound rate limit', keywords: ['rate limit', 'throttle', 'token bucket', 'ip', 'per minute', '429'] },
   { category: 'inbound', fieldId: 'inbound-enabled', label: 'Enable inbound', keywords: ['echo', 'webhook', 'receiver'] },
   { category: 'inbound', fieldId: 'inbound-github-secret', label: 'GitHub webhook secret', keywords: ['github', 'hmac', 'secret'] },
   { category: 'inbound', fieldId: 'inbound-slack-secret', label: 'Slack signing secret', keywords: ['slack', 'signing', 'secret'] },

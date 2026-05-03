@@ -946,6 +946,7 @@ message InboundConfig {
   bool discord_bot_token_set = 10;
   string discord_bot_token = 11;      // write-only; never returned
   bool disabled = 12;                 // master toggle (true = no listener)
+  int32 rate_limit_per_min = 13;      // v8.x — per-IP token bucket; 0 = use default (30/min); negative = disable
 }
 
 // InboundStatus (v8.0 Echo) is the response of GetInboundStatus and

@@ -70,6 +70,10 @@ type SlackHandlerConfig struct {
 	Idempotency          *Cache
 	CommandContextFor    func(teamID, userID string) CommandContext
 	OpenModal            func(ctx context.Context, triggerID string, view map[string]any) error
+	// RefundOnReplay is the per-IP rate-limit refund hook the parent
+	// Server wires when the limiter is enabled. nil = no-op (Slack
+	// retries still hit the LRU cache; they just don't get budget back).
+	RefundOnReplay       func(r *http.Request)
 	Logger               *log.Logger
 }
 
@@ -235,6 +239,9 @@ func (h *slackHandler) handleBlockActions(w http.ResponseWriter, r *http.Request
 	// second hit to no-op (we already routed Retry once) rather than
 	// double-flip the task to ready.
 	if interaction.TriggerID != "" && h.cfg.Idempotency.Seen(interaction.TriggerID) {
+		if h.cfg.RefundOnReplay != nil {
+			h.cfg.RefundOnReplay(r)
+		}
 		h.cfg.Logger.Printf("INFO: echo: slack block_actions trigger %s replayed, returning empty ack", interaction.TriggerID)
 		writeSlackEmpty(w)
 		return
@@ -314,6 +321,9 @@ func (h *slackHandler) handleViewSubmission(w http.ResponseWriter, r *http.Reque
 	// we don't 200 within 3 seconds. Key on view.id so a duplicate
 	// delivery doesn't double-cancel.
 	if view.ID != "" && h.cfg.Idempotency.Seen(view.ID) {
+		if h.cfg.RefundOnReplay != nil {
+			h.cfg.RefundOnReplay(r)
+		}
 		h.cfg.Logger.Printf("INFO: echo: slack view_submission %s replayed, returning empty ack", view.ID)
 		writeSlackEmpty(w)
 		return
