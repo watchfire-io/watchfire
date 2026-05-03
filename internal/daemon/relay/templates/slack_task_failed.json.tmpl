@@ -26,9 +26,33 @@
     },
     {
       "type": "actions",
+      "block_id": {{ printf "watchfire_task_%s_%d" .ProjectID .TaskNumber | jsonStr }},
       "elements": [
         {
           "type": "button",
+          "action_id": "watchfire_retry",
+          "style": "primary",
+          "text": {
+            "type": "plain_text",
+            "text": "Retry",
+            "emoji": true
+          },
+          "value": {{ printf "%s|%d" .ProjectID .TaskNumber | jsonStr }}
+        },
+        {
+          "type": "button",
+          "action_id": "watchfire_cancel",
+          "style": "danger",
+          "text": {
+            "type": "plain_text",
+            "text": "Cancel",
+            "emoji": true
+          },
+          "value": {{ printf "%s|%d" .ProjectID .TaskNumber | jsonStr }}
+        },
+        {
+          "type": "button",
+          "action_id": "watchfire_view",
           "text": {
             "type": "plain_text",
             "text": "View in Watchfire",

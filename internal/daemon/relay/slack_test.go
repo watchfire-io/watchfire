@@ -89,47 +89,66 @@ type minimalSlackContextElement struct {
 }
 
 type minimalSlackButtonElement struct {
-	Type string            `json:"type"`
-	Text *minimalSlackText `json:"text"`
-	URL  string            `json:"url"`
+	Type     string            `json:"type"`
+	ActionID string            `json:"action_id,omitempty"`
+	Style    string            `json:"style,omitempty"`
+	Text     *minimalSlackText `json:"text"`
+	URL      string            `json:"url,omitempty"`
+	Value    string            `json:"value,omitempty"`
+}
+
+// expectedButton describes one element the action block should carry,
+// in the order the template emits them. v8.x Echo's TASK_FAILED template
+// fans the actions block out into Retry / Cancel / View; non-failure
+// templates still ship a single View / Open-digest button.
+type expectedButton struct {
+	actionID string
+	style    string
+	text     string
+	value    string
+	url      string
 }
 
 func TestSlackSendEndToEnd(t *testing.T) {
 	cases := []struct {
-		name           string
-		fixture        Payload
-		wantHeader     string
-		wantSection    string
-		wantContext    string
-		wantButtonText string
-		wantButtonURL  string
+		name        string
+		fixture     Payload
+		wantHeader  string
+		wantSection string
+		wantContext string
+		wantButtons []expectedButton
 	}{
 		{
-			name:           "task_failed",
-			fixture:        failedFixture(),
-			wantHeader:     ":rotating_light: Task failed — Watchfire",
-			wantSection:    "*Task #0042*: Build the Discord adapter\n*Reason*: tests failed: 3 of 12",
-			wantContext:    ":large_red_square: Watchfire · 2026-05-02T12:34:56Z",
-			wantButtonText: "View in Watchfire",
-			wantButtonURL:  "watchfire://project/proj-abc/task/0042",
+			name:        "task_failed",
+			fixture:     failedFixture(),
+			wantHeader:  ":rotating_light: Task failed — Watchfire",
+			wantSection: "*Task #0042*: Build the Discord adapter\n*Reason*: tests failed: 3 of 12",
+			wantContext: ":large_red_square: Watchfire · 2026-05-02T12:34:56Z",
+			wantButtons: []expectedButton{
+				{actionID: "watchfire_retry", style: "primary", text: "Retry", value: "proj-abc|42"},
+				{actionID: "watchfire_cancel", style: "danger", text: "Cancel", value: "proj-abc|42"},
+				{actionID: "watchfire_view", text: "View in Watchfire", url: "watchfire://project/proj-abc/task/0042"},
+			},
 		},
 		{
-			name:           "run_complete",
-			fixture:        runCompleteFixture(),
-			wantHeader:     ":white_check_mark: Run complete — Watchfire",
-			wantSection:    "*Task #0042*: Build the Discord adapter",
-			wantContext:    ":large_blue_square: Watchfire · 2026-05-02T12:34:56Z",
-			wantButtonText: "View in Watchfire",
-			wantButtonURL:  "watchfire://project/proj-abc/task/0042",
+			name:        "run_complete",
+			fixture:     runCompleteFixture(),
+			wantHeader:  ":white_check_mark: Run complete — Watchfire",
+			wantSection: "*Task #0042*: Build the Discord adapter",
+			wantContext: ":large_blue_square: Watchfire · 2026-05-02T12:34:56Z",
+			wantButtons: []expectedButton{
+				{text: "View in Watchfire", url: "watchfire://project/proj-abc/task/0042"},
+			},
 		},
 		{
-			name:           "weekly_digest",
-			fixture:        weeklyDigestFixture(),
-			wantHeader:     ":bar_chart: Watchfire — your week",
-			wantSection:    weeklyDigestFixture().DigestBody,
-			wantContext:    ":bar_chart: Weekly digest · 2026-05-02T12:34:56Z",
-			wantButtonText: "Open digest",
-			wantButtonURL:  "watchfire://digest/2026-05-02",
+			name:        "weekly_digest",
+			fixture:     weeklyDigestFixture(),
+			wantHeader:  ":bar_chart: Watchfire — your week",
+			wantSection: weeklyDigestFixture().DigestBody,
+			wantContext: ":bar_chart: Weekly digest · 2026-05-02T12:34:56Z",
+			wantButtons: []expectedButton{
+				{text: "Open digest", url: "watchfire://digest/2026-05-02"},
+			},
 		},
 	}
 	for _, tc := range cases {
@@ -207,21 +226,32 @@ func TestSlackSendEndToEnd(t *testing.T) {
 			if act.Type != "actions" {
 				t.Errorf("blocks[3] type = %q, want actions", act.Type)
 			}
-			if len(act.Elements) != 1 {
-				t.Fatalf("action elements len = %d, want 1", len(act.Elements))
+			if len(act.Elements) != len(tc.wantButtons) {
+				t.Fatalf("action elements len = %d, want %d", len(act.Elements), len(tc.wantButtons))
 			}
-			var btn minimalSlackButtonElement
-			if err := json.Unmarshal(act.Elements[0], &btn); err != nil {
-				t.Fatalf("decode button element: %v", err)
-			}
-			if btn.Type != "button" {
-				t.Errorf("button element type = %q, want button", btn.Type)
-			}
-			if btn.Text == nil || btn.Text.Text != tc.wantButtonText {
-				t.Errorf("button text = %+v, want %q", btn.Text, tc.wantButtonText)
-			}
-			if btn.URL != tc.wantButtonURL {
-				t.Errorf("button url = %q, want %q", btn.URL, tc.wantButtonURL)
+			for i, want := range tc.wantButtons {
+				var btn minimalSlackButtonElement
+				if err := json.Unmarshal(act.Elements[i], &btn); err != nil {
+					t.Fatalf("decode button element %d: %v", i, err)
+				}
+				if btn.Type != "button" {
+					t.Errorf("button[%d] type = %q, want button", i, btn.Type)
+				}
+				if btn.Text == nil || btn.Text.Text != want.text {
+					t.Errorf("button[%d] text = %+v, want %q", i, btn.Text, want.text)
+				}
+				if btn.ActionID != want.actionID {
+					t.Errorf("button[%d] action_id = %q, want %q", i, btn.ActionID, want.actionID)
+				}
+				if btn.Style != want.style {
+					t.Errorf("button[%d] style = %q, want %q", i, btn.Style, want.style)
+				}
+				if btn.Value != want.value {
+					t.Errorf("button[%d] value = %q, want %q", i, btn.Value, want.value)
+				}
+				if btn.URL != want.url {
+					t.Errorf("button[%d] url = %q, want %q", i, btn.URL, want.url)
+				}
 			}
 		})
 	}

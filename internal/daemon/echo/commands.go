@@ -100,8 +100,12 @@ type CommandContext struct {
 	Retry func(ctx context.Context, projectID string, taskNumber int) error
 
 	// Cancel terminates an in-flight task (sends StopAgent to the
-	// agent manager) or marks a `ready` task as cancelled.
-	Cancel func(ctx context.Context, projectID string, taskNumber int) error
+	// agent manager) or marks a `ready` task as cancelled. The reason
+	// is written to `task.failure_reason` on the YAML; callers that
+	// don't have a reason (the Discord slash command, button-only
+	// Slack clicks without a modal) pass the empty string and let the
+	// daemon write a default like "cancelled via Slack button".
+	Cancel func(ctx context.Context, projectID string, taskNumber int, reason string) error
 }
 
 // ProjectInfo is the minimum project metadata the router needs for
@@ -262,7 +266,7 @@ func routeCancel(ctx context.Context, rest string, cc CommandContext) *CommandRe
 		}
 		return errorResponse(fmt.Sprintf("Failed to find task: %v", err))
 	}
-	if err := cc.Cancel(ctx, project.ID, task.TaskNumber); err != nil {
+	if err := cc.Cancel(ctx, project.ID, task.TaskNumber, ""); err != nil {
 		return errorResponse(fmt.Sprintf("Cancel failed: %v", err))
 	}
 	return &CommandResponse{
