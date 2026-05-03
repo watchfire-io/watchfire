@@ -26,9 +26,33 @@
     },
     {
       "type": "actions",
+      "block_id": "watchfire_task_proj-abc_42",
       "elements": [
         {
           "type": "button",
+          "action_id": "watchfire_retry",
+          "style": "primary",
+          "text": {
+            "type": "plain_text",
+            "text": "Retry",
+            "emoji": true
+          },
+          "value": "proj-abc|42"
+        },
+        {
+          "type": "button",
+          "action_id": "watchfire_cancel",
+          "style": "danger",
+          "text": {
+            "type": "plain_text",
+            "text": "Cancel",
+            "emoji": true
+          },
+          "value": "proj-abc|42"
+        },
+        {
+          "type": "button",
+          "action_id": "watchfire_view",
           "text": {
             "type": "plain_text",
             "text": "View in Watchfire",

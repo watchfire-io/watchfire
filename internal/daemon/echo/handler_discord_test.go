@@ -68,7 +68,7 @@ func testCommandContext(guildID, userID string) CommandContext {
 			return []*models.Task{{TaskNumber: 7, Title: "wire it up", StartedAt: &startedAgo, Status: models.TaskStatusReady}}, nil
 		},
 		Retry:  func(ctx context.Context, projectID string, taskNumber int) error { return nil },
-		Cancel: func(ctx context.Context, projectID string, taskNumber int) error { return nil },
+		Cancel: func(ctx context.Context, projectID string, taskNumber int, reason string) error { return nil },
 	}
 }
 
@@ -192,7 +192,7 @@ func TestDiscordHandlerCancelCommand(t *testing.T) {
 		Idempotency:      NewCache(0, 0),
 		CommandContextFor: func(guildID, userID string) CommandContext {
 			cc := testCommandContext(guildID, userID)
-			cc.Cancel = func(ctx context.Context, projectID string, taskNumber int) error {
+			cc.Cancel = func(ctx context.Context, projectID string, taskNumber int, reason string) error {
 				called.Store(true)
 				return nil
 			}
