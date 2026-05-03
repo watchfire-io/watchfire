@@ -119,7 +119,7 @@ export function IntegrationsSection() {
         Forward Watchfire's notifications to outside channels.
       </p>
 
-      <div className="space-y-3 mb-3">
+      <div className="space-y-3 mb-3" data-setting-field-id="integrations-list">
         {(config?.webhooks ?? []).map((w) => (
           <IntegrationCard
             key={`w-${w.id}`}

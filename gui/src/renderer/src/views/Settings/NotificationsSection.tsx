@@ -168,38 +168,46 @@ export function NotificationsSection({ settings }: Props) {
         Notifications
       </h3>
       <div className="space-y-4">
-        <Toggle
-          checked={prefs.enabled}
-          onChange={setEnabled}
-          label="Enable notifications"
-          description="Master toggle for desktop notifications"
-        />
-        <Toggle
-          checked={prefs.events?.taskFailed ?? true}
-          onChange={setEventTaskFailed}
-          label="Notify on task failure"
-          disabled={!prefs.enabled}
-        />
-        <Toggle
-          checked={prefs.events?.runComplete ?? true}
-          onChange={setEventRunComplete}
-          label="Notify on run complete"
-          disabled={!prefs.enabled}
-        />
+        <div data-setting-field-id="notifications-enabled">
+          <Toggle
+            checked={prefs.enabled}
+            onChange={setEnabled}
+            label="Enable notifications"
+            description="Master toggle for desktop notifications"
+          />
+        </div>
+        <div data-setting-field-id="notifications-task-failed">
+          <Toggle
+            checked={prefs.events?.taskFailed ?? true}
+            onChange={setEventTaskFailed}
+            label="Notify on task failure"
+            disabled={!prefs.enabled}
+          />
+        </div>
+        <div data-setting-field-id="notifications-run-complete">
+          <Toggle
+            checked={prefs.events?.runComplete ?? true}
+            onChange={setEventRunComplete}
+            label="Notify on run complete"
+            disabled={!prefs.enabled}
+          />
+        </div>
       </div>
 
       <h4 className="font-heading font-semibold text-xs text-[var(--wf-text-muted)] uppercase tracking-wider mt-6 mb-3">
         Weekly Digest
       </h4>
       <div className="space-y-4">
-        <Toggle
-          checked={prefs.events?.weeklyDigest ?? false}
-          onChange={setEventWeeklyDigest}
-          label="Send a weekly digest"
-          description="A Markdown summary of the past 7 days, delivered as a notification"
-          disabled={!prefs.enabled}
-        />
-        <div className="flex flex-col gap-1.5">
+        <div data-setting-field-id="notifications-weekly-digest">
+          <Toggle
+            checked={prefs.events?.weeklyDigest ?? false}
+            onChange={setEventWeeklyDigest}
+            label="Send a weekly digest"
+            description="A Markdown summary of the past 7 days, delivered as a notification"
+            disabled={!prefs.enabled}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5" data-setting-field-id="notifications-digest-schedule">
           <label className="text-sm font-medium text-[var(--wf-text-secondary)]">Schedule</label>
           <select
             value={prefs.digestSchedule || 'MON 09:00'}
@@ -223,25 +231,31 @@ export function NotificationsSection({ settings }: Props) {
         Sounds
       </h4>
       <div className="space-y-4">
-        <Toggle
-          checked={prefs.sounds?.enabled ?? true}
-          onChange={setSoundsEnabled}
-          label="Play sounds"
-          disabled={!prefs.enabled}
-        />
-        <Toggle
-          checked={prefs.sounds?.taskFailed ?? true}
-          onChange={setSoundTaskFailed}
-          label="Sound on task failure"
-          disabled={!prefs.enabled || !(prefs.sounds?.enabled ?? true)}
-        />
-        <Toggle
-          checked={prefs.sounds?.runComplete ?? true}
-          onChange={setSoundRunComplete}
-          label="Sound on run complete"
-          disabled={!prefs.enabled || !(prefs.sounds?.enabled ?? true)}
-        />
-        <div className="flex flex-col gap-1.5">
+        <div data-setting-field-id="notifications-sounds">
+          <Toggle
+            checked={prefs.sounds?.enabled ?? true}
+            onChange={setSoundsEnabled}
+            label="Play sounds"
+            disabled={!prefs.enabled}
+          />
+        </div>
+        <div data-setting-field-id="notifications-sound-task-failed">
+          <Toggle
+            checked={prefs.sounds?.taskFailed ?? true}
+            onChange={setSoundTaskFailed}
+            label="Sound on task failure"
+            disabled={!prefs.enabled || !(prefs.sounds?.enabled ?? true)}
+          />
+        </div>
+        <div data-setting-field-id="notifications-sound-run-complete">
+          <Toggle
+            checked={prefs.sounds?.runComplete ?? true}
+            onChange={setSoundRunComplete}
+            label="Sound on run complete"
+            disabled={!prefs.enabled || !(prefs.sounds?.enabled ?? true)}
+          />
+        </div>
+        <div className="flex flex-col gap-1.5" data-setting-field-id="notifications-volume">
           <label className="text-sm font-medium text-[var(--wf-text-secondary)]">
             Volume <span className="text-[var(--wf-text-muted)]">— {volumePct}%</span>
           </label>
@@ -260,7 +274,7 @@ export function NotificationsSection({ settings }: Props) {
       <h4 className="font-heading font-semibold text-xs text-[var(--wf-text-muted)] uppercase tracking-wider mt-6 mb-3">
         Quiet Hours
       </h4>
-      <div className="space-y-4">
+      <div className="space-y-4" data-setting-field-id="notifications-quiet-hours">
         <Toggle
           checked={prefs.quietHours?.enabled ?? false}
           onChange={setQuietEnabled}

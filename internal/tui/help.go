@@ -77,7 +77,9 @@ var helpSections = []helpSection{
 		title: "Settings",
 		keys: []helpKey{
 			{"j/k", "Navigate fields"},
-			{"Enter", "Edit text field"},
+			{"Tab", "Switch pane (categories ↔ fields)"},
+			{"/", "Search settings"},
+			{"Enter", "Edit text field / drill into category"},
 			{"Space", "Toggle boolean"},
 		},
 	},

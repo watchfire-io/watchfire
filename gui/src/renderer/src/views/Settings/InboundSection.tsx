@@ -173,7 +173,7 @@ export function InboundSection() {
       </div>
 
       {/* Master toggle */}
-      <div className="mb-4">
+      <div className="mb-4" data-setting-field-id="inbound-enabled">
         <Toggle
           checked={!disabled}
           onChange={(on) => setDisabled(!on)}
@@ -184,18 +184,22 @@ export function InboundSection() {
 
       {/* Listen address */}
       <div className="space-y-3 mb-4 border border-[var(--wf-border)] rounded-[var(--wf-radius-md)] p-3 bg-[var(--wf-bg-elevated)]">
-        <Input
-          label="Listen address"
-          value={listenAddr}
-          onChange={(e) => setListenAddr(e.target.value)}
-          placeholder="127.0.0.1:8765"
-        />
-        <Input
-          label="Public URL"
-          value={publicUrl}
-          onChange={(e) => setPublicUrl(e.target.value)}
-          placeholder="https://your-tunnel.ngrok.app"
-        />
+        <div data-setting-field-id="inbound-listen-addr">
+          <Input
+            label="Listen address"
+            value={listenAddr}
+            onChange={(e) => setListenAddr(e.target.value)}
+            placeholder="127.0.0.1:8765"
+          />
+        </div>
+        <div data-setting-field-id="inbound-public-url">
+          <Input
+            label="Public URL"
+            value={publicUrl}
+            onChange={(e) => setPublicUrl(e.target.value)}
+            placeholder="https://your-tunnel.ngrok.app"
+          />
+        </div>
         <p className="text-xs text-[var(--wf-text-muted)]">
           Set this to your tunneled URL (ngrok / Cloudflare Tunnel) so providers reach the
           listener over the public internet. Must start with <code className="font-mono">https://</code>.
@@ -220,47 +224,53 @@ export function InboundSection() {
 
       {/* Per-provider secrets */}
       <div className="space-y-3 mb-3">
-        <ProviderSecretRow
-          title="GitHub webhook secret"
-          help="Configured under Settings → Webhooks on each project on github.com (HMAC-SHA256)."
-          set={inbound?.config?.githubSecretSet ?? false}
-          lastDelivery={formatLastDelivery(inbound?.lastGithubDeliveryUnix)}
-          value={githubSecret}
-          onChange={setGithubSecret}
-          onSave={() =>
-            handleSaveSecret('githubSecret', githubSecret, 'GitHub secret', () => setGithubSecret(''))
-          }
-          saving={saving}
-        />
-        <ProviderSecretRow
-          title="Slack signing secret"
-          help="From the Slack app config under Basic Information → Signing Secret."
-          set={inbound?.config?.slackSecretSet ?? false}
-          lastDelivery={formatLastDelivery(inbound?.lastSlackDeliveryUnix)}
-          value={slackSecret}
-          onChange={setSlackSecret}
-          onSave={() =>
-            handleSaveSecret('slackSecret', slackSecret, 'Slack secret', () => setSlackSecret(''))
-          }
-          saving={saving}
-        />
-        <ProviderSecretRow
-          title="Discord application public key"
-          help="From the Discord developer portal → General Information → Public Key (Ed25519)."
-          set={inbound?.config?.discordPublicKeySet ?? false}
-          lastDelivery={formatLastDelivery(inbound?.lastDiscordDeliveryUnix)}
-          value={discordPubKey}
-          onChange={setDiscordPubKey}
-          onSave={() =>
-            handleSaveSecret(
-              'discordPublicKey',
-              discordPubKey,
-              'Discord public key',
-              () => setDiscordPubKey('')
-            )
-          }
-          saving={saving}
-        />
+        <div data-setting-field-id="inbound-github-secret">
+          <ProviderSecretRow
+            title="GitHub webhook secret"
+            help="Configured under Settings → Webhooks on each project on github.com (HMAC-SHA256)."
+            set={inbound?.config?.githubSecretSet ?? false}
+            lastDelivery={formatLastDelivery(inbound?.lastGithubDeliveryUnix)}
+            value={githubSecret}
+            onChange={setGithubSecret}
+            onSave={() =>
+              handleSaveSecret('githubSecret', githubSecret, 'GitHub secret', () => setGithubSecret(''))
+            }
+            saving={saving}
+          />
+        </div>
+        <div data-setting-field-id="inbound-slack-secret">
+          <ProviderSecretRow
+            title="Slack signing secret"
+            help="From the Slack app config under Basic Information → Signing Secret."
+            set={inbound?.config?.slackSecretSet ?? false}
+            lastDelivery={formatLastDelivery(inbound?.lastSlackDeliveryUnix)}
+            value={slackSecret}
+            onChange={setSlackSecret}
+            onSave={() =>
+              handleSaveSecret('slackSecret', slackSecret, 'Slack secret', () => setSlackSecret(''))
+            }
+            saving={saving}
+          />
+        </div>
+        <div data-setting-field-id="inbound-discord-public-key">
+          <ProviderSecretRow
+            title="Discord application public key"
+            help="From the Discord developer portal → General Information → Public Key (Ed25519)."
+            set={inbound?.config?.discordPublicKeySet ?? false}
+            lastDelivery={formatLastDelivery(inbound?.lastDiscordDeliveryUnix)}
+            value={discordPubKey}
+            onChange={setDiscordPubKey}
+            onSave={() =>
+              handleSaveSecret(
+                'discordPublicKey',
+                discordPubKey,
+                'Discord public key',
+                () => setDiscordPubKey('')
+              )
+            }
+            saving={saving}
+          />
+        </div>
       </div>
 
       {/* Discord bot extras (app ID + bot token) — used only by the
@@ -274,29 +284,33 @@ export function InboundSection() {
           the <code className="font-mono">watchfire integrations register-discord</code> CLI.
           The inbound interactions endpoint itself only needs the application public key above.
         </p>
-        <Input
-          label="Discord application ID"
-          value={discordAppId}
-          onChange={(e) => setDiscordAppId(e.target.value)}
-          placeholder="123456789012345678"
-        />
-        <ProviderSecretRow
-          title="Discord bot token"
-          help="From the Discord developer portal → Bot → Token."
-          set={inbound?.config?.discordBotTokenSet ?? false}
-          lastDelivery=""
-          value={discordBotToken}
-          onChange={setDiscordBotToken}
-          onSave={() =>
-            handleSaveSecret(
-              'discordBotToken',
-              discordBotToken,
-              'Discord bot token',
-              () => setDiscordBotToken('')
-            )
-          }
-          saving={saving}
-        />
+        <div data-setting-field-id="inbound-discord-app-id">
+          <Input
+            label="Discord application ID"
+            value={discordAppId}
+            onChange={(e) => setDiscordAppId(e.target.value)}
+            placeholder="123456789012345678"
+          />
+        </div>
+        <div data-setting-field-id="inbound-discord-bot-token">
+          <ProviderSecretRow
+            title="Discord bot token"
+            help="From the Discord developer portal → Bot → Token."
+            set={inbound?.config?.discordBotTokenSet ?? false}
+            lastDelivery=""
+            value={discordBotToken}
+            onChange={setDiscordBotToken}
+            onSave={() =>
+              handleSaveSecret(
+                'discordBotToken',
+                discordBotToken,
+                'Discord bot token',
+                () => setDiscordBotToken('')
+              )
+            }
+            saving={saving}
+          />
+        </div>
       </div>
     </section>
   )

@@ -838,10 +838,41 @@ func (m *Model) handleGlobalSettingsKey(msg tea.KeyMsg) tea.Cmd {
 		}
 	}
 
+	// Search overlay takes precedence: typing edits the query, Enter jumps,
+	// Esc closes. Up/Down move the result cursor (handled inside MoveUp/Down
+	// when searchOpen is true).
+	if g.IsSearching() {
+		switch msg.String() {
+		case "esc":
+			g.CloseSearch()
+			return nil
+		case "enter":
+			g.ActivateSearch()
+			return nil
+		case "up":
+			g.MoveSearchUp()
+			return nil
+		case "down":
+			g.MoveSearchDown()
+			return nil
+		default:
+			ti := g.InputModel()
+			newTI, _ := ti.Update(msg)
+			*ti = newTI
+			return nil
+		}
+	}
+
 	switch msg.String() {
 	case "esc":
 		m.activeOverlay = overlayNone
 		g.Reset()
+		return nil
+	case "/":
+		g.OpenSearch()
+		return nil
+	case "tab", "shift+tab":
+		g.SwitchPane()
 		return nil
 	case "up", "k":
 		g.MoveUp()
@@ -855,6 +886,11 @@ func (m *Model) handleGlobalSettingsKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 	case "enter":
+		// Categories pane: drill in.
+		if g.ActivePane() == paneCategories {
+			g.SelectCategoryByCursor()
+			return nil
+		}
 		if g.StartEdit() {
 			return nil
 		}

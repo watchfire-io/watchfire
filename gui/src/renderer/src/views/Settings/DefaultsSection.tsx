@@ -70,7 +70,7 @@ export function DefaultsSection({ settings, agents, agentsLoaded }: Props) {
         Defaults for New Projects
       </h3>
       <div className="space-y-4">
-        <div className="space-y-1.5">
+        <div className="space-y-1.5" data-setting-field-id="default-agent">
           <Select
             label="Default Agent"
             value={currentAgent}
@@ -83,25 +83,31 @@ export function DefaultsSection({ settings, agents, agentsLoaded }: Props) {
             Add Project wizard prompt every time.
           </p>
         </div>
-        <Toggle
-          checked={defaults?.autoMerge ?? true}
-          onChange={(v) => update({ autoMerge: v })}
-          label="Auto-merge"
-          description="Merge task branches when done"
-        />
-        <Toggle
-          checked={defaults?.autoDeleteBranch ?? true}
-          onChange={(v) => update({ autoDeleteBranch: v })}
-          label="Auto-delete branches"
-          description="Remove worktree branches after merge"
-        />
-        <Toggle
-          checked={defaults?.autoStartTasks ?? true}
-          onChange={(v) => update({ autoStartTasks: v })}
-          label="Auto-start tasks"
-          description="Chain to the next ready task automatically"
-        />
-        <div className="space-y-1.5">
+        <div data-setting-field-id="auto-merge">
+          <Toggle
+            checked={defaults?.autoMerge ?? true}
+            onChange={(v) => update({ autoMerge: v })}
+            label="Auto-merge"
+            description="Merge task branches when done"
+          />
+        </div>
+        <div data-setting-field-id="auto-delete-branch">
+          <Toggle
+            checked={defaults?.autoDeleteBranch ?? true}
+            onChange={(v) => update({ autoDeleteBranch: v })}
+            label="Auto-delete branches"
+            description="Remove worktree branches after merge"
+          />
+        </div>
+        <div data-setting-field-id="auto-start-tasks">
+          <Toggle
+            checked={defaults?.autoStartTasks ?? true}
+            onChange={(v) => update({ autoStartTasks: v })}
+            label="Auto-start tasks"
+            description="Chain to the next ready task automatically"
+          />
+        </div>
+        <div className="space-y-1.5" data-setting-field-id="terminal-shell">
           <label className="text-sm font-medium text-[var(--wf-text-secondary)]">
             Terminal shell
           </label>
