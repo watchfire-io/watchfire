@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -113,6 +114,7 @@ const (
 	inboundRowEnabled inboundRow = iota // master toggle (Disabled inverted)
 	inboundRowListenAddr
 	inboundRowPublicURL
+	inboundRowRateLimit
 	inboundRowGitHubSecret
 	inboundRowSlackSecret
 	inboundRowDiscordPubKey
@@ -162,6 +164,7 @@ func (f *IntegrationsForm) LoadInbound(st *pb.InboundStatus) {
 			SlackSecretSet:       cfg.GetSlackSecretSet(),
 			DiscordPublicKeySet:  cfg.GetDiscordPublicKeySet(),
 			DiscordBotTokenSet:   cfg.GetDiscordBotTokenSet(),
+			RateLimitPerMin:      cfg.GetRateLimitPerMin(),
 		}
 	}
 }
@@ -224,6 +227,9 @@ func (f *IntegrationsForm) StartInboundEdit() {
 	case inboundRowPublicURL:
 		f.inboundInput.SetValue(f.inboundDraft.GetPublicUrl())
 		f.inboundInput.Placeholder = "https://your-tunnel.ngrok.app"
+	case inboundRowRateLimit:
+		f.inboundInput.SetValue(strconv.Itoa(int(f.inboundDraft.GetRateLimitPerMin())))
+		f.inboundInput.Placeholder = "30 (req/min/IP, 0=default, -1=disable)"
 	case inboundRowDiscordAppID:
 		f.inboundInput.SetValue(f.inboundDraft.GetDiscordAppId())
 		f.inboundInput.Placeholder = "Discord application ID"
@@ -250,10 +256,11 @@ func (f *IntegrationsForm) CommitInboundEdit() *pb.InboundConfig {
 	value := strings.TrimSpace(f.inboundInput.Value())
 	row := inboundRow(f.inboundCursor)
 	out := &pb.InboundConfig{
-		ListenAddr:   f.inboundDraft.GetListenAddr(),
-		PublicUrl:    f.inboundDraft.GetPublicUrl(),
-		DiscordAppId: f.inboundDraft.GetDiscordAppId(),
-		Disabled:     f.inboundDraft.GetDisabled(),
+		ListenAddr:      f.inboundDraft.GetListenAddr(),
+		PublicUrl:       f.inboundDraft.GetPublicUrl(),
+		DiscordAppId:    f.inboundDraft.GetDiscordAppId(),
+		Disabled:        f.inboundDraft.GetDisabled(),
+		RateLimitPerMin: f.inboundDraft.GetRateLimitPerMin(),
 	}
 	switch row {
 	case inboundRowListenAddr:
@@ -262,6 +269,16 @@ func (f *IntegrationsForm) CommitInboundEdit() *pb.InboundConfig {
 	case inboundRowPublicURL:
 		out.PublicUrl = value
 		f.inboundDraft.PublicUrl = value
+	case inboundRowRateLimit:
+		// Empty / unparsable input falls back to 0 = "use the daemon
+		// default" (30 req/min/IP). Negative values opt out of the
+		// limiter; the daemon-side `NewRateLimiter` treats them as nil.
+		n, err := strconv.Atoi(value)
+		if err != nil {
+			n = 0
+		}
+		out.RateLimitPerMin = int32(n)
+		f.inboundDraft.RateLimitPerMin = int32(n)
 	case inboundRowDiscordAppID:
 		out.DiscordAppId = value
 		f.inboundDraft.DiscordAppId = value
@@ -287,10 +304,11 @@ func (f *IntegrationsForm) CommitInboundEdit() *pb.InboundConfig {
 // change immediately (Tab on a toggle row triggers a save).
 func (f *IntegrationsForm) FlushInboundDraft() *pb.InboundConfig {
 	return &pb.InboundConfig{
-		ListenAddr:   f.inboundDraft.GetListenAddr(),
-		PublicUrl:    f.inboundDraft.GetPublicUrl(),
-		DiscordAppId: f.inboundDraft.GetDiscordAppId(),
-		Disabled:     f.inboundDraft.GetDisabled(),
+		ListenAddr:      f.inboundDraft.GetListenAddr(),
+		PublicUrl:       f.inboundDraft.GetPublicUrl(),
+		DiscordAppId:    f.inboundDraft.GetDiscordAppId(),
+		Disabled:        f.inboundDraft.GetDisabled(),
+		RateLimitPerMin: f.inboundDraft.GetRateLimitPerMin(),
 	}
 }
 
@@ -716,6 +734,10 @@ func (f *IntegrationsForm) inboundRowDescriptors() []inboundRowDescriptor {
 		label: "Public URL",
 		value: orPlaceholder(f.inboundDraft.GetPublicUrl(), "(unset)"),
 	}
+	rows[inboundRowRateLimit] = inboundRowDescriptor{
+		label: "Rate limit (per IP per min)",
+		value: rateLimitLabel(f.inboundDraft.GetRateLimitPerMin()),
+	}
 	rows[inboundRowGitHubSecret] = inboundRowDescriptor{
 		label: "GitHub secret",
 		value: secretLabel(f.inboundDraft.GetGithubSecretSet(), f.lastDeliveryDisplay("github")),
@@ -781,6 +803,19 @@ func orPlaceholder(s, placeholder string) string {
 		return lipgloss.NewStyle().Foreground(colorDim).Render(placeholder)
 	}
 	return s
+}
+
+// rateLimitLabel renders the per-IP rate-limit row. 0 = "default (30 / min)";
+// negative = "disabled"; positive = the literal "<N> / min".
+func rateLimitLabel(perMin int32) string {
+	switch {
+	case perMin < 0:
+		return lipgloss.NewStyle().Foreground(colorDim).Render("disabled")
+	case perMin == 0:
+		return lipgloss.NewStyle().Foreground(colorDim).Render("default (30 / min)")
+	default:
+		return strconv.Itoa(int(perMin)) + " / min"
+	}
 }
 
 func humanDuration(d time.Duration) string {

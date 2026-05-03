@@ -111,6 +111,14 @@ type InboundConfig struct {
 	DiscordAppID         string `yaml:"discord_app_id,omitempty" json:"discord_app_id,omitempty"`
 	DiscordBotTokenRef   string `yaml:"discord_bot_token_ref,omitempty" json:"discord_bot_token_ref,omitempty"`
 	Disabled             bool   `yaml:"disabled,omitempty" json:"disabled,omitempty"`
+
+	// RateLimitPerMin is the v8.x per-IP token-bucket budget applied
+	// across all `/echo/*` routes. 0 disables the limiter; negative
+	// values are treated as 0. Defaults to 30 when the field is unset
+	// (see `echo.DefaultRateLimitPerMin`). Verified deliveries that hit
+	// the idempotency cache do NOT consume the bucket — they are
+	// already a no-op upstream of the per-handler verify path.
+	RateLimitPerMin int `yaml:"rate_limit_per_min,omitempty" json:"rate_limit_per_min,omitempty"`
 }
 
 // IntegrationsConfig is the root document persisted at

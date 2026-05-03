@@ -6577,8 +6577,9 @@ type InboundConfig struct {
 	DiscordPublicKey    string                 `protobuf:"bytes,8,opt,name=discord_public_key,json=discordPublicKey,proto3" json:"discord_public_key,omitempty"` // write-only; never returned
 	DiscordAppId        string                 `protobuf:"bytes,9,opt,name=discord_app_id,json=discordAppId,proto3" json:"discord_app_id,omitempty"`             // non-secret — surfaced as plain field
 	DiscordBotTokenSet  bool                   `protobuf:"varint,10,opt,name=discord_bot_token_set,json=discordBotTokenSet,proto3" json:"discord_bot_token_set,omitempty"`
-	DiscordBotToken     string                 `protobuf:"bytes,11,opt,name=discord_bot_token,json=discordBotToken,proto3" json:"discord_bot_token,omitempty"` // write-only; never returned
-	Disabled            bool                   `protobuf:"varint,12,opt,name=disabled,proto3" json:"disabled,omitempty"`                                       // master toggle (true = no listener)
+	DiscordBotToken     string                 `protobuf:"bytes,11,opt,name=discord_bot_token,json=discordBotToken,proto3" json:"discord_bot_token,omitempty"`    // write-only; never returned
+	Disabled            bool                   `protobuf:"varint,12,opt,name=disabled,proto3" json:"disabled,omitempty"`                                          // master toggle (true = no listener)
+	RateLimitPerMin     int32                  `protobuf:"varint,13,opt,name=rate_limit_per_min,json=rateLimitPerMin,proto3" json:"rate_limit_per_min,omitempty"` // v8.x — per-IP token bucket; 0 = use default (30/min); negative = disable
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -6695,6 +6696,13 @@ func (x *InboundConfig) GetDisabled() bool {
 		return x.Disabled
 	}
 	return false
+}
+
+func (x *InboundConfig) GetRateLimitPerMin() int32 {
+	if x != nil {
+		return x.RateLimitPerMin
+	}
+	return 0
 }
 
 // InboundStatus (v8.0 Echo) is the response of GetInboundStatus and
@@ -7630,7 +7638,7 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1f\n" +
 	"\vstatus_code\x18\x03 \x01(\x05R\n" +
-	"statusCode\"\xf1\x03\n" +
+	"statusCode\"\x9e\x04\n" +
 	"\rInboundConfig\x12\x1f\n" +
 	"\vlisten_addr\x18\x01 \x01(\tR\n" +
 	"listenAddr\x12\x1d\n" +
@@ -7646,7 +7654,8 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\x15discord_bot_token_set\x18\n" +
 	" \x01(\bR\x12discordBotTokenSet\x12*\n" +
 	"\x11discord_bot_token\x18\v \x01(\tR\x0fdiscordBotToken\x12\x1a\n" +
-	"\bdisabled\x18\f \x01(\bR\bdisabled\"\xd5\x03\n" +
+	"\bdisabled\x18\f \x01(\bR\bdisabled\x12+\n" +
+	"\x12rate_limit_per_min\x18\r \x01(\x05R\x0frateLimitPerMin\"\xd5\x03\n" +
 	"\rInboundStatus\x12\x1c\n" +
 	"\tlistening\x18\x01 \x01(\bR\tlistening\x12\x1f\n" +
 	"\vlisten_addr\x18\x02 \x01(\tR\n" +
