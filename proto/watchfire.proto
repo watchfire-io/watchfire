@@ -962,6 +962,11 @@ message InboundStatus {
   int64 last_discord_delivery_unix = 7;
   string version = 8;                 // build version (e.g. "8.0.0")
   InboundConfig config = 9;           // scrubbed (no plaintext secrets returned)
+
+  // v8.x Echo — per-guild Discord slash-command registration status.
+  // Populated by the daemon's auto-registrar; empty when the bot token
+  // is not configured. The Settings UI lists each guild + ✓/✗ pill.
+  repeated DiscordGuildRegistration discord_guilds = 10;
 }
 
 message GetInboundStatusRequest {
@@ -971,4 +976,17 @@ message GetInboundStatusRequest {
 message SaveInboundConfigRequest {
   RequestMeta meta = 1;
   InboundConfig config = 2;
+}
+
+// DiscordGuildRegistration (v8.x Echo) is a single guild's auto-register
+// outcome. `registered` reflects the most recent attempt; `error` is empty
+// on success and carries the per-command failure message otherwise.
+// `registered_at_unix` is when the daemon last completed (or failed) a
+// register attempt against this guild.
+message DiscordGuildRegistration {
+  string guild_id = 1;
+  string guild_name = 2;
+  bool registered = 3;
+  string error = 4;
+  int64 registered_at_unix = 5;
 }

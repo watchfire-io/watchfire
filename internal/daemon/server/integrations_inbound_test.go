@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/watchfire-io/watchfire/internal/config"
+	"github.com/watchfire-io/watchfire/internal/daemon/discord"
 	"github.com/watchfire-io/watchfire/internal/daemon/echo"
 	pb "github.com/watchfire-io/watchfire/proto"
 )
@@ -14,11 +15,13 @@ import (
 // returns nil — no listening, no last-delivery timestamps.
 type fakeInboundProvider struct {
 	srv         *echo.Server
+	registrar   *discord.Registrar
 	restartHits int
 }
 
-func (f *fakeInboundProvider) EchoServer() *echo.Server { return f.srv }
-func (f *fakeInboundProvider) restartEchoServer()       { f.restartHits++ }
+func (f *fakeInboundProvider) EchoServer() *echo.Server               { return f.srv }
+func (f *fakeInboundProvider) DiscordRegistrar() *discord.Registrar   { return f.registrar }
+func (f *fakeInboundProvider) restartEchoServer()                     { f.restartHits++ }
 
 // TestSaveInboundConfigRoundTrip: SaveInboundConfig persists the listen
 // address + public URL + per-provider secrets, scrubs plaintext secrets

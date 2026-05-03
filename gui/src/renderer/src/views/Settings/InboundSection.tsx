@@ -273,16 +273,19 @@ export function InboundSection() {
         </div>
       </div>
 
-      {/* Discord bot extras (app ID + bot token) — used only by the
-          `watchfire integrations register-discord` CLI to push the slash
-          command schemas. Optional; the inbound interactions endpoint
-          works without these as long as the public key is set. */}
+      {/* Discord bot extras (app ID + bot token) — drives the v8.x Echo
+          auto-registrar. Once both are set the daemon opens a Gateway
+          connection and registers slash commands against every guild
+          the bot joins (≤ 30s after the bot accepts the invite). The
+          `watchfire integrations register-discord <guild>` CLI is the
+          manual fallback. */}
       <div className="space-y-3 mb-3 border border-[var(--wf-border)] rounded-[var(--wf-radius-md)] p-3 bg-[var(--wf-bg-elevated)]">
         <h4 className="font-heading font-semibold text-sm">Discord slash-command registration</h4>
         <p className="text-xs text-[var(--wf-text-muted)]">
-          Optional — only needed to register Watchfire's slash commands against a guild via
-          the <code className="font-mono">watchfire integrations register-discord</code> CLI.
-          The inbound interactions endpoint itself only needs the application public key above.
+          When both fields below are set, the daemon auto-registers the three Watchfire slash
+          commands against every guild the bot is in — and against new guilds within ~30s of
+          the bot being added. The <code className="font-mono">watchfire integrations register-discord</code>
+          CLI remains as a manual fallback.
         </p>
         <div data-setting-field-id="inbound-discord-app-id">
           <Input
@@ -311,8 +314,62 @@ export function InboundSection() {
             saving={saving}
           />
         </div>
+        <DiscordGuildList guilds={inbound?.discordGuilds ?? []} />
       </div>
     </section>
+  )
+}
+
+interface DiscordGuildListProps {
+  guilds: ReadonlyArray<{
+    guildId: string
+    guildName: string
+    registered: boolean
+    error: string
+    registeredAtUnix: bigint
+  }>
+}
+
+function DiscordGuildList({ guilds }: DiscordGuildListProps) {
+  if (guilds.length === 0) {
+    return (
+      <p className="text-xs text-[var(--wf-text-muted)] italic">
+        No guilds yet — invite the bot to a Discord guild to populate this list.
+      </p>
+    )
+  }
+  return (
+    <div className="border-t border-[var(--wf-border)] pt-3">
+      <h5 className="font-heading font-semibold text-xs uppercase tracking-wider text-[var(--wf-text-muted)] mb-2">
+        Registered guilds
+      </h5>
+      <ul className="space-y-1.5">
+        {guilds.map((g) => (
+          <li
+            key={g.guildId}
+            className="flex items-center justify-between gap-3 text-xs px-2 py-1 rounded bg-[var(--wf-bg-primary)]"
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span
+                className={
+                  g.registered
+                    ? 'inline-flex items-center justify-center w-4 h-4 rounded-full bg-green-900/30 text-green-400'
+                    : 'inline-flex items-center justify-center w-4 h-4 rounded-full bg-red-900/30 text-red-400'
+                }
+                title={g.registered ? 'Registered' : g.error || 'Not registered'}
+              >
+                {g.registered ? '✓' : '✗'}
+              </span>
+              <span className="truncate">{g.guildName || '(unknown)'}</span>
+              <span className="font-mono text-[var(--wf-text-muted)]">{g.guildId}</span>
+            </div>
+            <span className="text-[var(--wf-text-muted)] shrink-0">
+              {formatLastDelivery(g.registeredAtUnix)}
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
   )
 }
 

@@ -11,6 +11,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/watchfire-io/watchfire/internal/config"
+	"github.com/watchfire-io/watchfire/internal/daemon/discord"
 	"github.com/watchfire-io/watchfire/internal/daemon/echo"
 	"github.com/watchfire-io/watchfire/internal/daemon/notify"
 	"github.com/watchfire-io/watchfire/internal/daemon/relay"
@@ -44,6 +45,7 @@ type integrationsService struct {
 // pulling the entire server package in.
 type inboundProvider interface {
 	EchoServer() *echo.Server
+	DiscordRegistrar() *discord.Registrar
 	restartEchoServer()
 }
 
