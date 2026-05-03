@@ -653,6 +653,33 @@ func (f *IntegrationsForm) renderInbound() string {
 		b.WriteString("\n")
 	}
 
+	// v8.x Echo — per-guild Discord auto-registration status. Read-only
+	// list mirroring the GUI's DiscordGuildList. Empty when no guilds
+	// have been registered yet (bot token not configured, or bot just
+	// added and gateway hasn't received GUILD_CREATE yet).
+	if f.inboundStatus != nil {
+		guilds := f.inboundStatus.GetDiscordGuilds()
+		if len(guilds) > 0 {
+			b.WriteString("\n")
+			b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render("Registered Discord guilds"))
+			b.WriteString("\n")
+			for _, g := range guilds {
+				glyph := lipgloss.NewStyle().Foreground(colorRed).Render("✗")
+				if g.GetRegistered() {
+					glyph = lipgloss.NewStyle().Foreground(colorCyan).Render("✓")
+				}
+				name := g.GetGuildName()
+				if name == "" {
+					name = "(unknown)"
+				}
+				b.WriteString(fmt.Sprintf("  %s %-30s %s\n", glyph, name, lipgloss.NewStyle().Foreground(colorDim).Render(g.GetGuildId())))
+				if g.GetError() != "" && !g.GetRegistered() {
+					b.WriteString(fmt.Sprintf("      %s\n", lipgloss.NewStyle().Foreground(colorRed).Render(g.GetError())))
+				}
+			}
+		}
+	}
+
 	if f.inboundEditing {
 		b.WriteString("\n")
 		b.WriteString(lipgloss.NewStyle().Foreground(colorCyan).Render("Editing: "+rows[f.inboundCursor].label) + "\n")

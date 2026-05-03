@@ -137,6 +137,20 @@ func (s *integrationsService) buildInboundStatus(in models.InboundConfig) *pb.In
 				out.LastDiscordDeliveryUnix = t.Unix()
 			}
 		}
+		if reg := s.server.DiscordRegistrar(); reg != nil {
+			for _, g := range reg.Statuses() {
+				gr := &pb.DiscordGuildRegistration{
+					GuildId:    g.GuildID,
+					GuildName:  g.GuildName,
+					Registered: g.Registered,
+					Error:      g.Error,
+				}
+				if !g.RegisteredAt.IsZero() {
+					gr.RegisteredAtUnix = g.RegisteredAt.Unix()
+				}
+				out.DiscordGuilds = append(out.DiscordGuilds, gr)
+			}
+		}
 	}
 	return out
 }

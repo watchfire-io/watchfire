@@ -22,6 +22,7 @@ import (
 	"github.com/watchfire-io/watchfire/internal/config"
 	"github.com/watchfire-io/watchfire/internal/daemon/agent"
 	"github.com/watchfire-io/watchfire/internal/daemon/agent/prompts"
+	"github.com/watchfire-io/watchfire/internal/daemon/discord"
 	"github.com/watchfire-io/watchfire/internal/daemon/echo"
 	"github.com/watchfire-io/watchfire/internal/daemon/insights"
 	"github.com/watchfire-io/watchfire/internal/daemon/metrics"
@@ -52,6 +53,11 @@ type Server struct {
 	relayCancel    context.CancelFunc
 	echoServer     *echo.Server
 	echoCancel     context.CancelFunc
+	// v8.x Echo — Discord slash-command auto-registrar. nil when the
+	// inbound config does not (yet) carry a Discord app id + bot token,
+	// or when the gateway client has been torn down for restart.
+	discordRegistrar *discord.Registrar
+	discordGwCancel  context.CancelFunc
 	integrationsSvc *integrationsService
 	updateState    UpdateState
 }
@@ -293,6 +299,7 @@ func New(port int) (*Server, error) {
 	// surfaced via IntegrationsService.GetInboundStatus so the GUI's
 	// "Listening status" pill turns red.
 	srv.startEchoServer()
+	srv.startDiscordRegistrar()
 	srv.integrationsSvc.bindEchoServer(srv)
 
 	// Start watcher event processing loop
@@ -372,6 +379,10 @@ func (s *Server) Stop() {
 	if s.echoCancel != nil {
 		s.echoCancel()
 	}
+	// Tear down the v8.x Discord auto-registrar's gateway connection.
+	if s.discordGwCancel != nil {
+		s.discordGwCancel()
+	}
 	// Stop watcher before agents (prevents new task-done events during shutdown)
 	if s.watcher != nil {
 		s.watcher.Stop()
@@ -416,7 +427,79 @@ func (s *Server) restartEchoServer() {
 		s.echoCancel()
 	}
 	s.startEchoServer()
+	// SaveInboundConfig may have flipped Discord credentials; restart the
+	// auto-registrar so the new bot token / app id takes effect without
+	// a daemon bounce.
+	s.restartDiscordRegistrar()
 }
+
+// startDiscordRegistrar (v8.x Echo) launches the Discord Gateway
+// auto-registrar in a background goroutine. No-op when the inbound
+// config doesn't carry a Discord application id + bot token: the manual
+// `watchfire integrations register-discord` CLI is still available for
+// users who don't enable the gateway connection.
+func (s *Server) startDiscordRegistrar() {
+	cfg, err := config.LoadIntegrations()
+	if err != nil {
+		log.Printf("WARN: discord registrar: load integrations failed: %v — auto-registration disabled", err)
+		return
+	}
+	in := cfg.Inbound
+	if in.Disabled {
+		return
+	}
+	appID := in.DiscordAppID
+	if appID == "" {
+		return
+	}
+	if in.DiscordBotTokenRef == "" {
+		return
+	}
+	token, ok := config.LookupIntegrationSecret(in.DiscordBotTokenRef)
+	if !ok || token == "" {
+		log.Printf("WARN: discord registrar: bot token reference %q not in keyring — auto-registration disabled", in.DiscordBotTokenRef)
+		return
+	}
+
+	gw := discord.NewGateway(discord.GatewayConfig{
+		Token:  token,
+		Logger: log.Default(),
+	})
+	registrar := discord.NewRegistrar(discord.RegistrarConfig{
+		Gateway: gw,
+		AppID:   appID,
+		Token:   token,
+		Logger:  log.Default(),
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	s.discordRegistrar = registrar
+	s.discordGwCancel = cancel
+	go func() {
+		if runErr := gw.Run(ctx); runErr != nil {
+			log.Printf("ERROR: discord gateway: %v", runErr)
+		}
+	}()
+	go registrar.Run(ctx)
+	log.Printf("INFO: discord registrar: starting auto-registration for app %s", appID)
+}
+
+// restartDiscordRegistrar tears down the running gateway connection and
+// re-spawns it with the freshly-saved credentials.
+func (s *Server) restartDiscordRegistrar() {
+	if s.discordGwCancel != nil {
+		s.discordGwCancel()
+		s.discordGwCancel = nil
+	}
+	s.discordRegistrar = nil
+	s.startDiscordRegistrar()
+}
+
+// DiscordRegistrar exposes the Discord auto-registrar so the
+// IntegrationsService can surface per-guild registration status in
+// `GetInboundStatus`. Returns nil when the registrar has not been
+// configured (no token / app id) — callers must nil-check.
+func (s *Server) DiscordRegistrar() *discord.Registrar { return s.discordRegistrar }
 
 // EchoServer exposes the inbound HTTP listener for the integrations
 // service handler. Used to populate GetInboundStatus responses.

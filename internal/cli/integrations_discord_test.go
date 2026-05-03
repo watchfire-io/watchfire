@@ -10,12 +10,14 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/watchfire-io/watchfire/internal/daemon/discord"
 )
 
 func TestRegisterDiscordCommandsHappyPath(t *testing.T) {
 	var (
 		mu       sync.Mutex
-		captured []discordSlashCommand
+		captured []discord.SlashCommand
 	)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bot test-token" {
@@ -24,7 +26,7 @@ func TestRegisterDiscordCommandsHappyPath(t *testing.T) {
 		if !strings.Contains(r.URL.Path, "/applications/app-1/guilds/guild-1/commands") {
 			t.Fatalf("unexpected path %q", r.URL.Path)
 		}
-		var cmd discordSlashCommand
+		var cmd discord.SlashCommand
 		body, _ := io.ReadAll(r.Body)
 		if err := json.Unmarshal(body, &cmd); err != nil {
 			t.Fatalf("malformed request body: %v", err)
@@ -37,7 +39,7 @@ func TestRegisterDiscordCommandsHappyPath(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	results, err := registerDiscordCommands(context.Background(), srv.URL, "app-1", "guild-1", "test-token", watchfireSlashCommands())
+	results, err := discord.RegisterGuildCommands(context.Background(), srv.Client(), srv.URL, "app-1", "guild-1", "test-token", discord.WatchfireSlashCommands())
 	if err != nil {
 		t.Fatalf("register: %v", err)
 	}
@@ -75,7 +77,7 @@ func TestRegisterDiscordCommandsHandles4xx(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	results, err := registerDiscordCommands(context.Background(), srv.URL, "app-1", "guild-1", "test-token", watchfireSlashCommands())
+	results, err := discord.RegisterGuildCommands(context.Background(), srv.Client(), srv.URL, "app-1", "guild-1", "test-token", discord.WatchfireSlashCommands())
 	if err != nil {
 		t.Fatalf("register should not return Go error on 4xx, got %v", err)
 	}
@@ -94,8 +96,8 @@ func TestRegisterDiscordCommandsHandles4xx(t *testing.T) {
 
 func TestRegisterDiscordCommandsIdempotent(t *testing.T) {
 	// Discord upserts on POST when the command name already exists.
-	// The CLI doesn't need to do anything special — just that
-	// re-running produces the same result without a Go-level error.
+	// The CLI doesn't need to do anything special — just that re-running
+	// produces the same result without a Go-level error.
 	count := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		count++
@@ -105,7 +107,7 @@ func TestRegisterDiscordCommandsIdempotent(t *testing.T) {
 	defer srv.Close()
 
 	for i := 0; i < 2; i++ {
-		results, err := registerDiscordCommands(context.Background(), srv.URL, "app", "guild", "tok", watchfireSlashCommands())
+		results, err := discord.RegisterGuildCommands(context.Background(), srv.Client(), srv.URL, "app", "guild", "tok", discord.WatchfireSlashCommands())
 		if err != nil {
 			t.Fatalf("attempt %d: %v", i, err)
 		}
