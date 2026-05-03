@@ -8,7 +8,7 @@ export function AboutSection({ version }: Props) {
       <h3 className="font-heading font-semibold text-sm text-[var(--wf-text-muted)] uppercase tracking-wider mb-3">
         About
       </h3>
-      <div className="text-sm text-[var(--wf-text-secondary)]">
+      <div className="text-sm text-[var(--wf-text-secondary)]" data-setting-field-id="about-version">
         <span className="text-[var(--wf-text-primary)] font-medium">Watchfire</span>{' '}
         {version && <span>v{version}</span>}
       </div>

@@ -29,7 +29,7 @@ export function AppearanceSection({ settings }: Props) {
       <h3 className="font-heading font-semibold text-sm text-[var(--wf-text-muted)] uppercase tracking-wider mb-3">
         Appearance
       </h3>
-      <div className="flex gap-3">
+      <div className="flex gap-3" data-setting-field-id="theme">
         {themes.map(({ key, label, icon: Icon }) => (
           <button
             key={key}

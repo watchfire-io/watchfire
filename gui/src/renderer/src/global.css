@@ -89,3 +89,16 @@ body {
   from { transform: translateX(100%); }
   to { transform: translateX(0); }
 }
+
+/* Settings search highlight — applied to a control for ~1.5s when navigated
+   to via search so the eye can find it. The outer ring fades out via the
+   keyframes; background fades back to transparent. */
+@keyframes settingsHighlightPulse {
+  0%   { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.55); background-color: rgba(249, 115, 22, 0.10); }
+  60%  { box-shadow: 0 0 0 6px rgba(249, 115, 22, 0); background-color: rgba(249, 115, 22, 0.04); }
+  100% { box-shadow: 0 0 0 0 rgba(249, 115, 22, 0); background-color: transparent; }
+}
+.settings-highlight-pulse {
+  animation: settingsHighlightPulse 1.5s ease-out;
+  border-radius: var(--wf-radius-md);
+}

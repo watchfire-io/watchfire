@@ -35,20 +35,24 @@ export function UpdatesSection({ settings }: Props) {
         Updates
       </h3>
       <div className="space-y-4">
-        <Toggle
-          checked={updates?.checkOnStartup ?? true}
-          onChange={(v) => update({ checkOnStartup: v })}
-          label="Check on startup"
-          description="Check for updates when Watchfire launches"
-        />
-        <Toggle
-          checked={updates?.autoDownload ?? false}
-          onChange={(v) => update({ autoDownload: v })}
-          label="Auto-download"
-          description="Download updates automatically"
-        />
+        <div data-setting-field-id="updates-check-startup">
+          <Toggle
+            checked={updates?.checkOnStartup ?? true}
+            onChange={(v) => update({ checkOnStartup: v })}
+            label="Check on startup"
+            description="Check for updates when Watchfire launches"
+          />
+        </div>
+        <div data-setting-field-id="updates-auto-download">
+          <Toggle
+            checked={updates?.autoDownload ?? false}
+            onChange={(v) => update({ autoDownload: v })}
+            label="Auto-download"
+            description="Download updates automatically"
+          />
+        </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" data-setting-field-id="updates-frequency">
           <label className="text-sm font-medium text-[var(--wf-text-secondary)]">Frequency:</label>
           <select
             value={updates?.checkFrequency || 'every_launch'}
@@ -61,10 +65,12 @@ export function UpdatesSection({ settings }: Props) {
           </select>
         </div>
 
-        <Button size="sm" variant="secondary" onClick={handleCheckNow} disabled={checking}>
-          <RefreshCw size={14} className={checking ? 'animate-spin' : ''} />
-          {checking ? 'Checking...' : 'Check Now'}
-        </Button>
+        <div data-setting-field-id="updates-check-now">
+          <Button size="sm" variant="secondary" onClick={handleCheckNow} disabled={checking}>
+            <RefreshCw size={14} className={checking ? 'animate-spin' : ''} />
+            {checking ? 'Checking...' : 'Check Now'}
+          </Button>
+        </div>
       </div>
     </section>
   )

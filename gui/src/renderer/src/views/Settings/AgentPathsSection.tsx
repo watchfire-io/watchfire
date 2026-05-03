@@ -42,7 +42,7 @@ export function AgentPathsSection({ settings, agents, agentsLoaded }: Props) {
       ) : agents.length === 0 ? (
         <p className="text-sm text-[var(--wf-text-muted)]">No agents available.</p>
       ) : (
-        <div className="space-y-5">
+        <div className="space-y-5" data-setting-field-id="agent-paths">
           {agents.map((agent) => {
             const path = settings.agents?.[agent.name]?.path || ''
             // Badge states:
