@@ -128,3 +128,125 @@ func TestAgentBadgeLabelFallsBackForUnknownBackend(t *testing.T) {
 		t.Fatalf("expected non-empty fallback label for unknown backend")
 	}
 }
+
+func boolPtr(b bool) *bool       { return &b }
+func strPtr(s string) *string    { return &s }
+
+func TestFailedRowShowsFailureReasonPreview(t *testing.T) {
+	tl := NewTaskList()
+	tl.SetProjectDefaultAgent("claude-code")
+	tl.SetTasks([]*pb.Task{
+		{
+			TaskNumber:    1,
+			Title:         "Failed task",
+			Status:        "done",
+			Success:       boolPtr(false),
+			FailureReason: strPtr("first line — the smoking gun\nsecond line — boring stack frame\nthird line"),
+		},
+	})
+
+	rendered := renderRow(t, tl, 120)
+
+	// First line of the reason should appear (or a truncated prefix of it).
+	if !strings.Contains(rendered, "first line") {
+		t.Fatalf("expected preview of first failure-reason line in rendered row; got %q", rendered)
+	}
+	// The "smoking gun" detail is short enough to fit at width=120 without
+	// truncation; assert the full first line is present rather than a stub.
+	if !strings.Contains(rendered, "the smoking gun") {
+		t.Fatalf("expected full first reason line at wide width; got %q", rendered)
+	}
+
+	// Subsequent lines must NOT leak through — the preview is single-line.
+	if strings.Contains(rendered, "second line") {
+		t.Fatalf("preview should be single-line; second line leaked into row: %q", rendered)
+	}
+	if strings.Contains(rendered, "third line") {
+		t.Fatalf("preview should be single-line; third line leaked into row: %q", rendered)
+	}
+
+	// Sanity: title and the [✗] glyph are still there.
+	if !strings.Contains(rendered, "Failed task") {
+		t.Fatalf("expected task title in rendered row; got %q", rendered)
+	}
+	if !strings.Contains(rendered, "[✗]") {
+		t.Fatalf("expected failed-glyph in rendered row; got %q", rendered)
+	}
+}
+
+func TestFailedRowShowsTruncationMarkerWhenPreviewIsLong(t *testing.T) {
+	tl := NewTaskList()
+	tl.SetProjectDefaultAgent("claude-code")
+	longLine := "first line ─ " + strings.Repeat("x", 200) + " end"
+	tl.SetTasks([]*pb.Task{
+		{
+			TaskNumber:    1,
+			Title:         "Failed task",
+			Status:        "done",
+			Success:       boolPtr(false),
+			FailureReason: strPtr(longLine + "\nsecond line should not appear"),
+		},
+	})
+
+	rendered := renderRow(t, tl, 120)
+
+	if !strings.Contains(rendered, "…") {
+		t.Fatalf("expected truncation marker in rendered row when preview is long; got %q", rendered)
+	}
+	if strings.Contains(rendered, "second line") {
+		t.Fatalf("only the first line should appear; got %q", rendered)
+	}
+}
+
+func TestFailedRowSkipsPreviewWhenWidthTooNarrow(t *testing.T) {
+	tl := NewTaskList()
+	tl.SetProjectDefaultAgent("claude-code")
+	tl.SetTasks([]*pb.Task{
+		{
+			TaskNumber:    1,
+			Title:         "T",
+			Status:        "done",
+			Success:       boolPtr(false),
+			FailureReason: strPtr("first line — the smoking gun\nsecond line\nthird line"),
+		},
+	})
+
+	rendered := renderRow(t, tl, 25)
+
+	// The [✗] glyph must still render — the row's status visual is
+	// non-negotiable.
+	if !strings.Contains(rendered, "[✗]") {
+		t.Fatalf("expected failed-glyph in narrow rendered row; got %q", rendered)
+	}
+	// At width=25 the preview should be silently omitted — no portion
+	// of the reason should leak into the row.
+	if strings.Contains(rendered, "first line") {
+		t.Fatalf("preview should be omitted at narrow width; got %q", rendered)
+	}
+}
+
+func TestSuccessfulRowHasNoFailurePreview(t *testing.T) {
+	tl := NewTaskList()
+	tl.SetProjectDefaultAgent("claude-code")
+	tl.SetTasks([]*pb.Task{
+		{
+			TaskNumber: 1,
+			Title:      "Happy task",
+			Status:     "done",
+			Success:    boolPtr(true),
+			// FailureReason intentionally non-empty to guard against a
+			// hypothetical regression where a stale field leaks into a
+			// successful row.
+			FailureReason: strPtr("should not appear"),
+		},
+	})
+
+	rendered := renderRow(t, tl, 120)
+
+	if strings.Contains(rendered, "should not appear") {
+		t.Fatalf("successful row should not render any failure-reason preview; got %q", rendered)
+	}
+	if !strings.Contains(rendered, "[✓]") {
+		t.Fatalf("expected done-glyph in successful row; got %q", rendered)
+	}
+}

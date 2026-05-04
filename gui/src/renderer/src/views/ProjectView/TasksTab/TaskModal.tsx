@@ -22,6 +22,20 @@ interface Props {
 
 type DetailTab = 'edit' | 'inspect'
 
+/**
+ * Picks the tab that should be active when the modal first commits.
+ * Done tasks land directly on Inspect — that's where the diff and the
+ * red failure banner live, and it's why someone reopens a finished
+ * task. Anything else opens on the Edit form.
+ *
+ * Used both as the lazy initializer for the `tab` state (so the very
+ * first paint is correct — no form-tab flicker before the effect
+ * re-syncs) and from the effect that handles modal re-opens.
+ */
+export function initialDetailTab(task?: Task): DetailTab {
+  return task?.status === 'done' ? 'inspect' : 'edit'
+}
+
 export function TaskModal({ open, onClose, projectId, task }: Props) {
   const createTask = useTasksStore((s) => s.createTask)
   const updateTask = useTasksStore((s) => s.updateTask)
@@ -39,7 +53,7 @@ export function TaskModal({ open, onClose, projectId, task }: Props) {
   const [status, setStatus] = useState<'draft' | 'ready'>('draft')
   const [agent, setAgent] = useState('')
   const [saving, setSaving] = useState(false)
-  const [tab, setTab] = useState<DetailTab>('edit')
+  const [tab, setTab] = useState<DetailTab>(() => initialDetailTab(task))
 
   const isEdit = !!task
   const isDone = task?.status === 'done'
@@ -55,9 +69,7 @@ export function TaskModal({ open, onClose, projectId, task }: Props) {
       setCriteria(task.acceptanceCriteria)
       setStatus(task.status === 'ready' ? 'ready' : 'draft')
       setAgent(task.agent ?? '')
-      // Open completed tasks straight on the Inspect tab — that's why
-      // someone reopens a done task: to review the diff.
-      setTab(task.status === 'done' ? 'inspect' : 'edit')
+      setTab(initialDetailTab(task))
     } else if (!open) {
       setTitle('')
       setPrompt('')

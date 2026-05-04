@@ -308,6 +308,7 @@ func (tl *TaskList) View(width int) string {
 		badge := tl.taskBadge(t)
 		numStr := lipgloss.NewStyle().Foreground(colorDim).Render(fmt.Sprintf("#%04d", t.TaskNumber))
 		agentBadge := tl.agentBadge(t)
+		preview := failureReasonPreview(t)
 
 		// Compute width budgets: reserve space for the (untruncated) fixed
 		// prefix + agent badge so the title — never the badge — is the part
@@ -320,18 +321,42 @@ func (tl *TaskList) View(width int) string {
 			agentWidth++ // trailing space between badge and title
 		}
 		titleStr := t.Title
+		var previewStr string
 		if maxWidth > 0 {
-			budget := maxWidth - prefixWidth - agentWidth
-			if budget < 1 {
-				budget = 1
+			available := maxWidth - prefixWidth - agentWidth
+			if available < 1 {
+				available = 1
 			}
-			titleStr = ansi.Truncate(titleStr, budget, "…")
+			// Inline failure-reason preview only when there is room for
+			// both a meaningful title and a meaningful preview. Below ~30
+			// columns the row would push the title into single-character
+			// territory, which is uglier than just hiding the preview —
+			// the inspect overlay still shows the full reason.
+			if preview != "" && available >= 30 {
+				previewBudget := 40
+				if available/2 < previewBudget {
+					previewBudget = available / 2
+				}
+				titleBudget := available - previewBudget - 3 // " — " separator
+				if titleBudget < 1 {
+					titleBudget = 1
+				}
+				titleStr = ansi.Truncate(titleStr, titleBudget, "…")
+				previewStr = ansi.Truncate(preview, previewBudget, "…")
+			} else {
+				titleStr = ansi.Truncate(titleStr, available, "…")
+			}
 		}
 		var title string
 		if agentBadge != "" {
 			title = prefix + agentBadge + " " + titleStr
 		} else {
 			title = prefix + titleStr
+		}
+		if previewStr != "" {
+			sep := lipgloss.NewStyle().Foreground(colorDim).Render(" — ")
+			body := lipgloss.NewStyle().Foreground(colorRed).Faint(true).Render(previewStr)
+			title += sep + body
 		}
 
 		var style lipgloss.Style
@@ -462,6 +487,39 @@ func badgeInitials(display string) string {
 		}
 	}
 	return b.String()
+}
+
+// failureReasonPreview returns a single-line, whitespace-trimmed preview
+// of the task's failure reason for inline rendering in the task list,
+// or "" when the task didn't fail. Merge failure wins over agent failure
+// when both are populated, mirroring the GUI tooltip rule and the
+// "Merge failed" badge label.
+func failureReasonPreview(t *pb.Task) string {
+	if t.Status != "done" {
+		return ""
+	}
+	merge := t.GetMergeFailureReason()
+	failed := merge != "" || t.Success == nil || !*t.Success
+	if !failed {
+		return ""
+	}
+	reason := merge
+	if reason == "" {
+		reason = t.GetFailureReason()
+	}
+	if reason == "" {
+		return ""
+	}
+	for _, line := range strings.Split(reason, "\n") {
+		trimmed := strings.TrimRightFunc(line, func(r rune) bool {
+			return unicode.IsSpace(r) || unicode.IsControl(r)
+		})
+		trimmed = strings.TrimLeftFunc(trimmed, unicode.IsSpace)
+		if trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }
 
 func truncateRunes(s string, n int) string {
