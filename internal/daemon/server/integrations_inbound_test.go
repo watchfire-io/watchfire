@@ -40,13 +40,17 @@ func TestSaveInboundConfigRoundTrip(t *testing.T) {
 	// Save with all per-provider secrets supplied.
 	saveResp, err := svc.SaveInboundConfig(ctx, &pb.SaveInboundConfigRequest{
 		Config: &pb.InboundConfig{
-			ListenAddr:        "127.0.0.1:9999",
-			PublicUrl:         "https://example.ngrok.app",
-			GithubSecret:      "gh-shhh",
-			SlackSecret:       "sl-shhh",
-			DiscordPublicKey:  "dc-pubkey",
-			DiscordAppId:      "12345",
-			DiscordBotToken:   "dc-bot-token",
+			ListenAddr:       "127.0.0.1:9999",
+			PublicUrl:        "https://example.ngrok.app",
+			GithubSecret:     "gh-shhh",
+			SlackSecret:      "sl-shhh",
+			DiscordPublicKey: "dc-pubkey",
+			DiscordAppId:     "12345",
+			DiscordBotToken:  "dc-bot-token",
+			GitHost:          "github-enterprise",
+			GitHostBaseUrl:   "https://github.example.com",
+			GitlabSecret:     "gl-shhh",
+			BitbucketSecret:  "bb-shhh",
 		},
 	})
 	if err != nil {
@@ -79,6 +83,18 @@ func TestSaveInboundConfigRoundTrip(t *testing.T) {
 	}
 	if !saveResp.GetConfig().GetDiscordBotTokenSet() {
 		t.Fatal("expected discord_bot_token_set=true after save")
+	}
+	if !saveResp.GetConfig().GetGitlabSecretSet() {
+		t.Fatal("expected gitlab_secret_set=true after save")
+	}
+	if !saveResp.GetConfig().GetBitbucketSecretSet() {
+		t.Fatal("expected bitbucket_secret_set=true after save")
+	}
+	if saveResp.GetConfig().GetGitHost() != "github-enterprise" {
+		t.Fatalf("git_host round-trip: %q", saveResp.GetConfig().GetGitHost())
+	}
+	if saveResp.GetConfig().GetGitHostBaseUrl() != "https://github.example.com" {
+		t.Fatalf("git_host_base_url round-trip: %q", saveResp.GetConfig().GetGitHostBaseUrl())
 	}
 
 	// Non-secret fields round-trip verbatim.

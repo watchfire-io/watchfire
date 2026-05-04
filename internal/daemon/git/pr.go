@@ -45,6 +45,13 @@ type PRResult struct {
 // OpenPROptions carries everything OpenPR needs to push a branch and render
 // a PR body. ProjectID feeds the deep-link footer; ProjectPath is the host
 // project root (the main worktree, not a task worktree).
+//
+// `GitHubHostname` (v8.x) overrides github.com when the Watchfire installation
+// is paired with a GitHub Enterprise instance. Empty = github.com — the
+// default that preserves v7.0 behaviour. When set, the `gh` CLI invocation
+// gets `--hostname <value>` so authentication and the API endpoint both
+// route to the user's Enterprise host. The accepted-origin pattern is also
+// widened to match `https://<hostname>/owner/repo` URLs.
 type OpenPROptions struct {
 	ProjectPath        string
 	ProjectID          string
@@ -55,6 +62,7 @@ type OpenPROptions struct {
 	Agent              string
 	DraftDefault       bool
 	CompletedAt        time.Time
+	GitHubHostname     string
 }
 
 // commandContext is the exec entry-point for every shell-out OpenPR makes.
@@ -100,11 +108,11 @@ func OpenPR(ctx context.Context, opts OpenPROptions) (*PRResult, error) {
 		return nil, errors.New("OpenPR: TaskNumber required")
 	}
 
-	if err := verifyGHCLI(ctx); err != nil {
+	if err := verifyGHCLI(ctx, opts.GitHubHostname); err != nil {
 		return nil, err
 	}
 
-	owner, repo, err := parseGitHubOrigin(ctx, opts.ProjectPath)
+	owner, repo, err := parseGitHubOrigin(ctx, opts.ProjectPath, opts.GitHubHostname)
 	if err != nil {
 		return nil, err
 	}
@@ -122,27 +130,39 @@ func OpenPR(ctx context.Context, opts OpenPROptions) (*PRResult, error) {
 	baseBranch := resolveDefaultBranch(ctx, opts.ProjectPath)
 	title := fmt.Sprintf("[task %04d] %s", opts.TaskNumber, opts.TaskTitle)
 
-	return createPR(ctx, owner, repo, branch, baseBranch, title, body, opts.DraftDefault)
+	return createPR(ctx, owner, repo, branch, baseBranch, title, body, opts.DraftDefault, opts.GitHubHostname)
 }
 
-func verifyGHCLI(ctx context.Context) error {
-	cmd := commandContext(ctx, "gh", "auth", "status")
+func verifyGHCLI(ctx context.Context, hostname string) error {
+	args := []string{"auth", "status"}
+	if hostname != "" {
+		// `gh auth status --hostname <h>` returns non-zero when the user
+		// is not authenticated against that specific Enterprise host —
+		// exactly the gate we want before attempting `gh api` calls
+		// against the same hostname.
+		args = append(args, "--hostname", hostname)
+	}
+	cmd := commandContext(ctx, "gh", args...)
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("%w: %v", ErrGHUnavailable, err)
 	}
 	return nil
 }
 
-// originHTTPSPattern matches https://github.com/<owner>/<repo>(.git)? URLs.
-var originHTTPSPattern = regexp.MustCompile(`^https?://github\.com/([^/]+)/([^/]+?)(?:\.git)?/?$`)
+// originHTTPSPattern matches https://<host>/<owner>/<repo>(.git)? URLs.
+// The host is captured so callers can validate it against either
+// github.com (default) or a user-supplied Enterprise hostname.
+var originHTTPSPattern = regexp.MustCompile(`^https?://([^/]+)/([^/]+)/([^/]+?)(?:\.git)?/?$`)
 
-// originSSHPattern matches git@github.com:<owner>/<repo>(.git)? URLs.
-var originSSHPattern = regexp.MustCompile(`^git@github\.com:([^/]+)/([^/]+?)(?:\.git)?$`)
+// originSSHPattern matches git@<host>:<owner>/<repo>(.git)? URLs.
+var originSSHPattern = regexp.MustCompile(`^git@([^:]+):([^/]+)/([^/]+?)(?:\.git)?$`)
 
 // parseGitHubOrigin runs `git remote get-url origin` in projectPath and
 // extracts <owner>/<repo>. Returns ErrNotGitHub for anything that isn't a
-// recognisable github.com URL.
-func parseGitHubOrigin(ctx context.Context, projectPath string) (owner, repo string, err error) {
+// recognisable URL on github.com OR on the user-supplied `enterpriseHost`
+// (passed through from `OpenPROptions.GitHubHostname`). Empty
+// `enterpriseHost` accepts only github.com — preserves v7.0 behaviour.
+func parseGitHubOrigin(ctx context.Context, projectPath, enterpriseHost string) (owner, repo string, err error) {
 	cmd := commandContext(ctx, "git", "remote", "get-url", "origin")
 	cmd.Dir = projectPath
 	out, runErr := cmd.Output()
@@ -150,13 +170,39 @@ func parseGitHubOrigin(ctx context.Context, projectPath string) (owner, repo str
 		return "", "", fmt.Errorf("%w: git remote get-url origin failed: %v", ErrNotGitHub, runErr)
 	}
 	url := strings.TrimSpace(string(out))
-	if m := originHTTPSPattern.FindStringSubmatch(url); m != nil {
-		return m[1], m[2], nil
-	}
-	if m := originSSHPattern.FindStringSubmatch(url); m != nil {
-		return m[1], m[2], nil
+	if host, o, r, ok := matchGitHubOriginURL(url); ok {
+		if hostMatches(host, enterpriseHost) {
+			return o, r, nil
+		}
 	}
 	return "", "", fmt.Errorf("%w: %q", ErrNotGitHub, url)
+}
+
+// matchGitHubOriginURL returns the host + owner + repo for an https or
+// ssh github-style URL. ok=false on a URL we cannot parse.
+func matchGitHubOriginURL(url string) (host, owner, repo string, ok bool) {
+	if m := originHTTPSPattern.FindStringSubmatch(url); m != nil {
+		return strings.ToLower(m[1]), m[2], m[3], true
+	}
+	if m := originSSHPattern.FindStringSubmatch(url); m != nil {
+		return strings.ToLower(m[1]), m[2], m[3], true
+	}
+	return "", "", "", false
+}
+
+// hostMatches returns true if the URL's host is the canonical github.com
+// (when enterpriseHost is empty) or matches the user-supplied Enterprise
+// hostname. The comparison is case-insensitive on both sides.
+func hostMatches(urlHost, enterpriseHost string) bool {
+	urlHost = strings.ToLower(urlHost)
+	if enterpriseHost == "" {
+		return urlHost == "github.com"
+	}
+	enterpriseHost = strings.ToLower(strings.TrimSpace(enterpriseHost))
+	if enterpriseHost == "" {
+		return urlHost == "github.com"
+	}
+	return urlHost == enterpriseHost
 }
 
 func pushBranch(ctx context.Context, projectPath, branch string) error {
@@ -194,7 +240,7 @@ type ghAPIResponse struct {
 	Number  int    `json:"number"`
 }
 
-func createPR(ctx context.Context, owner, repo, head, base, title, body string, draft bool) (*PRResult, error) {
+func createPR(ctx context.Context, owner, repo, head, base, title, body string, draft bool, hostname string) (*PRResult, error) {
 	endpoint := fmt.Sprintf("repos/%s/%s/pulls", owner, repo)
 	args := []string{
 		"api", "-X", "POST", endpoint,
@@ -203,6 +249,12 @@ func createPR(ctx context.Context, owner, repo, head, base, title, body string, 
 		"--field", "base=" + base,
 		"--field", "body=" + body,
 		"-F", fmt.Sprintf("draft=%t", draft),
+	}
+	if hostname != "" {
+		// gh routes `--hostname <h>` to the Enterprise instance for
+		// both auth resolution and the API endpoint. The flag must
+		// precede the api subcommand for the parser to honour it.
+		args = append([]string{"--hostname", hostname}, args...)
 	}
 	cmd := commandContext(ctx, "gh", args...)
 	var stdout, stderr bytes.Buffer

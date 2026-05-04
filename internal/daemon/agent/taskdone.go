@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -122,6 +123,12 @@ func tryAutoPR(fns taskDoneFns, proj *models.Project, t *models.Task, projectPat
 		Agent:              resolveAgentNameForPR(proj, t),
 		DraftDefault:       integrations.GitHub.DraftDefault,
 		CompletedAt:        completedAtOrNow(t),
+		// v8.x — pin the GitHub Enterprise host when the inbound config
+		// has selected `github-enterprise` and supplied a base URL. The
+		// outbound + inbound paths share the same host so the auto-PR
+		// loop closes against the same instance the inbound webhook
+		// fires from.
+		GitHubHostname: enterpriseHostnameFor(integrations),
 	})
 	if prErr == nil {
 		log.Printf("[auto-pr] Task #%04d PR opened: %s", taskNumber, prRes.URL)
@@ -204,6 +211,32 @@ func runSilentMerge(fns taskDoneFns, proj *models.Project, projectPath string, t
 		}
 	}
 	return !mergeFailed
+}
+
+// enterpriseHostnameFor returns the hostname for GitHub Enterprise auto-PR
+// when the user has paired the inbound config with `github-enterprise`.
+// Returns the empty string for github.com (preserves v7.0 behaviour) or
+// for any other host (gitlab / bitbucket fall through to silent merge in
+// the existing not-github branch of `OpenPR`).
+func enterpriseHostnameFor(cfg *models.IntegrationsConfig) string {
+	if cfg == nil {
+		return ""
+	}
+	if cfg.Inbound.EffectiveGitHost() != models.GitHostGitHubEnterprise {
+		return ""
+	}
+	host := strings.ToLower(strings.TrimSpace(cfg.Inbound.GitHostBaseURL))
+	if host == "" {
+		return ""
+	}
+	if idx := strings.Index(host, "://"); idx >= 0 {
+		host = host[idx+3:]
+	}
+	host = strings.TrimRight(host, "/")
+	if slash := strings.IndexByte(host, '/'); slash >= 0 {
+		host = host[:slash]
+	}
+	return host
 }
 
 func resolveAgentNameForPR(proj *models.Project, t *models.Task) string {

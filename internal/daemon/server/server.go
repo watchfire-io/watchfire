@@ -408,6 +408,7 @@ func (s *Server) startEchoServer() {
 		cfg = models.NewIntegrationsConfig()
 	}
 	srv := echo.New(cfg.Inbound, log.Default())
+	registerInboundProviderHandlers(srv, cfg.Inbound)
 	ctx, cancel := context.WithCancel(context.Background())
 	s.echoServer = srv
 	s.echoCancel = cancel
@@ -416,6 +417,65 @@ func (s *Server) startEchoServer() {
 			log.Printf("ERROR: echo: %v", runErr)
 		}
 	}()
+}
+
+// registerInboundProviderHandlers wires the v8.x non-github.com
+// inbound webhook handlers (GitLab + Bitbucket) onto the Echo server.
+// Each handler is registered only when the inbound config carries the
+// corresponding secret reference — this keeps the surface to the
+// providers the user has actually configured and avoids a 401-flood
+// from a misrouted scanner.
+//
+// `Inbound.GitHost` selects which Git host this Watchfire is paired
+// with; the other handlers stay registered regardless because their
+// matching upstream may still legitimately POST (e.g. a project mixing
+// GitLab CI with a GitHub Actions runner). The host selector is
+// purely informational here — the v7.0 outbound `OpenPR` path consults
+// it to drive `gh --hostname`.
+func registerInboundProviderHandlers(srv *echo.Server, in models.InboundConfig) {
+	flush := newTaskFlusher()
+	if in.GitLabSecretRef != "" {
+		ref := in.GitLabSecretRef
+		gh := echo.NewGitLabHandler(echo.GitLabHandlerConfig{
+			ResolveSharedToken: echo.ResolveSharedTokenFromKeyring(func() (string, error) {
+				v, ok := config.LookupIntegrationSecret(ref)
+				if !ok {
+					return "", fmt.Errorf("gitlab shared token not in keyring")
+				}
+				return v, nil
+			}),
+			Idempotency: echo.NewCache(0, 0),
+			FlushTask:   flush,
+			RefundOnReplay: func(r *http.Request) {
+				srv.RefundRateLimit(r)
+			},
+			RecordDelivery: func() { srv.RecordDelivery("gitlab") },
+			Logger:         log.Default(),
+		})
+		srv.RegisterProvider(http.MethodPost, "/echo/gitlab/webhook", gh)
+		log.Printf("INFO: echo: gitlab webhook handler registered")
+	}
+	if in.BitbucketSecretRef != "" {
+		ref := in.BitbucketSecretRef
+		bh := echo.NewBitbucketHandler(echo.BitbucketHandlerConfig{
+			ResolveSecret: echo.ResolveSecretFromKeyring(func() (string, error) {
+				v, ok := config.LookupIntegrationSecret(ref)
+				if !ok {
+					return "", fmt.Errorf("bitbucket HMAC secret not in keyring")
+				}
+				return v, nil
+			}),
+			Idempotency: echo.NewCache(0, 0),
+			FlushTask:   flush,
+			RefundOnReplay: func(r *http.Request) {
+				srv.RefundRateLimit(r)
+			},
+			RecordDelivery: func() { srv.RecordDelivery("bitbucket") },
+			Logger:         log.Default(),
+		})
+		srv.RegisterProvider(http.MethodPost, "/echo/bitbucket/webhook", bh)
+		log.Printf("INFO: echo: bitbucket webhook handler registered")
+	}
 }
 
 // restartEchoServer tears down the running Echo listener and re-binds

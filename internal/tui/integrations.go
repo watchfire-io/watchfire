@@ -115,13 +115,22 @@ const (
 	inboundRowListenAddr
 	inboundRowPublicURL
 	inboundRowRateLimit
+	inboundRowGitHost          // v8.x — picker (github / github-enterprise / gitlab / bitbucket)
+	inboundRowGitHostBaseURL   // v8.x — non-cloud installations
 	inboundRowGitHubSecret
+	inboundRowGitLabSecret
+	inboundRowBitbucketSecret
 	inboundRowSlackSecret
 	inboundRowDiscordPubKey
 	inboundRowDiscordAppID
 	inboundRowDiscordBotToken
 	inboundRowCount
 )
+
+// inboundGitHostCycle is the round-robin order of `GitHost` values
+// pressed-Enter cycles through. Empty string maps to `github` for
+// display; that's why "github" appears first.
+var inboundGitHostCycle = []string{"github", "github-enterprise", "gitlab", "bitbucket"}
 
 type integrationsFormMode int
 
@@ -165,6 +174,10 @@ func (f *IntegrationsForm) LoadInbound(st *pb.InboundStatus) {
 			DiscordPublicKeySet:  cfg.GetDiscordPublicKeySet(),
 			DiscordBotTokenSet:   cfg.GetDiscordBotTokenSet(),
 			RateLimitPerMin:      cfg.GetRateLimitPerMin(),
+			GitHost:              cfg.GetGitHost(),
+			GitHostBaseUrl:       cfg.GetGitHostBaseUrl(),
+			GitlabSecretSet:      cfg.GetGitlabSecretSet(),
+			BitbucketSecretSet:   cfg.GetBitbucketSecretSet(),
 		}
 	}
 }
@@ -218,6 +231,13 @@ func (f *IntegrationsForm) StartInboundEdit() {
 		f.inboundDraft.Disabled = !f.inboundDraft.Disabled
 		return
 	}
+	if row == inboundRowGitHost {
+		// Cycle through the supported Git host values rather than open a
+		// textinput. Keeps the user's only valid options to the four the
+		// daemon actually wires up handlers for.
+		f.inboundDraft.GitHost = nextGitHost(f.inboundDraft.GetGitHost())
+		return
+	}
 	f.inboundEditing = true
 	f.inboundInput.Reset()
 	switch row {
@@ -230,6 +250,9 @@ func (f *IntegrationsForm) StartInboundEdit() {
 	case inboundRowRateLimit:
 		f.inboundInput.SetValue(strconv.Itoa(int(f.inboundDraft.GetRateLimitPerMin())))
 		f.inboundInput.Placeholder = "30 (req/min/IP, 0=default, -1=disable)"
+	case inboundRowGitHostBaseURL:
+		f.inboundInput.SetValue(f.inboundDraft.GetGitHostBaseUrl())
+		f.inboundInput.Placeholder = "https://github.example.com (Enterprise / self-hosted)"
 	case inboundRowDiscordAppID:
 		f.inboundInput.SetValue(f.inboundDraft.GetDiscordAppId())
 		f.inboundInput.Placeholder = "Discord application ID"
@@ -238,6 +261,22 @@ func (f *IntegrationsForm) StartInboundEdit() {
 		f.inboundInput.Placeholder = "Paste secret here (Enter to save)"
 	}
 	f.inboundInput.Focus()
+}
+
+// nextGitHost rotates through the supported Git host values for the
+// inboundRowGitHost picker. Empty input cycles to the first explicit
+// value so an unset field becomes "github" → "github-enterprise" →
+// "gitlab" → "bitbucket" → "github" on successive Enter presses.
+func nextGitHost(current string) string {
+	if current == "" {
+		current = inboundGitHostCycle[0]
+	}
+	for i, v := range inboundGitHostCycle {
+		if v == current {
+			return inboundGitHostCycle[(i+1)%len(inboundGitHostCycle)]
+		}
+	}
+	return inboundGitHostCycle[0]
 }
 
 // CancelInboundEdit aborts the in-progress edit and returns to selection
@@ -255,13 +294,7 @@ func (f *IntegrationsForm) CancelInboundEdit() {
 func (f *IntegrationsForm) CommitInboundEdit() *pb.InboundConfig {
 	value := strings.TrimSpace(f.inboundInput.Value())
 	row := inboundRow(f.inboundCursor)
-	out := &pb.InboundConfig{
-		ListenAddr:      f.inboundDraft.GetListenAddr(),
-		PublicUrl:       f.inboundDraft.GetPublicUrl(),
-		DiscordAppId:    f.inboundDraft.GetDiscordAppId(),
-		Disabled:        f.inboundDraft.GetDisabled(),
-		RateLimitPerMin: f.inboundDraft.GetRateLimitPerMin(),
-	}
+	out := f.snapshotInboundDraft()
 	switch row {
 	case inboundRowListenAddr:
 		out.ListenAddr = value
@@ -279,11 +312,18 @@ func (f *IntegrationsForm) CommitInboundEdit() *pb.InboundConfig {
 		}
 		out.RateLimitPerMin = int32(n)
 		f.inboundDraft.RateLimitPerMin = int32(n)
+	case inboundRowGitHostBaseURL:
+		out.GitHostBaseUrl = value
+		f.inboundDraft.GitHostBaseUrl = value
 	case inboundRowDiscordAppID:
 		out.DiscordAppId = value
 		f.inboundDraft.DiscordAppId = value
 	case inboundRowGitHubSecret:
 		out.GithubSecret = value
+	case inboundRowGitLabSecret:
+		out.GitlabSecret = value
+	case inboundRowBitbucketSecret:
+		out.BitbucketSecret = value
 	case inboundRowSlackSecret:
 		out.SlackSecret = value
 	case inboundRowDiscordPubKey:
@@ -299,17 +339,26 @@ func (f *IntegrationsForm) CommitInboundEdit() *pb.InboundConfig {
 	return out
 }
 
-// FlushInboundDraft returns a snapshot of the local draft for cases
-// where the user toggled the Enabled switch and wants to push the
-// change immediately (Tab on a toggle row triggers a save).
-func (f *IntegrationsForm) FlushInboundDraft() *pb.InboundConfig {
+// snapshotInboundDraft returns a copy of the inbound draft suitable for
+// SaveInboundConfig — preserves every non-secret field so a save targeted
+// at one row does not blank the others.
+func (f *IntegrationsForm) snapshotInboundDraft() *pb.InboundConfig {
 	return &pb.InboundConfig{
 		ListenAddr:      f.inboundDraft.GetListenAddr(),
 		PublicUrl:       f.inboundDraft.GetPublicUrl(),
 		DiscordAppId:    f.inboundDraft.GetDiscordAppId(),
 		Disabled:        f.inboundDraft.GetDisabled(),
 		RateLimitPerMin: f.inboundDraft.GetRateLimitPerMin(),
+		GitHost:         f.inboundDraft.GetGitHost(),
+		GitHostBaseUrl:  f.inboundDraft.GetGitHostBaseUrl(),
 	}
+}
+
+// FlushInboundDraft returns a snapshot of the local draft for cases
+// where the user toggled the Enabled switch and wants to push the
+// change immediately (Tab on a toggle row triggers a save).
+func (f *IntegrationsForm) FlushInboundDraft() *pb.InboundConfig {
+	return f.snapshotInboundDraft()
 }
 
 // Load populates the form from a freshly-fetched IntegrationsConfig.
@@ -738,9 +787,25 @@ func (f *IntegrationsForm) inboundRowDescriptors() []inboundRowDescriptor {
 		label: "Rate limit (per IP per min)",
 		value: rateLimitLabel(f.inboundDraft.GetRateLimitPerMin()),
 	}
+	rows[inboundRowGitHost] = inboundRowDescriptor{
+		label: "Git host",
+		value: gitHostLabel(f.inboundDraft.GetGitHost()),
+	}
+	rows[inboundRowGitHostBaseURL] = inboundRowDescriptor{
+		label: "Git host base URL",
+		value: orPlaceholder(f.inboundDraft.GetGitHostBaseUrl(), "(cloud default)"),
+	}
 	rows[inboundRowGitHubSecret] = inboundRowDescriptor{
 		label: "GitHub secret",
 		value: secretLabel(f.inboundDraft.GetGithubSecretSet(), f.lastDeliveryDisplay("github")),
+	}
+	rows[inboundRowGitLabSecret] = inboundRowDescriptor{
+		label: "GitLab token",
+		value: secretLabel(f.inboundDraft.GetGitlabSecretSet(), f.lastDeliveryDisplay("gitlab")),
+	}
+	rows[inboundRowBitbucketSecret] = inboundRowDescriptor{
+		label: "Bitbucket secret",
+		value: secretLabel(f.inboundDraft.GetBitbucketSecretSet(), f.lastDeliveryDisplay("bitbucket")),
 	}
 	rows[inboundRowSlackSecret] = inboundRowDescriptor{
 		label: "Slack signing secret",
@@ -761,6 +826,26 @@ func (f *IntegrationsForm) inboundRowDescriptors() []inboundRowDescriptor {
 	return rows
 }
 
+// gitHostLabel maps a `GitHost` enum value to a friendly display string.
+// Empty input renders as "github (default)" so the user knows the unset
+// state still routes to github.com.
+func gitHostLabel(v string) string {
+	switch v {
+	case "":
+		return "github (default)"
+	case "github":
+		return "github"
+	case "github-enterprise":
+		return "github-enterprise"
+	case "gitlab":
+		return "gitlab"
+	case "bitbucket":
+		return "bitbucket"
+	default:
+		return v
+	}
+}
+
 func (f *IntegrationsForm) lastDeliveryDisplay(provider string) string {
 	if f.inboundStatus == nil {
 		return ""
@@ -773,6 +858,10 @@ func (f *IntegrationsForm) lastDeliveryDisplay(provider string) string {
 		unix = f.inboundStatus.GetLastSlackDeliveryUnix()
 	case "discord":
 		unix = f.inboundStatus.GetLastDiscordDeliveryUnix()
+	case "gitlab":
+		unix = f.inboundStatus.GetLastGitlabDeliveryUnix()
+	case "bitbucket":
+		unix = f.inboundStatus.GetLastBitbucketDeliveryUnix()
 	}
 	if unix == 0 {
 		return ""

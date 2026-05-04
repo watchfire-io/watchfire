@@ -947,6 +947,21 @@ message InboundConfig {
   string discord_bot_token = 11;      // write-only; never returned
   bool disabled = 12;                 // master toggle (true = no listener)
   int32 rate_limit_per_min = 13;      // v8.x — per-IP token bucket; 0 = use default (30/min); negative = disable
+
+  // v8.x — Git host picker. Selects which non-github.com inbound webhook
+  // routes are registered (gitlab, bitbucket, github-enterprise) and
+  // drives the v7.0 outbound auto-PR path's `gh --hostname` flag for
+  // GitHub Enterprise. Empty = "github" (github.com), preserving v8.0
+  // behaviour. `git_host_base_url` is only consulted for non-cloud
+  // installations and stays empty for github.com / gitlab.com /
+  // bitbucket.org.
+  string git_host = 14;
+  string git_host_base_url = 15;
+
+  bool gitlab_secret_set = 16;
+  string gitlab_secret = 17;          // write-only; never returned
+  bool bitbucket_secret_set = 18;
+  string bitbucket_secret = 19;       // write-only; never returned
 }
 
 // InboundStatus (v8.0 Echo) is the response of GetInboundStatus and
@@ -968,6 +983,11 @@ message InboundStatus {
   // Populated by the daemon's auto-registrar; empty when the bot token
   // is not configured. The Settings UI lists each guild + ✓/✗ pill.
   repeated DiscordGuildRegistration discord_guilds = 10;
+
+  // v8.x Echo — last successful delivery timestamps for the non-github.com
+  // inbound webhook handlers. 0 = never seen this process lifetime.
+  int64 last_gitlab_delivery_unix = 11;
+  int64 last_bitbucket_delivery_unix = 12;
 }
 
 message GetInboundStatusRequest {
