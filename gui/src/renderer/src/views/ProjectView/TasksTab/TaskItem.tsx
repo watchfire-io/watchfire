@@ -93,7 +93,11 @@ export function TaskItem({ task, projectId }: Props) {
             className="shrink-0"
           />
         )}
-        <TaskStatusBadge status={task.status} success={task.success} />
+        <TaskStatusBadge
+          status={task.status}
+          success={task.success}
+          mergeFailureReason={task.mergeFailureReason}
+        />
 
         {/* Action buttons — visible on hover */}
         <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={(e) => e.stopPropagation()}>

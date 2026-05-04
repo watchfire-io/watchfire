@@ -10,10 +10,23 @@ export const DASHBOARD_FILTERS: DashboardFilter[] = [
   'has-ready'
 ]
 
-/** Project has at least one non-deleted task with `status === 'done' && success === false`. */
+/**
+ * Project has at least one non-deleted task in a "needs attention" state:
+ * either an agent-reported failure (`status === 'done' && success === false`)
+ * or a v5.0 post-task auto-merge failure (`mergeFailureReason` populated).
+ * Merge failures keep `success: true` because the agent's work is fine —
+ * only the merge into the default branch failed — so we have to consult
+ * `mergeFailureReason` explicitly. Without this the dashboard chip would
+ * stay dark on a silent run-all halt, which is exactly what v5.0 fixes.
+ */
 export function hasFailedTask(tasks: Task[] | undefined): boolean {
   if (!tasks) return false
-  return tasks.some((t) => t.status === 'done' && t.success === false && !t.deletedAt)
+  return tasks.some(
+    (t) =>
+      t.status === 'done' &&
+      !t.deletedAt &&
+      (t.success === false || (t.mergeFailureReason ?? '') !== '')
+  )
 }
 
 /** Project has at least one non-deleted task with `status === 'ready'`. */

@@ -118,6 +118,7 @@ message Task {
   google.protobuf.Timestamp updated_at = 15;
   optional google.protobuf.Timestamp deleted_at = 16;  // Soft delete
   string agent = 17;                            // Backend name override; empty = use project default
+  optional string merge_failure_reason = 18;    // v5.0 — populated when the post-task auto-merge failed (distinct from agent-reported failure_reason)
 }
 
 message TaskId {

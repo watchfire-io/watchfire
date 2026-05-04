@@ -25,17 +25,19 @@ type taskDoneFixture struct {
 	mergeCalled            int
 	removeCalled           int
 	notifyCalled           int
+	saveTaskCalled         int
 
-	openPRErr     error
-	mergeErr      error
-	mergeChanged  bool // first return of MergeWorktree
-	removeMerged  bool // captured from RemoveWorktree(_, _, merged)
-	notifications []notify.Notification
-	openPROptions gitpkg.OpenPROptions
-	openPRResult  *gitpkg.PRResult
-	autoPREnabled bool
-	githubScopes  []string
-	taskCompleted *time.Time
+	openPRErr      error
+	mergeErr       error
+	mergeChanged   bool // first return of MergeWorktree
+	removeMerged   bool // captured from RemoveWorktree(_, _, merged)
+	notifications  []notify.Notification
+	openPROptions  gitpkg.OpenPROptions
+	openPRResult   *gitpkg.PRResult
+	autoPREnabled  bool
+	githubScopes   []string
+	taskCompleted  *time.Time
+	savedTasks     []*models.Task // captured snapshots of every SaveTask call
 }
 
 func (f *taskDoneFixture) fns() taskDoneFns {
@@ -67,6 +69,14 @@ func (f *taskDoneFixture) fns() taskDoneFns {
 				Success:            &success,
 				CompletedAt:        completedAt,
 			}, nil
+		},
+		SaveTask: func(_ string, t *models.Task) error {
+			f.saveTaskCalled++
+			// Snapshot a copy so subsequent in-place mutations don't
+			// invalidate the assertion record.
+			snap := *t
+			f.savedTasks = append(f.savedTasks, &snap)
+			return nil
 		},
 		LoadIntegrations: func() (*models.IntegrationsConfig, error) {
 			f.loadIntegrationsCalled++
@@ -125,8 +135,8 @@ func TestHandleTaskDoneAutoPRHappyPath(t *testing.T) {
 	f := &taskDoneFixture{autoPREnabled: true}
 
 	cont := handleTaskDoneWith(f.fns(), "/proj", 42, "/wt", nil)
-	if !cont {
-		t.Errorf("handleTaskDoneWith returned false, want true (continue chaining)")
+	if !cont.ShouldContinueChain() {
+		t.Errorf("handleTaskDoneWith returned outcome=%v, want TaskDoneOK", cont.Outcome)
 	}
 	if f.openPRCalled != 1 {
 		t.Errorf("OpenPR called %d times, want 1", f.openPRCalled)
@@ -182,8 +192,8 @@ func TestHandleTaskDoneAutoPRGHUnavailableFallsBack(t *testing.T) {
 	}
 
 	cont := handleTaskDoneWith(f.fns(), "/proj", 42, "/wt", nil)
-	if !cont {
-		t.Errorf("returned false, want true (silent-merge fallback succeeded)")
+	if !cont.ShouldContinueChain() {
+		t.Errorf("returned outcome=%v, want TaskDoneOK (silent-merge fallback succeeded)", cont.Outcome)
 	}
 	if f.openPRCalled != 1 {
 		t.Errorf("OpenPR called %d times, want 1", f.openPRCalled)
@@ -224,8 +234,8 @@ func TestHandleTaskDoneAutoPRDisabledUnchanged(t *testing.T) {
 	f := &taskDoneFixture{autoPREnabled: false, mergeChanged: true}
 
 	cont := handleTaskDoneWith(f.fns(), "/proj", 42, "/wt", nil)
-	if !cont {
-		t.Errorf("returned false, want true")
+	if !cont.ShouldContinueChain() {
+		t.Errorf("returned outcome=%v, want TaskDoneOK", cont.Outcome)
 	}
 	if f.openPRCalled != 0 {
 		t.Errorf("OpenPR called %d times, want 0 (auto-PR disabled)", f.openPRCalled)
@@ -254,14 +264,98 @@ func TestHandleTaskDoneAutoPRPushFailureFallsBack(t *testing.T) {
 		mergeChanged:  true,
 	}
 	cont := handleTaskDoneWith(f.fns(), "/proj", 42, "/wt", nil)
-	if !cont {
-		t.Errorf("returned false, want true (fallback merge succeeded)")
+	if !cont.ShouldContinueChain() {
+		t.Errorf("returned outcome=%v, want TaskDoneOK (fallback merge succeeded)", cont.Outcome)
 	}
 	if f.openPRCalled != 1 || f.mergeCalled != 1 {
 		t.Errorf("expected OpenPR=1 + Merge=1; got OpenPR=%d Merge=%d", f.openPRCalled, f.mergeCalled)
 	}
 	if !strings.Contains(logBuf.String(), "ERROR [auto-pr]") {
 		t.Errorf("expected ERROR log line for push failure; got:\n%s", logBuf.String())
+	}
+}
+
+// TestHandleTaskDoneSilentMergeFailurePopulatesField — v5.0 spec: when the
+// silent auto-merge fails, the chain halts (the old `false`-equivalent
+// outcome) AND the merge error is persisted on the task as
+// `merge_failure_reason`. The agent-reported `failure_reason` stays empty
+// so the GUI / TUI can render the two cases distinctly. The worktree is
+// left intact (RemoveWorktree must NOT be called) so the user can retry
+// the merge by hand.
+func TestHandleTaskDoneSilentMergeFailurePopulatesField(t *testing.T) {
+	resetGHFallbackWarnedForTest()
+	f := &taskDoneFixture{
+		autoPREnabled: false,
+		mergeErr:      errors.New("merge failed: CONFLICT in foo.go"),
+	}
+
+	cont := handleTaskDoneWith(f.fns(), "/proj", 42, "/wt", nil)
+	if cont.Outcome != TaskDoneMergeFailed {
+		t.Errorf("returned outcome=%v, want TaskDoneMergeFailed", cont.Outcome)
+	}
+	if cont.ShouldContinueChain() {
+		t.Errorf("ShouldContinueChain()=true, want false (chain must halt on merge failure)")
+	}
+	if !strings.Contains(cont.Reason, "CONFLICT in foo.go") {
+		t.Errorf("Reason=%q, want it to carry the merge error string", cont.Reason)
+	}
+	if f.removeCalled != 0 {
+		t.Errorf("RemoveWorktree called %d times, want 0 (worktree must survive a failed merge so the user can retry)", f.removeCalled)
+	}
+	if f.saveTaskCalled != 1 {
+		t.Fatalf("SaveTask called %d times, want 1 (must persist merge_failure_reason)", f.saveTaskCalled)
+	}
+	saved := f.savedTasks[0]
+	if !strings.Contains(saved.MergeFailureReason, "CONFLICT in foo.go") {
+		t.Errorf("saved task MergeFailureReason=%q, want the merge error", saved.MergeFailureReason)
+	}
+	if saved.FailureReason != "" {
+		t.Errorf("saved task FailureReason=%q, want empty (merge failure is not an agent failure)", saved.FailureReason)
+	}
+	if saved.Success == nil || !*saved.Success {
+		t.Errorf("saved task Success=%v, want true (the agent's work is fine; only the merge failed)", saved.Success)
+	}
+}
+
+// TestEmitTaskDoneFailureFiresKindTaskFailed — the manager-side helper that
+// runs after a TaskDoneMergeFailed outcome must emit a Pulse-shaped
+// TASK_FAILED notification with the v5.0 spec's title pattern. Bus
+// subscribers see the event and the headless JSONL fallback is appended
+// regardless. The test is independent of HandleTaskDone — that one
+// exercises the persistence side; this one exercises the notification
+// side.
+func TestEmitTaskDoneFailureFiresKindTaskFailed(t *testing.T) {
+	bus := notify.NewBus()
+	ch, cancel := bus.Subscribe()
+	defer cancel()
+
+	// Isolate HOME so AppendLogLine doesn't pollute the user's real
+	// ~/.watchfire/logs/. config.GlobalLogsDir derives from os.UserHomeDir
+	// which honours $HOME on darwin/linux. The helper creates the dir.
+	t.Setenv("HOME", t.TempDir())
+
+	emitTaskDoneFailure(bus, "proj-1", t.TempDir(), "demo", 42, "merge failed: CONFLICT in foo.go")
+
+	select {
+	case got := <-ch:
+		if got.Kind != notify.KindTaskFailed {
+			t.Errorf("notification kind=%s, want TASK_FAILED", got.Kind)
+		}
+		if got.ProjectID != "proj-1" {
+			t.Errorf("notification project=%q, want proj-1", got.ProjectID)
+		}
+		if got.TaskNumber != 42 {
+			t.Errorf("notification task_number=%d, want 42", got.TaskNumber)
+		}
+		want := "demo — Auto-merge failed for task #0042"
+		if got.Title != want {
+			t.Errorf("notification title=%q, want %q", got.Title, want)
+		}
+		if !strings.Contains(got.Body, "CONFLICT in foo.go") {
+			t.Errorf("notification body=%q, want the merge error", got.Body)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("notification not emitted within 2s")
 	}
 }
 
@@ -275,8 +369,8 @@ func TestHandleTaskDoneAutoPRRespectsProjectScopes(t *testing.T) {
 		mergeChanged:  true,
 	}
 	cont := handleTaskDoneWith(f.fns(), "/proj", 42, "/wt", nil)
-	if !cont {
-		t.Errorf("returned false, want true")
+	if !cont.ShouldContinueChain() {
+		t.Errorf("returned outcome=%v, want TaskDoneOK", cont.Outcome)
 	}
 	if f.openPRCalled != 0 {
 		t.Errorf("OpenPR called %d times, want 0 (project not in scope list)", f.openPRCalled)

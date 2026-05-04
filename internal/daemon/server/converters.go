@@ -55,6 +55,9 @@ func modelToProtoTask(t *models.Task, projectID string) *pb.Task {
 	if t.FailureReason != "" {
 		protoTask.FailureReason = &t.FailureReason
 	}
+	if t.MergeFailureReason != "" {
+		protoTask.MergeFailureReason = &t.MergeFailureReason
+	}
 	if t.StartedAt != nil {
 		protoTask.StartedAt = timestamppb.New(*t.StartedAt)
 	}

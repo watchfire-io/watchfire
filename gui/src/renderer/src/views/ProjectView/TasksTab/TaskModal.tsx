@@ -146,7 +146,30 @@ export function TaskModal({ open, onClose, projectId, task }: Props) {
       }
     >
       {tab === 'inspect' && task ? (
-        <InspectTab projectId={projectId} taskNumber={task.taskNumber} />
+        <>
+          {(task.mergeFailureReason ?? '') !== '' && (
+            <div className="mx-4 mt-4 mb-2 rounded-[var(--wf-radius-md)] border border-red-500/30 bg-red-900/20 p-3 text-sm">
+              <div className="font-medium text-red-300">Auto-merge failed</div>
+              <div className="mt-1 font-mono text-xs text-red-200">
+                {task.mergeFailureReason}
+              </div>
+              <div className="mt-2 text-xs text-[var(--wf-text-muted)]">
+                The agent finished cleanly; only the merge into the default
+                branch failed. The worktree is still on disk so you can
+                resolve the conflict and merge by hand.
+              </div>
+            </div>
+          )}
+          {(task.failureReason ?? '') !== '' && (
+            <div className="mx-4 mt-4 mb-2 rounded-[var(--wf-radius-md)] border border-red-500/30 bg-red-900/20 p-3 text-sm">
+              <div className="font-medium text-red-300">Task failed</div>
+              <div className="mt-1 text-xs text-[var(--wf-text-secondary)]">
+                {task.failureReason}
+              </div>
+            </div>
+          )}
+          <InspectTab projectId={projectId} taskNumber={task.taskNumber} />
+        </>
       ) : (
         <div className="space-y-4">
           <Input

@@ -1191,8 +1191,9 @@ type Task struct {
 	StartedAt          *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=started_at,json=startedAt,proto3,oneof" json:"started_at,omitempty"`
 	CompletedAt        *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=completed_at,json=completedAt,proto3,oneof" json:"completed_at,omitempty"`
 	UpdatedAt          *timestamppb.Timestamp `protobuf:"bytes,15,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
-	DeletedAt          *timestamppb.Timestamp `protobuf:"bytes,16,opt,name=deleted_at,json=deletedAt,proto3,oneof" json:"deleted_at,omitempty"` // Soft delete
-	Agent              string                 `protobuf:"bytes,17,opt,name=agent,proto3" json:"agent,omitempty"`                                // Backend name override; empty = use project default
+	DeletedAt          *timestamppb.Timestamp `protobuf:"bytes,16,opt,name=deleted_at,json=deletedAt,proto3,oneof" json:"deleted_at,omitempty"`                              // Soft delete
+	Agent              string                 `protobuf:"bytes,17,opt,name=agent,proto3" json:"agent,omitempty"`                                                             // Backend name override; empty = use project default
+	MergeFailureReason *string                `protobuf:"bytes,18,opt,name=merge_failure_reason,json=mergeFailureReason,proto3,oneof" json:"merge_failure_reason,omitempty"` // v5.0 — populated when the post-task auto-merge failed (distinct from agent-reported failure_reason)
 	unknownFields      protoimpl.UnknownFields
 	sizeCache          protoimpl.SizeCache
 }
@@ -1342,6 +1343,13 @@ func (x *Task) GetDeletedAt() *timestamppb.Timestamp {
 func (x *Task) GetAgent() string {
 	if x != nil {
 		return x.Agent
+	}
+	return ""
+}
+
+func (x *Task) GetMergeFailureReason() string {
+	if x != nil && x.MergeFailureReason != nil {
+		return *x.MergeFailureReason
 	}
 	return ""
 }
@@ -7843,7 +7851,7 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\bis_dirty\x18\x03 \x01(\bR\aisDirty\x12+\n" +
 	"\x11uncommitted_count\x18\x04 \x01(\x05R\x10uncommittedCount\x12\x14\n" +
 	"\x05ahead\x18\x05 \x01(\x05R\x05ahead\x12\x16\n" +
-	"\x06behind\x18\x06 \x01(\x05R\x06behind\"\x82\x06\n" +
+	"\x06behind\x18\x06 \x01(\x05R\x06behind\"\xd2\x06\n" +
 	"\x04Task\x12\x17\n" +
 	"\atask_id\x18\x01 \x01(\tR\x06taskId\x12\x1f\n" +
 	"\vtask_number\x18\x02 \x01(\x05R\n" +
@@ -7868,13 +7876,15 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"updated_at\x18\x0f \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\x12>\n" +
 	"\n" +
 	"deleted_at\x18\x10 \x01(\v2\x1a.google.protobuf.TimestampH\x04R\tdeletedAt\x88\x01\x01\x12\x14\n" +
-	"\x05agent\x18\x11 \x01(\tR\x05agentB\n" +
+	"\x05agent\x18\x11 \x01(\tR\x05agent\x125\n" +
+	"\x14merge_failure_reason\x18\x12 \x01(\tH\x05R\x12mergeFailureReason\x88\x01\x01B\n" +
 	"\n" +
 	"\b_successB\x11\n" +
 	"\x0f_failure_reasonB\r\n" +
 	"\v_started_atB\x0f\n" +
 	"\r_completed_atB\r\n" +
-	"\v_deleted_at\"t\n" +
+	"\v_deleted_atB\x17\n" +
+	"\x15_merge_failure_reason\"t\n" +
 	"\x06TaskId\x12*\n" +
 	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\x12\x1d\n" +
 	"\n" +

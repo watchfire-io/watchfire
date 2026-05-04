@@ -22,6 +22,7 @@ import (
 type taskDoneFns struct {
 	LoadProject      func(projectPath string) (*models.Project, error)
 	LoadTask         func(projectPath string, taskNumber int) (*models.Task, error)
+	SaveTask         func(projectPath string, task *models.Task) error
 	LoadIntegrations func() (*models.IntegrationsConfig, error)
 	OpenPR           func(ctx context.Context, opts gitpkg.OpenPROptions) (*gitpkg.PRResult, error)
 	MergeWorktree    func(projectPath string, taskNumber int) (bool, error)
@@ -32,6 +33,7 @@ type taskDoneFns struct {
 var defaultTaskDoneFns = taskDoneFns{
 	LoadProject:      config.LoadProject,
 	LoadTask:         config.LoadTask,
+	SaveTask:         config.SaveTask,
 	LoadIntegrations: config.LoadIntegrations,
 	OpenPR:           gitpkg.OpenPR,
 	MergeWorktree:    MergeWorktree,
@@ -63,42 +65,54 @@ func resetGHFallbackWarnedForTest() { ghFallbackWarned = sync.Map{} }
 //  2. Silent merge — the existing v6.x flow: `git merge --no-ff` the task
 //     branch into the project's default branch, then remove the worktree.
 //
-// Returns true to continue chaining (start-all / wildfire), false to stop.
+// Returns a TaskDoneResult — `Outcome == TaskDoneOK` means chain may
+// proceed; `TaskDoneMergeFailed` halts the run-all queue and surfaces the
+// merge error string in `Reason` so the manager can fire a TASK_FAILED
+// notification (v5.0 spec — run-all does not silently halt on a merge
+// failure).
 //
 // On any auto-PR failure (`gh` missing, non-github origin, push reject, gh
 // api error) the function logs loudly then falls through to silent merge so
 // the user's work never strands inside an unmerged worktree.
-func HandleTaskDone(projectPath string, taskNumber int, worktreePath string, bus *notify.Bus) bool {
+func HandleTaskDone(projectPath string, taskNumber int, worktreePath string, bus *notify.Bus) TaskDoneResult {
 	return handleTaskDoneWith(defaultTaskDoneFns, projectPath, taskNumber, worktreePath, bus)
 }
 
-func handleTaskDoneWith(fns taskDoneFns, projectPath string, taskNumber int, worktreePath string, bus *notify.Bus) bool {
+func handleTaskDoneWith(fns taskDoneFns, projectPath string, taskNumber int, worktreePath string, bus *notify.Bus) TaskDoneResult {
 	if taskNumber == 0 || worktreePath == "" {
 		log.Printf("[merge] Skipping merge: taskNumber=%d worktreePath=%q", taskNumber, worktreePath)
-		return true
+		return TaskDoneResult{Outcome: TaskDoneOK}
 	}
 	proj, err := fns.LoadProject(projectPath)
 	if err != nil {
+		// Pre-merge load failures keep the legacy halt-the-chain semantics
+		// (the old `false` return). Surface them as a merge failure so the
+		// notification path is exercised — silent halts are exactly what
+		// v5.0 fixes.
 		log.Printf("[merge] Failed to load project for task #%04d: %v", taskNumber, err)
-		return false
+		return TaskDoneResult{Outcome: TaskDoneMergeFailed, Reason: fmt.Sprintf("load project: %v", err)}
 	}
 	t, err := fns.LoadTask(projectPath, taskNumber)
 	if err != nil || t == nil {
 		log.Printf("[merge] Failed to load task #%04d: %v", taskNumber, err)
-		return false
+		reason := "task not found"
+		if err != nil {
+			reason = fmt.Sprintf("load task: %v", err)
+		}
+		return TaskDoneResult{Outcome: TaskDoneMergeFailed, Reason: reason}
 	}
 	if t.Status != models.TaskStatusDone {
 		log.Printf("[merge] Task #%04d not done (status: %s), skipping merge", taskNumber, t.Status)
-		return true
+		return TaskDoneResult{Outcome: TaskDoneOK}
 	}
 	log.Printf("[merge] Task #%04d done, deciding merge path (auto_merge=%v, auto_delete=%v)",
 		taskNumber, proj.AutoMerge, proj.AutoDeleteBranch)
 
 	if proj.AutoMerge && tryAutoPR(fns, proj, t, projectPath, taskNumber, bus) {
-		return true
+		return TaskDoneResult{Outcome: TaskDoneOK}
 	}
 
-	return runSilentMerge(fns, proj, projectPath, taskNumber)
+	return runSilentMerge(fns, proj, t, projectPath, taskNumber)
 }
 
 // tryAutoPR returns true when the auto-PR flow took ownership of the merge
@@ -187,8 +201,9 @@ func emitPROpenedNotification(fns taskDoneFns, bus *notify.Bus, proj *models.Pro
 	}
 }
 
-func runSilentMerge(fns taskDoneFns, proj *models.Project, projectPath string, taskNumber int) bool {
+func runSilentMerge(fns taskDoneFns, proj *models.Project, t *models.Task, projectPath string, taskNumber int) TaskDoneResult {
 	var merged bool
+	var mergeReason string
 	mergeFailed := false
 	if proj.AutoMerge {
 		var mergeErr error
@@ -197,6 +212,7 @@ func runSilentMerge(fns taskDoneFns, proj *models.Project, projectPath string, t
 		case mergeErr != nil:
 			log.Printf("[merge] Auto-merge failed for task #%04d: %v", taskNumber, mergeErr)
 			mergeFailed = true
+			mergeReason = mergeErr.Error()
 		case merged:
 			log.Printf("[merge] Auto-merged task #%04d into current branch", taskNumber)
 		default:
@@ -210,7 +226,22 @@ func runSilentMerge(fns taskDoneFns, proj *models.Project, projectPath string, t
 			log.Printf("[merge] Removed worktree for task #%04d", taskNumber)
 		}
 	}
-	return !mergeFailed
+	if !mergeFailed {
+		return TaskDoneResult{Outcome: TaskDoneOK}
+	}
+
+	// Persist the merge-failure reason on the task YAML so the GUI / TUI can
+	// distinguish a merge failure (success: true + merge_failure_reason) from
+	// an agent-reported failure (success: false + failure_reason). The
+	// worktree is left intact so the user can retry the merge by hand.
+	if t != nil && fns.SaveTask != nil {
+		t.MergeFailureReason = mergeReason
+		t.UpdatedAt = time.Now().UTC()
+		if err := fns.SaveTask(projectPath, t); err != nil {
+			log.Printf("[merge] Failed to persist merge_failure_reason for task #%04d: %v", taskNumber, err)
+		}
+	}
+	return TaskDoneResult{Outcome: TaskDoneMergeFailed, Reason: mergeReason}
 }
 
 // enterpriseHostnameFor returns the hostname for GitHub Enterprise auto-PR

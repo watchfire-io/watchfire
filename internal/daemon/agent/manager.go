@@ -98,9 +98,9 @@ type Manager struct {
 	taskRestarts   map[string]int           // keyed by ProjectID — consecutive restarts of the same task
 	onChangeFn     func()                   // called when agent state changes (for tray updates)
 	nextTaskFn     func(projectID, projectPath string, mode Mode, phase WildfirePhase, rows, cols int) (*StartOptions, error)
-	onTaskDoneFn   func(projectPath string, taskNumber int, worktreePath string) bool // called after agent exits for a task; returns true to continue chaining
-	watchProjectFn func(projectID, projectPath string)                                // called to ensure project watcher is active
-	notifyBus      *notify.Bus                                                        // optional; nil disables in-process fan-out (headless log file is still written)
+	onTaskDoneFn   func(projectPath string, taskNumber int, worktreePath string) TaskDoneResult // v5.0 — structured outcome; chain advances iff TaskDoneOK
+	watchProjectFn func(projectID, projectPath string)                                          // called to ensure project watcher is active
+	notifyBus      *notify.Bus                                                                  // optional; nil disables in-process fan-out (headless log file is still written)
 }
 
 // NewManager creates a new agent manager.
@@ -127,8 +127,12 @@ func (m *Manager) SetNextTaskFn(fn func(projectID, projectPath string, mode Mode
 }
 
 // SetOnTaskDoneFn sets a callback invoked after an agent exits for a task.
-// Used for git merge + worktree cleanup. Returns true if chaining should continue.
-func (m *Manager) SetOnTaskDoneFn(fn func(projectPath string, taskNumber int, worktreePath string) bool) {
+// Used for git merge + worktree cleanup. The returned TaskDoneResult.Outcome
+// drives chain control (only TaskDoneOK advances the run-all / wildfire
+// queue); TaskDoneMergeFailed additionally surfaces a TASK_FAILED-shaped
+// notification through emitTaskDoneFailure so a silent halt is no longer
+// possible (v5.0 spec — "Run-all does not silently halt on a merge failure").
+func (m *Manager) SetOnTaskDoneFn(fn func(projectPath string, taskNumber int, worktreePath string) TaskDoneResult) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.onTaskDoneFn = fn
@@ -424,8 +428,14 @@ func (m *Manager) monitorProcess(projectID string, proc *Process) {
 	// Persist scrollback to log file
 	m.writeSessionLog(ag, proc)
 
-	// Run post-task cleanup (merge + worktree removal) for any mode with a task
-	taskDoneOK := true
+	// Run post-task cleanup (merge + worktree removal) for any mode with a task.
+	// v5.0 — onTaskDoneFn now returns a structured TaskDoneResult so
+	// monitorProcess can distinguish a clean merge from a silent-halting
+	// merge failure. TaskDoneMergeFailed still halts the chain (the user
+	// must clean up `main` manually) but additionally fires a TASK_FAILED
+	// notification through emitTaskDoneFailure — without that the dashboard
+	// would have no signal that the run-all queue stopped.
+	taskDoneResult := TaskDoneResult{Outcome: TaskDoneOK}
 	if ag.TaskNumber > 0 && m.onTaskDoneFn != nil {
 		log.Printf("[chain] Running onTaskDoneFn for task #%04d (mode=%s)", ag.TaskNumber, ag.Mode)
 		taskDoneFn := m.onTaskDoneFn
@@ -433,8 +443,8 @@ func (m *Manager) monitorProcess(projectID string, proc *Process) {
 		projPath := ag.ProjectPath
 		wtPath := ag.WorktreePath
 		m.mu.Unlock()
-		taskDoneOK = taskDoneFn(projPath, taskNum, wtPath)
-		log.Printf("[chain] onTaskDoneFn returned taskDoneOK=%v for task #%04d", taskDoneOK, taskNum)
+		taskDoneResult = taskDoneFn(projPath, taskNum, wtPath)
+		log.Printf("[chain] onTaskDoneFn returned outcome=%v reason=%q for task #%04d", taskDoneResult.Outcome, taskDoneResult.Reason, taskNum)
 		m.mu.Lock()
 		// Re-check agent is still ours after releasing lock
 		if curr, ok := m.agents[projectID]; !ok || curr.Process != proc {
@@ -444,8 +454,19 @@ func (m *Manager) monitorProcess(projectID string, proc *Process) {
 		}
 	}
 
+	// Surface a merge-failure as a TASK_FAILED-shaped notification so the
+	// run-all halt is never silent. The v4.0 Beacon dashboard "needs
+	// attention" chip already reacts to TASK_FAILED notifications fanned
+	// out via the Pulse bus; adding the chip's task-state coupling
+	// (mergeFailureReason as an additional flag in hasFailedTask) is the
+	// indirect-coupling story documented in lib/dashboard-filters.ts.
+	if taskDoneResult.Outcome == TaskDoneMergeFailed {
+		emitTaskDoneFailure(m.notifyBus, ag.ProjectID, ag.ProjectPath, ag.ProjectName, ag.TaskNumber, taskDoneResult.Reason)
+	}
+
 	// Before chaining, check if there's an active issue (auth error, rate limit)
 	hasIssue := proc.GetIssue() != nil
+	taskDoneOK := taskDoneResult.ShouldContinueChain()
 
 	log.Printf("[chain] Decision: taskDoneOK=%v userStopped=%v hasIssue=%v mode=%s nextTaskFn=%v",
 		taskDoneOK, ag.userStopped, hasIssue, ag.Mode, m.nextTaskFn != nil)
