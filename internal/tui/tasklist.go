@@ -345,9 +345,15 @@ func (tl *TaskList) View(width int) string {
 				style = taskReadyStyle
 			}
 		case "done":
-			if t.Success != nil && *t.Success {
+			switch {
+			case t.GetMergeFailureReason() != "":
+				// v5.0 — merge failure is rendered with the same red style
+				// as an agent failure; the badge ("[!]") + the detail view
+				// reason text disambiguate the two.
+				style = taskFailedStyle
+			case t.Success != nil && *t.Success:
 				style = taskDoneStyle
-			} else {
+			default:
 				style = taskFailedStyle
 			}
 		default:
@@ -383,10 +389,17 @@ func (tl *TaskList) taskBadge(t *pb.Task) string {
 		}
 		return taskReadyStyle.Render("[R]")
 	case "done":
-		if t.Success != nil && *t.Success {
+		switch {
+		case t.GetMergeFailureReason() != "":
+			// v5.0 — distinct glyph for "agent finished, merge failed" so a
+			// silent run-all halt is visible at a glance from the task
+			// list.
+			return taskFailedStyle.Render("[!]")
+		case t.Success != nil && *t.Success:
 			return taskDoneStyle.Render("[✓]")
+		default:
+			return taskFailedStyle.Render("[✗]")
 		}
-		return taskFailedStyle.Render("[✗]")
 	}
 	return "[ ]"
 }

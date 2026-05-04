@@ -119,8 +119,11 @@ func New(port int) (*Server, error) {
 	// task branch is pushed and a PR is opened via `gh api` instead of being
 	// merged silently. See `internal/daemon/agent/taskdone.go` for the
 	// decision logic and the silent-merge fallback semantics.
-	// Returns true if chaining should continue, false to stop (e.g. merge conflict).
-	agentMgr.SetOnTaskDoneFn(func(projectPath string, taskNumber int, worktreePath string) bool {
+	// v5.0 — returns a TaskDoneResult; chaining advances iff Outcome ==
+	// TaskDoneOK. A TaskDoneMergeFailed outcome triggers
+	// emitTaskDoneFailure in the manager so the dashboard "needs attention"
+	// chip and the Pulse notification path both surface a stalled run-all.
+	agentMgr.SetOnTaskDoneFn(func(projectPath string, taskNumber int, worktreePath string) agent.TaskDoneResult {
 		return agent.HandleTaskDone(projectPath, taskNumber, worktreePath, notifyBus)
 	})
 

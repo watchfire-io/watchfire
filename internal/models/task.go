@@ -22,10 +22,11 @@ type Task struct {
 	Prompt             string     `yaml:"prompt"`
 	AcceptanceCriteria string     `yaml:"acceptance_criteria,omitempty"`
 	Agent              string     `yaml:"agent,omitempty"`          // Backend name override; empty = use project default
-	Status             TaskStatus `yaml:"status"`                   // draft | ready | done
-	Success            *bool      `yaml:"success,omitempty"`        // Only when status=done
-	FailureReason      string     `yaml:"failure_reason,omitempty"` // Only when success=false
-	Position           int        `yaml:"position"`                 // Display/work ordering
+	Status             TaskStatus `yaml:"status"`                         // draft | ready | done
+	Success            *bool      `yaml:"success,omitempty"`              // Only when status=done
+	FailureReason      string     `yaml:"failure_reason,omitempty"`       // Only when success=false (agent reported)
+	MergeFailureReason string     `yaml:"merge_failure_reason,omitempty"` // v5.0 — populated when the post-task auto-merge fails (success can stay true; the agent's work is fine but main is dirty / conflicted)
+	Position           int        `yaml:"position"`                       // Display/work ordering
 	AgentSessions      int        `yaml:"agent_sessions"`
 	CreatedAt          time.Time  `yaml:"created_at"`
 	StartedAt          *time.Time `yaml:"started_at,omitempty"`   // When agent first started

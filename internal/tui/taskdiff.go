@@ -38,6 +38,12 @@ type taskDiffState struct {
 	FilterMode  bool
 	Loading     bool
 	scrollFiles int
+	// v5.0 — surface the agent-reported failure reason and the post-task
+	// merge-failure reason as distinct rows above the diff body. Populated
+	// from the selected task at overlay-open time so a stale merge_failure
+	// entry can't outlive the field on disk.
+	FailureReason      string
+	MergeFailureReason string
 }
 
 // TaskDiffLoadedMsg is dispatched when the daemon GetTaskDiff RPC returns.
@@ -169,9 +175,11 @@ func (m *Model) openTaskDiffOverlay() tea.Cmd {
 		return nil
 	}
 	m.taskDiff = taskDiffState{
-		TaskNumber: t.TaskNumber,
-		TaskTitle:  t.Title,
-		Loading:    true,
+		TaskNumber:         t.TaskNumber,
+		TaskTitle:          t.Title,
+		Loading:            true,
+		FailureReason:      t.GetFailureReason(),
+		MergeFailureReason: t.GetMergeFailureReason(),
 	}
 	m.activeOverlay = overlayTaskDiff
 	if m.conn == nil {
@@ -192,7 +200,15 @@ func renderTaskDiffOverlay(s taskDiffState, width, height int) string {
 	header := taskDiffHeaderLine(s)
 	statusLine := taskDiffStatusLine(s)
 
+	// v5.0 — pre-body banner for merge-failure / agent-failure reasons.
+	// Empty string when the task succeeded cleanly; the layout collapses
+	// gracefully in that case.
+	failureBanner := taskDiffFailureBanner(s, width-4)
+
 	bodyHeight := height - 6 // borders, header, status
+	if failureBanner != "" {
+		bodyHeight -= 2 // banner + spacing line
+	}
 	if bodyHeight < 6 {
 		bodyHeight = 6
 	}
@@ -232,7 +248,11 @@ func renderTaskDiffOverlay(s taskDiffState, width, height int) string {
 		body = lipgloss.JoinHorizontal(lipgloss.Top, left, separator(bodyHeight), right)
 	}
 
-	parts := []string{header, "", body, "", statusLine}
+	parts := []string{header, ""}
+	if failureBanner != "" {
+		parts = append(parts, failureBanner, "")
+	}
+	parts = append(parts, body, "", statusLine)
 	content := lipgloss.JoinVertical(lipgloss.Left, parts...)
 
 	box := lipgloss.NewStyle().
@@ -242,6 +262,29 @@ func renderTaskDiffOverlay(s taskDiffState, width, height int) string {
 		Width(width)
 
 	return box.Render(content)
+}
+
+// taskDiffFailureBanner renders an inline "Merge failed:" / "Failed:" row
+// above the diff body when the task carries a v5.0 merge-failure reason or
+// an agent-reported failure reason. Returns the empty string when the task
+// succeeded cleanly so callers can drop the banner row entirely.
+func taskDiffFailureBanner(s taskDiffState, width int) string {
+	if s.MergeFailureReason == "" && s.FailureReason == "" {
+		return ""
+	}
+	style := lipgloss.NewStyle().Foreground(colorRed).Bold(true)
+	dim := lipgloss.NewStyle().Foreground(colorDim)
+	if s.MergeFailureReason != "" {
+		// Merge failure takes precedence — the agent's work is fine; only
+		// the merge couldn't land. The worktree is still on disk for the
+		// user to retry by hand.
+		header := style.Render("Merge failed:")
+		body := dim.Render(s.MergeFailureReason)
+		return lipgloss.NewStyle().Width(width).Render(header + " " + body)
+	}
+	header := style.Render("Failed:")
+	body := dim.Render(s.FailureReason)
+	return lipgloss.NewStyle().Width(width).Render(header + " " + body)
 }
 
 func taskDiffHeaderLine(s taskDiffState) string {
