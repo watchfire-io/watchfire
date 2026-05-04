@@ -6580,8 +6580,21 @@ type InboundConfig struct {
 	DiscordBotToken     string                 `protobuf:"bytes,11,opt,name=discord_bot_token,json=discordBotToken,proto3" json:"discord_bot_token,omitempty"`    // write-only; never returned
 	Disabled            bool                   `protobuf:"varint,12,opt,name=disabled,proto3" json:"disabled,omitempty"`                                          // master toggle (true = no listener)
 	RateLimitPerMin     int32                  `protobuf:"varint,13,opt,name=rate_limit_per_min,json=rateLimitPerMin,proto3" json:"rate_limit_per_min,omitempty"` // v8.x — per-IP token bucket; 0 = use default (30/min); negative = disable
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	// v8.x — Git host picker. Selects which non-github.com inbound webhook
+	// routes are registered (gitlab, bitbucket, github-enterprise) and
+	// drives the v7.0 outbound auto-PR path's `gh --hostname` flag for
+	// GitHub Enterprise. Empty = "github" (github.com), preserving v8.0
+	// behaviour. `git_host_base_url` is only consulted for non-cloud
+	// installations and stays empty for github.com / gitlab.com /
+	// bitbucket.org.
+	GitHost            string `protobuf:"bytes,14,opt,name=git_host,json=gitHost,proto3" json:"git_host,omitempty"`
+	GitHostBaseUrl     string `protobuf:"bytes,15,opt,name=git_host_base_url,json=gitHostBaseUrl,proto3" json:"git_host_base_url,omitempty"`
+	GitlabSecretSet    bool   `protobuf:"varint,16,opt,name=gitlab_secret_set,json=gitlabSecretSet,proto3" json:"gitlab_secret_set,omitempty"`
+	GitlabSecret       string `protobuf:"bytes,17,opt,name=gitlab_secret,json=gitlabSecret,proto3" json:"gitlab_secret,omitempty"` // write-only; never returned
+	BitbucketSecretSet bool   `protobuf:"varint,18,opt,name=bitbucket_secret_set,json=bitbucketSecretSet,proto3" json:"bitbucket_secret_set,omitempty"`
+	BitbucketSecret    string `protobuf:"bytes,19,opt,name=bitbucket_secret,json=bitbucketSecret,proto3" json:"bitbucket_secret,omitempty"` // write-only; never returned
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *InboundConfig) Reset() {
@@ -6705,6 +6718,48 @@ func (x *InboundConfig) GetRateLimitPerMin() int32 {
 	return 0
 }
 
+func (x *InboundConfig) GetGitHost() string {
+	if x != nil {
+		return x.GitHost
+	}
+	return ""
+}
+
+func (x *InboundConfig) GetGitHostBaseUrl() string {
+	if x != nil {
+		return x.GitHostBaseUrl
+	}
+	return ""
+}
+
+func (x *InboundConfig) GetGitlabSecretSet() bool {
+	if x != nil {
+		return x.GitlabSecretSet
+	}
+	return false
+}
+
+func (x *InboundConfig) GetGitlabSecret() string {
+	if x != nil {
+		return x.GitlabSecret
+	}
+	return ""
+}
+
+func (x *InboundConfig) GetBitbucketSecretSet() bool {
+	if x != nil {
+		return x.BitbucketSecretSet
+	}
+	return false
+}
+
+func (x *InboundConfig) GetBitbucketSecret() string {
+	if x != nil {
+		return x.BitbucketSecret
+	}
+	return ""
+}
+
 // InboundStatus (v8.0 Echo) is the response of GetInboundStatus and
 // SaveInboundConfig. The `config` field carries the scrubbed config for
 // rendering; `last_*_delivery_unix` is 0 when no delivery has ever been
@@ -6724,8 +6779,12 @@ type InboundStatus struct {
 	// Populated by the daemon's auto-registrar; empty when the bot token
 	// is not configured. The Settings UI lists each guild + ✓/✗ pill.
 	DiscordGuilds []*DiscordGuildRegistration `protobuf:"bytes,10,rep,name=discord_guilds,json=discordGuilds,proto3" json:"discord_guilds,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	// v8.x Echo — last successful delivery timestamps for the non-github.com
+	// inbound webhook handlers. 0 = never seen this process lifetime.
+	LastGitlabDeliveryUnix    int64 `protobuf:"varint,11,opt,name=last_gitlab_delivery_unix,json=lastGitlabDeliveryUnix,proto3" json:"last_gitlab_delivery_unix,omitempty"`
+	LastBitbucketDeliveryUnix int64 `protobuf:"varint,12,opt,name=last_bitbucket_delivery_unix,json=lastBitbucketDeliveryUnix,proto3" json:"last_bitbucket_delivery_unix,omitempty"`
+	unknownFields             protoimpl.UnknownFields
+	sizeCache                 protoimpl.SizeCache
 }
 
 func (x *InboundStatus) Reset() {
@@ -6826,6 +6885,20 @@ func (x *InboundStatus) GetDiscordGuilds() []*DiscordGuildRegistration {
 		return x.DiscordGuilds
 	}
 	return nil
+}
+
+func (x *InboundStatus) GetLastGitlabDeliveryUnix() int64 {
+	if x != nil {
+		return x.LastGitlabDeliveryUnix
+	}
+	return 0
+}
+
+func (x *InboundStatus) GetLastBitbucketDeliveryUnix() int64 {
+	if x != nil {
+		return x.LastBitbucketDeliveryUnix
+	}
+	return 0
 }
 
 type GetInboundStatusRequest struct {
@@ -7638,7 +7711,7 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\x02ok\x18\x01 \x01(\bR\x02ok\x12\x18\n" +
 	"\amessage\x18\x02 \x01(\tR\amessage\x12\x1f\n" +
 	"\vstatus_code\x18\x03 \x01(\x05R\n" +
-	"statusCode\"\x9e\x04\n" +
+	"statusCode\"\x92\x06\n" +
 	"\rInboundConfig\x12\x1f\n" +
 	"\vlisten_addr\x18\x01 \x01(\tR\n" +
 	"listenAddr\x12\x1d\n" +
@@ -7655,7 +7728,13 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	" \x01(\bR\x12discordBotTokenSet\x12*\n" +
 	"\x11discord_bot_token\x18\v \x01(\tR\x0fdiscordBotToken\x12\x1a\n" +
 	"\bdisabled\x18\f \x01(\bR\bdisabled\x12+\n" +
-	"\x12rate_limit_per_min\x18\r \x01(\x05R\x0frateLimitPerMin\"\xd5\x03\n" +
+	"\x12rate_limit_per_min\x18\r \x01(\x05R\x0frateLimitPerMin\x12\x19\n" +
+	"\bgit_host\x18\x0e \x01(\tR\agitHost\x12)\n" +
+	"\x11git_host_base_url\x18\x0f \x01(\tR\x0egitHostBaseUrl\x12*\n" +
+	"\x11gitlab_secret_set\x18\x10 \x01(\bR\x0fgitlabSecretSet\x12#\n" +
+	"\rgitlab_secret\x18\x11 \x01(\tR\fgitlabSecret\x120\n" +
+	"\x14bitbucket_secret_set\x18\x12 \x01(\bR\x12bitbucketSecretSet\x12)\n" +
+	"\x10bitbucket_secret\x18\x13 \x01(\tR\x0fbitbucketSecret\"\xd1\x04\n" +
 	"\rInboundStatus\x12\x1c\n" +
 	"\tlistening\x18\x01 \x01(\bR\tlistening\x12\x1f\n" +
 	"\vlisten_addr\x18\x02 \x01(\tR\n" +
@@ -7670,7 +7749,9 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\aversion\x18\b \x01(\tR\aversion\x120\n" +
 	"\x06config\x18\t \x01(\v2\x18.watchfire.InboundConfigR\x06config\x12J\n" +
 	"\x0ediscord_guilds\x18\n" +
-	" \x03(\v2#.watchfire.DiscordGuildRegistrationR\rdiscordGuilds\"E\n" +
+	" \x03(\v2#.watchfire.DiscordGuildRegistrationR\rdiscordGuilds\x129\n" +
+	"\x19last_gitlab_delivery_unix\x18\v \x01(\x03R\x16lastGitlabDeliveryUnix\x12?\n" +
+	"\x1clast_bitbucket_delivery_unix\x18\f \x01(\x03R\x19lastBitbucketDeliveryUnix\"E\n" +
 	"\x17GetInboundStatusRequest\x12*\n" +
 	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\"x\n" +
 	"\x18SaveInboundConfigRequest\x12*\n" +

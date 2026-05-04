@@ -19,16 +19,19 @@ import (
 	pb "github.com/watchfire-io/watchfire/proto"
 )
 
-// inboundSecretKeyGitHub / Slack / Discord are the canonical keyring
-// keys for the v8.0 Echo per-provider secrets. Single-instance per
-// daemon (one GitHub webhook secret, one Slack signing secret, one
-// Discord application public key + bot token) so we don't need a
-// per-integration ID suffix the v7.0 outbound flow uses.
+// inboundSecretKeyGitHub / Slack / Discord / GitLab / Bitbucket are the
+// canonical keyring keys for the v8.0 Echo per-provider secrets. Single-
+// instance per daemon (one GitHub webhook secret, one Slack signing
+// secret, one Discord application public key + bot token, one GitLab
+// shared token, one Bitbucket HMAC secret) so we don't need the per-
+// integration ID suffix the v7.0 outbound flow uses.
 const (
 	inboundSecretKeyGitHub          = "watchfire.echo.github_secret"
 	inboundSecretKeySlack           = "watchfire.echo.slack_secret"
 	inboundSecretKeyDiscordPubKey   = "watchfire.echo.discord_public_key"
 	inboundSecretKeyDiscordBotToken = "watchfire.echo.discord_bot_token"
+	inboundSecretKeyGitLab          = "watchfire.echo.gitlab_secret"
+	inboundSecretKeyBitbucket       = "watchfire.echo.bitbucket_secret"
 )
 
 // GetInboundStatus returns the live status of the v8.0 Echo HTTP
@@ -68,6 +71,8 @@ func (s *integrationsService) SaveInboundConfig(_ context.Context, req *pb.SaveI
 	merged.DiscordAppID = in.GetDiscordAppId()
 	merged.Disabled = in.GetDisabled()
 	merged.RateLimitPerMin = int(in.GetRateLimitPerMin())
+	merged.GitHost = in.GetGitHost()
+	merged.GitHostBaseURL = in.GetGitHostBaseUrl()
 
 	if v := in.GetGithubSecret(); v != "" {
 		if putErr := config.PutIntegrationSecret(inboundSecretKeyGitHub, v); putErr != nil {
@@ -92,6 +97,18 @@ func (s *integrationsService) SaveInboundConfig(_ context.Context, req *pb.SaveI
 			return nil, fmt.Errorf("put discord bot token: %w", putErr)
 		}
 		merged.DiscordBotTokenRef = inboundSecretKeyDiscordBotToken
+	}
+	if v := in.GetGitlabSecret(); v != "" {
+		if putErr := config.PutIntegrationSecret(inboundSecretKeyGitLab, v); putErr != nil {
+			return nil, fmt.Errorf("put gitlab secret: %w", putErr)
+		}
+		merged.GitLabSecretRef = inboundSecretKeyGitLab
+	}
+	if v := in.GetBitbucketSecret(); v != "" {
+		if putErr := config.PutIntegrationSecret(inboundSecretKeyBitbucket, v); putErr != nil {
+			return nil, fmt.Errorf("put bitbucket secret: %w", putErr)
+		}
+		merged.BitbucketSecretRef = inboundSecretKeyBitbucket
 	}
 
 	cfg.Inbound = merged
@@ -137,6 +154,12 @@ func (s *integrationsService) buildInboundStatus(in models.InboundConfig) *pb.In
 			if t := srv.LastDelivery("discord"); !t.IsZero() {
 				out.LastDiscordDeliveryUnix = t.Unix()
 			}
+			if t := srv.LastDelivery("gitlab"); !t.IsZero() {
+				out.LastGitlabDeliveryUnix = t.Unix()
+			}
+			if t := srv.LastDelivery("bitbucket"); !t.IsZero() {
+				out.LastBitbucketDeliveryUnix = t.Unix()
+			}
 		}
 		if reg := s.server.DiscordRegistrar(); reg != nil {
 			for _, g := range reg.Statuses() {
@@ -171,6 +194,10 @@ func scrubInboundConfigToProto(in models.InboundConfig) *pb.InboundConfig {
 		DiscordBotTokenSet:   keyringHas(in.DiscordBotTokenRef),
 		Disabled:             in.Disabled,
 		RateLimitPerMin:      int32(in.RateLimitPerMin),
+		GitHost:              in.GitHost,
+		GitHostBaseUrl:       in.GitHostBaseURL,
+		GitlabSecretSet:      keyringHas(in.GitLabSecretRef),
+		BitbucketSecretSet:   keyringHas(in.BitbucketSecretRef),
 	}
 }
 

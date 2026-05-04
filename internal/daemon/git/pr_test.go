@@ -89,7 +89,7 @@ func newTempGitRepo(t *testing.T, originURL string) string {
 func TestParseGitHubOriginHTTPS(t *testing.T) {
 	t.Parallel()
 	repo := newTempGitRepo(t, "https://github.com/owner/repo.git")
-	owner, name, err := parseGitHubOrigin(context.Background(), repo)
+	owner, name, err := parseGitHubOrigin(context.Background(), repo, "")
 	if err != nil {
 		t.Fatalf("parseGitHubOrigin: %v", err)
 	}
@@ -102,7 +102,7 @@ func TestParseGitHubOriginHTTPS(t *testing.T) {
 func TestParseGitHubOriginSSH(t *testing.T) {
 	t.Parallel()
 	repo := newTempGitRepo(t, "git@github.com:owner/repo.git")
-	owner, name, err := parseGitHubOrigin(context.Background(), repo)
+	owner, name, err := parseGitHubOrigin(context.Background(), repo, "")
 	if err != nil {
 		t.Fatalf("parseGitHubOrigin: %v", err)
 	}
@@ -115,7 +115,34 @@ func TestParseGitHubOriginSSH(t *testing.T) {
 func TestParseGitHubOriginNonGitHub(t *testing.T) {
 	t.Parallel()
 	repo := newTempGitRepo(t, "https://gitlab.com/owner/repo.git")
-	_, _, err := parseGitHubOrigin(context.Background(), repo)
+	_, _, err := parseGitHubOrigin(context.Background(), repo, "")
+	if !errors.Is(err, ErrNotGitHub) {
+		t.Fatalf("got %v, want ErrNotGitHub", err)
+	}
+}
+
+// TestParseGitHubOriginEnterpriseHTTPS exercises the v8.x path: a
+// non-github.com URL is accepted when the user has paired the inbound
+// config with their Enterprise hostname.
+func TestParseGitHubOriginEnterpriseHTTPS(t *testing.T) {
+	t.Parallel()
+	repo := newTempGitRepo(t, "https://github.example.com/owner/repo.git")
+	owner, name, err := parseGitHubOrigin(context.Background(), repo, "github.example.com")
+	if err != nil {
+		t.Fatalf("parseGitHubOrigin (enterprise): %v", err)
+	}
+	if owner != "owner" || name != "repo" {
+		t.Errorf("got %s/%s, want owner/repo", owner, name)
+	}
+}
+
+// TestParseGitHubOriginEnterpriseHostMismatch — Enterprise hostname is
+// pinned to one host; an origin pointing at a different host returns
+// ErrNotGitHub even with an Enterprise pairing configured.
+func TestParseGitHubOriginEnterpriseHostMismatch(t *testing.T) {
+	t.Parallel()
+	repo := newTempGitRepo(t, "https://github.somewhere-else.com/owner/repo.git")
+	_, _, err := parseGitHubOrigin(context.Background(), repo, "github.example.com")
 	if !errors.Is(err, ErrNotGitHub) {
 		t.Fatalf("got %v, want ErrNotGitHub", err)
 	}
@@ -124,7 +151,7 @@ func TestParseGitHubOriginNonGitHub(t *testing.T) {
 // TestVerifyGHCLIMissing — empty PATH means `gh` can't be located.
 func TestVerifyGHCLIMissing(t *testing.T) {
 	withEmptyPATH(t)
-	err := verifyGHCLI(context.Background())
+	err := verifyGHCLI(context.Background(), "")
 	if !errors.Is(err, ErrGHUnavailable) {
 		t.Fatalf("got %v, want ErrGHUnavailable", err)
 	}
@@ -133,7 +160,7 @@ func TestVerifyGHCLIMissing(t *testing.T) {
 // TestVerifyGHCLIUnauthenticated — fake gh returns non-zero from `auth status`.
 func TestVerifyGHCLIUnauthenticated(t *testing.T) {
 	withFakeGH(t, "unauthenticated")
-	err := verifyGHCLI(context.Background())
+	err := verifyGHCLI(context.Background(), "")
 	if !errors.Is(err, ErrGHUnavailable) {
 		t.Fatalf("got %v, want ErrGHUnavailable", err)
 	}
