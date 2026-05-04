@@ -925,6 +925,95 @@ service IntegrationsService {
   // v8.0 Echo: inbound HTTP listener configuration + status.
   rpc GetInboundStatus(GetInboundStatusRequest) returns (InboundStatus);
   rpc SaveInboundConfig(SaveInboundConfigRequest) returns (InboundStatus);
+
+  // v8.x OAuth: browser-driven bot-token install flows for Slack /
+  // Discord. `BeginOAuth` returns the authorization URL the daemon's
+  // GUI / TUI should open in the user's default browser; the daemon
+  // races a loopback callback listener that exchanges the resulting
+  // code for a bot token, persists it to the keyring, and updates
+  // `InboundConfig` with the captured non-secret metadata. Polling
+  // `GetOAuthStatus` surfaces "in_progress" → "connected" → "error"
+  // transitions to the UI.
+  rpc BeginOAuth(BeginOAuthRequest) returns (BeginOAuthResponse);
+  rpc GetOAuthStatus(GetOAuthStatusRequest) returns (OAuthStatus);
+  rpc CancelOAuth(CancelOAuthRequest) returns (OAuthStatus);
+  // PostOAuthHello posts a one-shot "hello" message through the bot
+  // token (chat.postMessage / channel POST) so the user can confirm
+  // the install end-to-end. Returns ok=false when the bot token is
+  // missing / the channel is invalid / the upstream call fails.
+  rpc PostOAuthHello(PostOAuthHelloRequest) returns (PostOAuthHelloResponse);
+}
+
+// OAuthProvider identifies which OAuth bot-token install flow a
+// BeginOAuth / GetOAuthStatus / CancelOAuth / PostOAuthHello call
+// targets. `OAUTH_PROVIDER_UNSET` is invalid input — the gRPC handler
+// returns `InvalidArgument` for it.
+enum OAuthProvider {
+  OAUTH_PROVIDER_UNSET = 0;
+  OAUTH_PROVIDER_SLACK = 1;
+  OAUTH_PROVIDER_DISCORD = 2;
+}
+
+// OAuthState captures the lifecycle of a single OAuth install.
+//   IDLE          — no flow in progress, no token connected
+//   IN_PROGRESS   — user has been redirected to the provider; daemon
+//                   is awaiting the callback
+//   CONNECTED     — bot token captured + persisted; UI renders pill
+//   ERROR         — last attempt failed; `error` carries the reason
+enum OAuthState {
+  OAUTH_STATE_IDLE = 0;
+  OAUTH_STATE_IN_PROGRESS = 1;
+  OAUTH_STATE_CONNECTED = 2;
+  OAUTH_STATE_ERROR = 3;
+}
+
+message BeginOAuthRequest {
+  RequestMeta meta = 1;
+  OAuthProvider provider = 2;
+  // default_channel is threaded through to the post-completion
+  // "hello" message. May be empty to skip the auto-hello step.
+  string default_channel = 3;
+}
+
+message BeginOAuthResponse {
+  // authorize_url is the URL the GUI / TUI should open in the user's
+  // default browser. The daemon also fires `oauth.OpenBrowser` when
+  // possible, so a savvy client can ignore this field.
+  string authorize_url = 1;
+  string redirect_uri = 2;
+  // state is the CSRF token the daemon embedded in the URL — useful
+  // for tests; production clients don't need to inspect it.
+  string state = 3;
+}
+
+message GetOAuthStatusRequest {
+  RequestMeta meta = 1;
+  OAuthProvider provider = 2;
+}
+
+message OAuthStatus {
+  OAuthProvider provider = 1;
+  OAuthState state = 2;
+  string error = 3;                  // populated when state == ERROR
+  string connected_as = 4;           // e.g. "@watchfire in Acme HQ"
+  string default_channel = 5;
+}
+
+message CancelOAuthRequest {
+  RequestMeta meta = 1;
+  OAuthProvider provider = 2;
+}
+
+message PostOAuthHelloRequest {
+  RequestMeta meta = 1;
+  OAuthProvider provider = 2;
+  string channel = 3;                // overrides default_channel when non-empty
+  string text = 4;                   // optional — empty defaults to "Hello from Watchfire"
+}
+
+message PostOAuthHelloResponse {
+  bool ok = 1;
+  string message = 2;
 }
 
 // InboundConfig (v8.0 Echo) — wire shape of `models.InboundConfig`.
@@ -962,6 +1051,32 @@ message InboundConfig {
   string gitlab_secret = 17;          // write-only; never returned
   bool bitbucket_secret_set = 18;
   string bitbucket_secret = 19;       // write-only; never returned
+
+  // v8.x OAuth — Slack app credentials + bot-token install metadata.
+  // Client id is non-secret and surfaced as a plain field; client
+  // secret + bot token are write-only with `*_set` companions. Team
+  // id / team name / bot user id / bot username are populated by the
+  // daemon's OAuth callback handler and surfaced for the Settings UI
+  // "Connected as @bot in <team>" pill.
+  string slack_client_id = 20;
+  bool slack_client_secret_set = 21;
+  string slack_client_secret = 22;       // write-only
+  bool slack_bot_token_set = 23;
+  string slack_bot_token = 24;           // write-only
+  string slack_team_id = 25;
+  string slack_team_name = 26;
+  string slack_bot_user_id = 27;
+  string slack_bot_username = 28;
+  string slack_default_channel = 29;     // post-Connect "hello" target
+
+  // v8.x OAuth — Discord app credentials + bot username metadata.
+  // The bot token reuses the v8.0 `discord_bot_token` field above.
+  string discord_client_id = 30;
+  bool discord_client_secret_set = 31;
+  string discord_client_secret = 32;     // write-only
+  string discord_bot_username = 33;
+  string discord_bot_discriminator = 34;
+  string discord_default_channel = 35;
 }
 
 // InboundStatus (v8.0 Echo) is the response of GetInboundStatus and

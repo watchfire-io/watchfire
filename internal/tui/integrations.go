@@ -93,6 +93,17 @@ type IntegrationsForm struct {
 	inboundEditing bool                 // true when the textinput is consuming keystrokes
 	inboundInput   textinput.Model      // shared input for whichever inbound row is being edited
 	inboundDraft   pb.InboundConfig     // local edit buffer; flushed via saveInboundConfigCmd on Enter
+
+	// v8.x OAuth — per-provider install state. The integrations
+	// overlay polls GetOAuthStatus and stores the last-seen status
+	// here so renderInbound can append a "Connected as @bot in Acme"
+	// pill below the secret rows. oauthBanner is a short-lived banner
+	// shown after BeginOAuth (the authorize URL the user should open
+	// in their browser if the daemon's launch failed) or after a hello
+	// post (success/fail line); cleared on the next full refresh.
+	slackOAuth   *pb.OAuthStatus
+	discordOAuth *pb.OAuthStatus
+	oauthBanner  string
 }
 
 // integrationsTab disambiguates the two views inside the integrations
@@ -720,6 +731,23 @@ func (f *IntegrationsForm) renderInbound() string {
 		b.WriteString("\n")
 	}
 
+	// v8.x OAuth — Connect Slack / Discord pills. Lives below the
+	// secret rows so users see "Connected as @bot in Acme HQ" without
+	// scrolling past the editable surface. The render is read-only —
+	// the user triggers BeginOAuth via the 's' / 'd' keys (see
+	// keyhandler) which kicks off the browser-driven flow.
+	b.WriteString("\n")
+	b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render("OAuth bot tokens"))
+	b.WriteString("\n")
+	b.WriteString(renderOAuthRow("Slack",   f.slackOAuth,   "press s to connect"))
+	b.WriteString("\n")
+	b.WriteString(renderOAuthRow("Discord", f.discordOAuth, "press d to connect"))
+	b.WriteString("\n")
+	if f.oauthBanner != "" {
+		b.WriteString(lipgloss.NewStyle().Foreground(colorCyan).Render(f.oauthBanner))
+		b.WriteString("\n")
+	}
+
 	// v8.x Echo — per-guild Discord auto-registration status. Read-only
 	// list mirroring the GUI's DiscordGuildList. Empty when no guilds
 	// have been registered yet (bot token not configured, or bot just
@@ -1077,3 +1105,47 @@ func contains(s []string, v string) bool {
 	}
 	return false
 }
+
+
+// LoadOAuthStatus stores a polled-OAuth status for the named provider.
+// Called from the model layer after the integrations overlay opens
+// (initial fetch) and after each BeginOAuth completes (refresh post-
+// callback). The renderer pulls the cached value to draw the
+// Connected pill.
+func (f *IntegrationsForm) LoadOAuthStatus(provider pb.OAuthProvider, st *pb.OAuthStatus) {
+	switch provider {
+	case pb.OAuthProvider_OAUTH_PROVIDER_SLACK:
+		f.slackOAuth = st
+	case pb.OAuthProvider_OAUTH_PROVIDER_DISCORD:
+		f.discordOAuth = st
+	}
+}
+
+// SetOAuthBanner sets a short-lived status banner (e.g. the authorize
+// URL the user should open in their browser, or the result of a hello
+// post). The renderer surfaces it below the OAuth pills.
+func (f *IntegrationsForm) SetOAuthBanner(s string) {
+	f.oauthBanner = s
+}
+
+// renderOAuthRow draws one OAuth pill. Used for both Slack + Discord
+// in renderInbound so the layout stays consistent.
+func renderOAuthRow(label string, st *pb.OAuthStatus, idleHint string) string {
+	pillStr := ""
+	suffix := ""
+	switch {
+	case st == nil, st.GetState() == pb.OAuthState_OAUTH_STATE_IDLE:
+		pillStr = lipgloss.NewStyle().Foreground(colorDim).Render("● Not connected")
+		suffix = lipgloss.NewStyle().Foreground(colorDim).Render(idleHint)
+	case st.GetState() == pb.OAuthState_OAUTH_STATE_IN_PROGRESS:
+		pillStr = lipgloss.NewStyle().Foreground(colorCyan).Render("● Awaiting browser callback")
+	case st.GetState() == pb.OAuthState_OAUTH_STATE_CONNECTED:
+		pillStr = lipgloss.NewStyle().Foreground(colorCyan).Render("● Connected")
+		suffix = st.GetConnectedAs()
+	case st.GetState() == pb.OAuthState_OAUTH_STATE_ERROR:
+		pillStr = lipgloss.NewStyle().Foreground(colorRed).Render("● Error")
+		suffix = lipgloss.NewStyle().Foreground(colorRed).Render(truncate(st.GetError(), 60))
+	}
+	return fmt.Sprintf("  %-9s %s  %s", label, pillStr, suffix)
+}
+

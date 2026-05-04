@@ -147,3 +147,27 @@ type IntegrationTestedMsg struct {
 type InboundStatusLoadedMsg struct {
 	Status *pb.InboundStatus
 }
+
+// OAuthBeganMsg carries the result of a BeginOAuth RPC. The TUI
+// surfaces the authorize URL so the user can copy it into their
+// browser if the daemon's best-effort launch failed.
+type OAuthBeganMsg struct {
+	Provider     pb.OAuthProvider
+	AuthorizeURL string
+	RedirectURI  string
+}
+
+// OAuthStatusLoadedMsg carries the per-provider OAuth status. The
+// integrations overlay polls this on a timer while a flow is in
+// progress; the resulting state drives the "Connected as ..." pill.
+type OAuthStatusLoadedMsg struct {
+	Status *pb.OAuthStatus
+}
+
+// OAuthHelloPostedMsg carries the result of a PostOAuthHello call.
+// The TUI surfaces this as a one-shot status banner.
+type OAuthHelloPostedMsg struct {
+	Provider pb.OAuthProvider
+	OK       bool
+	Message  string
+}

@@ -2567,6 +2567,10 @@ const (
 	IntegrationsService_TestIntegration_FullMethodName   = "/watchfire.IntegrationsService/TestIntegration"
 	IntegrationsService_GetInboundStatus_FullMethodName  = "/watchfire.IntegrationsService/GetInboundStatus"
 	IntegrationsService_SaveInboundConfig_FullMethodName = "/watchfire.IntegrationsService/SaveInboundConfig"
+	IntegrationsService_BeginOAuth_FullMethodName        = "/watchfire.IntegrationsService/BeginOAuth"
+	IntegrationsService_GetOAuthStatus_FullMethodName    = "/watchfire.IntegrationsService/GetOAuthStatus"
+	IntegrationsService_CancelOAuth_FullMethodName       = "/watchfire.IntegrationsService/CancelOAuth"
+	IntegrationsService_PostOAuthHello_FullMethodName    = "/watchfire.IntegrationsService/PostOAuthHello"
 )
 
 // IntegrationsServiceClient is the client API for IntegrationsService service.
@@ -2588,6 +2592,22 @@ type IntegrationsServiceClient interface {
 	// v8.0 Echo: inbound HTTP listener configuration + status.
 	GetInboundStatus(ctx context.Context, in *GetInboundStatusRequest, opts ...grpc.CallOption) (*InboundStatus, error)
 	SaveInboundConfig(ctx context.Context, in *SaveInboundConfigRequest, opts ...grpc.CallOption) (*InboundStatus, error)
+	// v8.x OAuth: browser-driven bot-token install flows for Slack /
+	// Discord. `BeginOAuth` returns the authorization URL the daemon's
+	// GUI / TUI should open in the user's default browser; the daemon
+	// races a loopback callback listener that exchanges the resulting
+	// code for a bot token, persists it to the keyring, and updates
+	// `InboundConfig` with the captured non-secret metadata. Polling
+	// `GetOAuthStatus` surfaces "in_progress" → "connected" → "error"
+	// transitions to the UI.
+	BeginOAuth(ctx context.Context, in *BeginOAuthRequest, opts ...grpc.CallOption) (*BeginOAuthResponse, error)
+	GetOAuthStatus(ctx context.Context, in *GetOAuthStatusRequest, opts ...grpc.CallOption) (*OAuthStatus, error)
+	CancelOAuth(ctx context.Context, in *CancelOAuthRequest, opts ...grpc.CallOption) (*OAuthStatus, error)
+	// PostOAuthHello posts a one-shot "hello" message through the bot
+	// token (chat.postMessage / channel POST) so the user can confirm
+	// the install end-to-end. Returns ok=false when the bot token is
+	// missing / the channel is invalid / the upstream call fails.
+	PostOAuthHello(ctx context.Context, in *PostOAuthHelloRequest, opts ...grpc.CallOption) (*PostOAuthHelloResponse, error)
 }
 
 type integrationsServiceClient struct {
@@ -2658,6 +2678,46 @@ func (c *integrationsServiceClient) SaveInboundConfig(ctx context.Context, in *S
 	return out, nil
 }
 
+func (c *integrationsServiceClient) BeginOAuth(ctx context.Context, in *BeginOAuthRequest, opts ...grpc.CallOption) (*BeginOAuthResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BeginOAuthResponse)
+	err := c.cc.Invoke(ctx, IntegrationsService_BeginOAuth_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *integrationsServiceClient) GetOAuthStatus(ctx context.Context, in *GetOAuthStatusRequest, opts ...grpc.CallOption) (*OAuthStatus, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OAuthStatus)
+	err := c.cc.Invoke(ctx, IntegrationsService_GetOAuthStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *integrationsServiceClient) CancelOAuth(ctx context.Context, in *CancelOAuthRequest, opts ...grpc.CallOption) (*OAuthStatus, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(OAuthStatus)
+	err := c.cc.Invoke(ctx, IntegrationsService_CancelOAuth_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *integrationsServiceClient) PostOAuthHello(ctx context.Context, in *PostOAuthHelloRequest, opts ...grpc.CallOption) (*PostOAuthHelloResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(PostOAuthHelloResponse)
+	err := c.cc.Invoke(ctx, IntegrationsService_PostOAuthHello_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // IntegrationsServiceServer is the server API for IntegrationsService service.
 // All implementations must embed UnimplementedIntegrationsServiceServer
 // for forward compatibility.
@@ -2677,6 +2737,22 @@ type IntegrationsServiceServer interface {
 	// v8.0 Echo: inbound HTTP listener configuration + status.
 	GetInboundStatus(context.Context, *GetInboundStatusRequest) (*InboundStatus, error)
 	SaveInboundConfig(context.Context, *SaveInboundConfigRequest) (*InboundStatus, error)
+	// v8.x OAuth: browser-driven bot-token install flows for Slack /
+	// Discord. `BeginOAuth` returns the authorization URL the daemon's
+	// GUI / TUI should open in the user's default browser; the daemon
+	// races a loopback callback listener that exchanges the resulting
+	// code for a bot token, persists it to the keyring, and updates
+	// `InboundConfig` with the captured non-secret metadata. Polling
+	// `GetOAuthStatus` surfaces "in_progress" → "connected" → "error"
+	// transitions to the UI.
+	BeginOAuth(context.Context, *BeginOAuthRequest) (*BeginOAuthResponse, error)
+	GetOAuthStatus(context.Context, *GetOAuthStatusRequest) (*OAuthStatus, error)
+	CancelOAuth(context.Context, *CancelOAuthRequest) (*OAuthStatus, error)
+	// PostOAuthHello posts a one-shot "hello" message through the bot
+	// token (chat.postMessage / channel POST) so the user can confirm
+	// the install end-to-end. Returns ok=false when the bot token is
+	// missing / the channel is invalid / the upstream call fails.
+	PostOAuthHello(context.Context, *PostOAuthHelloRequest) (*PostOAuthHelloResponse, error)
 	mustEmbedUnimplementedIntegrationsServiceServer()
 }
 
@@ -2704,6 +2780,18 @@ func (UnimplementedIntegrationsServiceServer) GetInboundStatus(context.Context, 
 }
 func (UnimplementedIntegrationsServiceServer) SaveInboundConfig(context.Context, *SaveInboundConfigRequest) (*InboundStatus, error) {
 	return nil, status.Error(codes.Unimplemented, "method SaveInboundConfig not implemented")
+}
+func (UnimplementedIntegrationsServiceServer) BeginOAuth(context.Context, *BeginOAuthRequest) (*BeginOAuthResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BeginOAuth not implemented")
+}
+func (UnimplementedIntegrationsServiceServer) GetOAuthStatus(context.Context, *GetOAuthStatusRequest) (*OAuthStatus, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetOAuthStatus not implemented")
+}
+func (UnimplementedIntegrationsServiceServer) CancelOAuth(context.Context, *CancelOAuthRequest) (*OAuthStatus, error) {
+	return nil, status.Error(codes.Unimplemented, "method CancelOAuth not implemented")
+}
+func (UnimplementedIntegrationsServiceServer) PostOAuthHello(context.Context, *PostOAuthHelloRequest) (*PostOAuthHelloResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method PostOAuthHello not implemented")
 }
 func (UnimplementedIntegrationsServiceServer) mustEmbedUnimplementedIntegrationsServiceServer() {}
 func (UnimplementedIntegrationsServiceServer) testEmbeddedByValue()                             {}
@@ -2834,6 +2922,78 @@ func _IntegrationsService_SaveInboundConfig_Handler(srv interface{}, ctx context
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IntegrationsService_BeginOAuth_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BeginOAuthRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IntegrationsServiceServer).BeginOAuth(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IntegrationsService_BeginOAuth_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IntegrationsServiceServer).BeginOAuth(ctx, req.(*BeginOAuthRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IntegrationsService_GetOAuthStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetOAuthStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IntegrationsServiceServer).GetOAuthStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IntegrationsService_GetOAuthStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IntegrationsServiceServer).GetOAuthStatus(ctx, req.(*GetOAuthStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IntegrationsService_CancelOAuth_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CancelOAuthRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IntegrationsServiceServer).CancelOAuth(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IntegrationsService_CancelOAuth_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IntegrationsServiceServer).CancelOAuth(ctx, req.(*CancelOAuthRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IntegrationsService_PostOAuthHello_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PostOAuthHelloRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IntegrationsServiceServer).PostOAuthHello(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IntegrationsService_PostOAuthHello_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IntegrationsServiceServer).PostOAuthHello(ctx, req.(*PostOAuthHelloRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // IntegrationsService_ServiceDesc is the grpc.ServiceDesc for IntegrationsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2864,6 +3024,22 @@ var IntegrationsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "SaveInboundConfig",
 			Handler:    _IntegrationsService_SaveInboundConfig_Handler,
+		},
+		{
+			MethodName: "BeginOAuth",
+			Handler:    _IntegrationsService_BeginOAuth_Handler,
+		},
+		{
+			MethodName: "GetOAuthStatus",
+			Handler:    _IntegrationsService_GetOAuthStatus_Handler,
+		},
+		{
+			MethodName: "CancelOAuth",
+			Handler:    _IntegrationsService_CancelOAuth_Handler,
+		},
+		{
+			MethodName: "PostOAuthHello",
+			Handler:    _IntegrationsService_PostOAuthHello_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
