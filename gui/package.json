@@ -12,7 +12,7 @@
     "proto:gen": "buf generate",
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
-    "test": "node --test src/main/*.test.mjs src/renderer/src/**/*.test.mjs",
+    "test": "node --test $(find src -type f -name '*.test.mjs' | sort)",
     "package": "electron-vite build && electron-builder --config electron-builder.yml",
     "package:mac": "electron-vite build && electron-builder --mac --config electron-builder.yml",
     "package:linux": "electron-vite build && electron-builder --linux --config electron-builder.yml",
