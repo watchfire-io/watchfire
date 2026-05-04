@@ -96,6 +96,7 @@ export function TaskItem({ task, projectId }: Props) {
         <TaskStatusBadge
           status={task.status}
           success={task.success}
+          failureReason={task.failureReason}
           mergeFailureReason={task.mergeFailureReason}
         />
 

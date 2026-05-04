@@ -4,18 +4,51 @@ interface TaskStatusBadgeProps {
   status: string
   success?: boolean
   /**
-   * v5.0 — populated when the post-task auto-merge into the default branch
-   * failed. Distinct from `success === false` (agent-reported failure):
-   * the agent's work is fine but the merge couldn't land, so the badge
-   * reads "Merge failed" instead of "Failed".
+   * Populated when the agent reported the task as failed
+   * (`status === 'done'` + `success !== true`). Surfaced through the
+   * native `title` tooltip so the user can see WHY a task failed
+   * without opening the modal.
+   */
+  failureReason?: string
+  /**
+   * v5.0 — populated when the post-task auto-merge into the default
+   * branch failed. Distinct from `success === false` (agent-reported
+   * failure): the agent's work is fine but the merge couldn't land,
+   * so the badge reads "Merge failed" instead of "Failed".
    */
   mergeFailureReason?: string
   className?: string
 }
 
+const TOOLTIP_MAX_RUNES = 500
+
+export function truncate(s: string, max: number): string {
+  const runes = Array.from(s)
+  if (runes.length <= max) return s
+  return runes.slice(0, max - 1).join('') + '…'
+}
+
+export function computeBadgeTooltip(opts: {
+  isAgentFailed: boolean
+  isMergeFailed: boolean
+  failureReason?: string
+  mergeFailureReason?: string
+}): string | undefined {
+  const merge = (opts.mergeFailureReason ?? '').trim()
+  const agent = (opts.failureReason ?? '').trim()
+  if (opts.isMergeFailed && merge !== '') {
+    return `Merge failed: ${truncate(merge, TOOLTIP_MAX_RUNES - 'Merge failed: '.length)}`
+  }
+  if (opts.isAgentFailed && agent !== '') {
+    return `Failed: ${truncate(agent, TOOLTIP_MAX_RUNES - 'Failed: '.length)}`
+  }
+  return undefined
+}
+
 export function TaskStatusBadge({
   status,
   success,
+  failureReason,
   mergeFailureReason,
   className
 }: TaskStatusBadgeProps) {
@@ -41,7 +74,12 @@ export function TaskStatusBadge({
         !isFailed && statusColor(status),
         className
       )}
-      title={isMergeFailed ? `Merge failed: ${mergeFailureReason}` : undefined}
+      title={computeBadgeTooltip({
+        isAgentFailed,
+        isMergeFailed,
+        failureReason,
+        mergeFailureReason
+      })}
     >
       {label}
     </span>
