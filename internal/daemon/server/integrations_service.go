@@ -37,6 +37,11 @@ type integrationsService struct {
 	// post-construction via bindEchoServer to break the import cycle
 	// between the service handler and the daemon's Server struct.
 	server inboundProvider
+
+	// oauth tracks the v8.x OAuth bot-token install flows. Lazily
+	// initialised on first BeginOAuth / GetOAuthStatus / CancelOAuth /
+	// PostOAuthHello call.
+	oauth *oauthCoordinator
 }
 
 // inboundProvider is the narrow interface the integrations service uses
@@ -52,6 +57,7 @@ type inboundProvider interface {
 func newIntegrationsService() *integrationsService {
 	return &integrationsService{
 		httpClient: &http.Client{Timeout: 10 * time.Second},
+		oauth:      newOAuthCoordinator(),
 	}
 }
 

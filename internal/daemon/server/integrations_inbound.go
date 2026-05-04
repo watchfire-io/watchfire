@@ -26,12 +26,15 @@ import (
 // shared token, one Bitbucket HMAC secret) so we don't need the per-
 // integration ID suffix the v7.0 outbound flow uses.
 const (
-	inboundSecretKeyGitHub          = "watchfire.echo.github_secret"
-	inboundSecretKeySlack           = "watchfire.echo.slack_secret"
-	inboundSecretKeyDiscordPubKey   = "watchfire.echo.discord_public_key"
-	inboundSecretKeyDiscordBotToken = "watchfire.echo.discord_bot_token"
-	inboundSecretKeyGitLab          = "watchfire.echo.gitlab_secret"
-	inboundSecretKeyBitbucket       = "watchfire.echo.bitbucket_secret"
+	inboundSecretKeyGitHub             = "watchfire.echo.github_secret"
+	inboundSecretKeySlack              = "watchfire.echo.slack_secret"
+	inboundSecretKeyDiscordPubKey      = "watchfire.echo.discord_public_key"
+	inboundSecretKeyDiscordBotToken    = "watchfire.echo.discord_bot_token"
+	inboundSecretKeyGitLab             = "watchfire.echo.gitlab_secret"
+	inboundSecretKeyBitbucket          = "watchfire.echo.bitbucket_secret"
+	inboundSecretKeySlackClientSecret  = "watchfire.echo.slack_client_secret"
+	inboundSecretKeySlackBotToken      = "watchfire.echo.slack_bot_token"
+	inboundSecretKeyDiscordClientSecret = "watchfire.echo.discord_client_secret"
 )
 
 // GetInboundStatus returns the live status of the v8.0 Echo HTTP
@@ -111,6 +114,54 @@ func (s *integrationsService) SaveInboundConfig(_ context.Context, req *pb.SaveI
 		merged.BitbucketSecretRef = inboundSecretKeyBitbucket
 	}
 
+	// v8.x OAuth — Slack client id is non-secret, surfaced as plain
+	// field; client secret + bot token are write-only with empty =
+	// "leave existing keyring entry alone" semantics.
+	merged.SlackClientID = in.GetSlackClientId()
+	if v := in.GetSlackClientSecret(); v != "" {
+		if putErr := config.PutIntegrationSecret(inboundSecretKeySlackClientSecret, v); putErr != nil {
+			return nil, fmt.Errorf("put slack client secret: %w", putErr)
+		}
+		merged.SlackClientSecretRef = inboundSecretKeySlackClientSecret
+	}
+	if v := in.GetSlackBotToken(); v != "" {
+		if putErr := config.PutIntegrationSecret(inboundSecretKeySlackBotToken, v); putErr != nil {
+			return nil, fmt.Errorf("put slack bot token: %w", putErr)
+		}
+		merged.SlackBotTokenRef = inboundSecretKeySlackBotToken
+	}
+	merged.SlackDefaultChannel = in.GetSlackDefaultChannel()
+	// Allow the UI to overwrite captured metadata (rare — usually set
+	// by the OAuth callback handler).
+	if v := in.GetSlackTeamId(); v != "" {
+		merged.SlackTeamID = v
+	}
+	if v := in.GetSlackTeamName(); v != "" {
+		merged.SlackTeamName = v
+	}
+	if v := in.GetSlackBotUserId(); v != "" {
+		merged.SlackBotUserID = v
+	}
+	if v := in.GetSlackBotUsername(); v != "" {
+		merged.SlackBotUsername = v
+	}
+
+	// v8.x OAuth — Discord client id + secret + display metadata.
+	merged.DiscordClientID = in.GetDiscordClientId()
+	if v := in.GetDiscordClientSecret(); v != "" {
+		if putErr := config.PutIntegrationSecret(inboundSecretKeyDiscordClientSecret, v); putErr != nil {
+			return nil, fmt.Errorf("put discord client secret: %w", putErr)
+		}
+		merged.DiscordClientSecretRef = inboundSecretKeyDiscordClientSecret
+	}
+	merged.DiscordDefaultChannel = in.GetDiscordDefaultChannel()
+	if v := in.GetDiscordBotUsername(); v != "" {
+		merged.DiscordBotUsername = v
+	}
+	if v := in.GetDiscordBotDiscriminator(); v != "" {
+		merged.DiscordBotDiscriminator = v
+	}
+
 	cfg.Inbound = merged
 	if saveErr := config.SaveIntegrations(cfg); saveErr != nil {
 		return nil, fmt.Errorf("save integrations: %w", saveErr)
@@ -185,19 +236,32 @@ func (s *integrationsService) buildInboundStatus(in models.InboundConfig) *pb.In
 // fields on the response are always empty strings.
 func scrubInboundConfigToProto(in models.InboundConfig) *pb.InboundConfig {
 	return &pb.InboundConfig{
-		ListenAddr:           in.ListenAddr,
-		PublicUrl:            in.PublicURL,
-		GithubSecretSet:      keyringHas(in.GitHubSecretRef),
-		SlackSecretSet:       keyringHas(in.SlackSecretRef),
-		DiscordPublicKeySet:  keyringHas(in.DiscordPublicKeyRef),
-		DiscordAppId:         in.DiscordAppID,
-		DiscordBotTokenSet:   keyringHas(in.DiscordBotTokenRef),
-		Disabled:             in.Disabled,
-		RateLimitPerMin:      int32(in.RateLimitPerMin),
-		GitHost:              in.GitHost,
-		GitHostBaseUrl:       in.GitHostBaseURL,
-		GitlabSecretSet:      keyringHas(in.GitLabSecretRef),
-		BitbucketSecretSet:   keyringHas(in.BitbucketSecretRef),
+		ListenAddr:              in.ListenAddr,
+		PublicUrl:               in.PublicURL,
+		GithubSecretSet:         keyringHas(in.GitHubSecretRef),
+		SlackSecretSet:          keyringHas(in.SlackSecretRef),
+		DiscordPublicKeySet:     keyringHas(in.DiscordPublicKeyRef),
+		DiscordAppId:            in.DiscordAppID,
+		DiscordBotTokenSet:      keyringHas(in.DiscordBotTokenRef),
+		Disabled:                in.Disabled,
+		RateLimitPerMin:         int32(in.RateLimitPerMin),
+		GitHost:                 in.GitHost,
+		GitHostBaseUrl:          in.GitHostBaseURL,
+		GitlabSecretSet:         keyringHas(in.GitLabSecretRef),
+		BitbucketSecretSet:      keyringHas(in.BitbucketSecretRef),
+		SlackClientId:           in.SlackClientID,
+		SlackClientSecretSet:    keyringHas(in.SlackClientSecretRef),
+		SlackBotTokenSet:        keyringHas(in.SlackBotTokenRef),
+		SlackTeamId:             in.SlackTeamID,
+		SlackTeamName:           in.SlackTeamName,
+		SlackBotUserId:          in.SlackBotUserID,
+		SlackBotUsername:        in.SlackBotUsername,
+		SlackDefaultChannel:     in.SlackDefaultChannel,
+		DiscordClientId:         in.DiscordClientID,
+		DiscordClientSecretSet:  keyringHas(in.DiscordClientSecretRef),
+		DiscordBotUsername:      in.DiscordBotUsername,
+		DiscordBotDiscriminator: in.DiscordBotDiscriminator,
+		DiscordDefaultChannel:   in.DiscordDefaultChannel,
 	}
 }
 

@@ -635,3 +635,55 @@ func saveInboundConfigCmd(conn *grpc.ClientConn, cfg *pb.InboundConfig) tea.Cmd 
 		return InboundStatusLoadedMsg{Status: st}
 	}
 }
+
+// beginOAuthCmd kicks off a v8.x OAuth bot-token install. Returns the
+// authorize URL through OAuthBeganMsg so the TUI can surface a "open
+// the URL in your browser" prompt; the daemon also fires a best-effort
+// browser launch on its side.
+func beginOAuthCmd(conn *grpc.ClientConn, provider pb.OAuthProvider, channel string) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewIntegrationsServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		resp, err := client.BeginOAuth(ctx, &pb.BeginOAuthRequest{
+			Provider:       provider,
+			DefaultChannel: channel,
+		})
+		if err != nil {
+			return ErrorMsg{Err: fmt.Errorf("begin oauth: %w", err)}
+		}
+		return OAuthBeganMsg{Provider: provider, AuthorizeURL: resp.GetAuthorizeUrl(), RedirectURI: resp.GetRedirectUri()}
+	}
+}
+
+// getOAuthStatusCmd polls the per-provider OAuth state.
+func getOAuthStatusCmd(conn *grpc.ClientConn, provider pb.OAuthProvider) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewIntegrationsServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		st, err := client.GetOAuthStatus(ctx, &pb.GetOAuthStatusRequest{Provider: provider})
+		if err != nil {
+			return ErrorMsg{Err: fmt.Errorf("get oauth status: %w", err)}
+		}
+		return OAuthStatusLoadedMsg{Status: st}
+	}
+}
+
+// postOAuthHelloCmd posts a one-shot "hello" message through the
+// captured bot token. Surfaces the result for confirmation.
+func postOAuthHelloCmd(conn *grpc.ClientConn, provider pb.OAuthProvider, channel string) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewIntegrationsServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		resp, err := client.PostOAuthHello(ctx, &pb.PostOAuthHelloRequest{
+			Provider: provider,
+			Channel:  channel,
+		})
+		if err != nil {
+			return ErrorMsg{Err: fmt.Errorf("post oauth hello: %w", err)}
+		}
+		return OAuthHelloPostedMsg{Provider: provider, OK: resp.GetOk(), Message: resp.GetMessage()}
+	}
+}

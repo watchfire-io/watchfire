@@ -166,6 +166,48 @@ type InboundConfig struct {
 	// GitHub's `X-Hub-Signature-256`).
 	GitLabSecretRef    string `yaml:"gitlab_secret_ref,omitempty" json:"gitlab_secret_ref,omitempty"`
 	BitbucketSecretRef string `yaml:"bitbucket_secret_ref,omitempty" json:"bitbucket_secret_ref,omitempty"`
+
+	// v8.x OAuth — Slack bot token (xoxb-...) acquired via OAuth v2
+	// install flow. Stored in the OS keyring under SlackBotTokenRef;
+	// non-secret metadata captured at exchange time (team id, team name,
+	// bot user id, bot username) ride alongside in plain YAML so the
+	// settings UI can render "Connected as @watchfire" without a round
+	// trip to slack.com/api/auth.test.
+	//
+	// SlackClientID + SlackClientSecretRef hold the per-installation
+	// app credentials. Empty means "OAuth not configured" — the user
+	// either has not registered a Slack app for this Watchfire install
+	// or has not pasted the client credentials in Settings yet.
+	//
+	// The signing-secret path (SlackSecretRef above) is unchanged:
+	// inbound slash commands continue to verify against
+	// `X-Slack-Signature` regardless of whether OAuth is wired. The
+	// bot token unlocks chat.postMessage so slash-command responses
+	// can DM the originator on private failures + post richer Block
+	// Kit replies that exceed the slash-command response cap.
+	SlackClientID        string `yaml:"slack_client_id,omitempty" json:"slack_client_id,omitempty"`
+	SlackClientSecretRef string `yaml:"slack_client_secret_ref,omitempty" json:"slack_client_secret_ref,omitempty"`
+	SlackBotTokenRef     string `yaml:"slack_bot_token_ref,omitempty" json:"slack_bot_token_ref,omitempty"`
+	SlackTeamID          string `yaml:"slack_team_id,omitempty" json:"slack_team_id,omitempty"`
+	SlackTeamName        string `yaml:"slack_team_name,omitempty" json:"slack_team_name,omitempty"`
+	SlackBotUserID       string `yaml:"slack_bot_user_id,omitempty" json:"slack_bot_user_id,omitempty"`
+	SlackBotUsername     string `yaml:"slack_bot_username,omitempty" json:"slack_bot_username,omitempty"`
+	SlackDefaultChannel  string `yaml:"slack_default_channel,omitempty" json:"slack_default_channel,omitempty"`
+
+	// v8.x OAuth — Discord application OAuth credentials. The bot token
+	// itself reuses the v8.0 DiscordBotTokenRef field above; the OAuth
+	// path supplements it with the client id / secret needed to drive
+	// the install flow + the username captured at install time so the
+	// settings UI can render "Connected as Watchfire#1234".
+	//
+	// The Ed25519 public key (DiscordPublicKeyRef) is unchanged — Discord
+	// signs interactions with a per-application key independent of the
+	// bot token, so OAuth does not replace public-key verification.
+	DiscordClientID        string `yaml:"discord_client_id,omitempty" json:"discord_client_id,omitempty"`
+	DiscordClientSecretRef string `yaml:"discord_client_secret_ref,omitempty" json:"discord_client_secret_ref,omitempty"`
+	DiscordBotUsername     string `yaml:"discord_bot_username,omitempty" json:"discord_bot_username,omitempty"`
+	DiscordBotDiscriminator string `yaml:"discord_bot_discriminator,omitempty" json:"discord_bot_discriminator,omitempty"`
+	DiscordDefaultChannel  string `yaml:"discord_default_channel,omitempty" json:"discord_default_channel,omitempty"`
 }
 
 // EffectiveGitHost returns the GitHost value with empty defaulting to
