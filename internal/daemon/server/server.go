@@ -408,7 +408,7 @@ func (s *Server) startEchoServer() {
 		cfg = models.NewIntegrationsConfig()
 	}
 	srv := echo.New(cfg.Inbound, log.Default())
-	registerInboundProviderHandlers(srv, cfg.Inbound)
+	registerInboundProviderHandlers(srv, cfg.Inbound, s.notifyBus)
 	ctx, cancel := context.WithCancel(context.Background())
 	s.echoServer = srv
 	s.echoCancel = cancel
@@ -419,9 +419,9 @@ func (s *Server) startEchoServer() {
 	}()
 }
 
-// registerInboundProviderHandlers wires the v8.x non-github.com
-// inbound webhook handlers (GitLab + Bitbucket) onto the Echo server.
-// Each handler is registered only when the inbound config carries the
+// registerInboundProviderHandlers wires the v5.0+ inbound webhook
+// handlers (GitHub + GitLab + Bitbucket) onto the Echo server. Each
+// handler is registered only when the inbound config carries the
 // corresponding secret reference — this keeps the surface to the
 // providers the user has actually configured and avoids a 401-flood
 // from a misrouted scanner.
@@ -432,8 +432,36 @@ func (s *Server) startEchoServer() {
 // GitLab CI with a GitHub Actions runner). The host selector is
 // purely informational here — the v7.0 outbound `OpenPR` path consults
 // it to drive `gh --hostname`.
-func registerInboundProviderHandlers(srv *echo.Server, in models.InboundConfig) {
+//
+// The notify bus is threaded through so the GitHub handler can emit a
+// RUN_COMPLETE notification on a successful PR-merge flush. GitLab and
+// Bitbucket do not emit on flush — their inbound paths are reachable
+// from non-auto-PR projects, and the user-visible "merged" signal there
+// flows through the existing watcher → handleTaskChanged path.
+func registerInboundProviderHandlers(srv *echo.Server, in models.InboundConfig, bus *notify.Bus) {
 	flush := newTaskFlusher()
+	if in.GitHubSecretRef != "" {
+		ref := in.GitHubSecretRef
+		gh := echo.NewGitHubHandler(echo.GitHubHandlerConfig{
+			ResolveSecret: echo.ResolveGitHubSecretFromKeyring(func() (string, error) {
+				v, ok := config.LookupIntegrationSecret(ref)
+				if !ok {
+					return "", fmt.Errorf("github HMAC secret not in keyring")
+				}
+				return v, nil
+			}),
+			Idempotency:     echo.NewCache(0, 0),
+			FlushTask:       flush,
+			EmitRunComplete: echo.EmitRunCompleteToBus(bus),
+			RefundOnReplay: func(r *http.Request) {
+				srv.RefundRateLimit(r)
+			},
+			RecordDelivery: func() { srv.RecordDelivery("github") },
+			Logger:         log.Default(),
+		})
+		srv.RegisterProvider(http.MethodPost, "/echo/github/webhook", gh)
+		log.Printf("INFO: echo: github webhook handler registered")
+	}
 	if in.GitLabSecretRef != "" {
 		ref := in.GitLabSecretRef
 		gh := echo.NewGitLabHandler(echo.GitLabHandlerConfig{
