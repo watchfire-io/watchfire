@@ -157,6 +157,7 @@ func NewSettings() *Settings {
 		Version: 1,
 		Agents: map[string]*AgentConfig{
 			"claude-code": {Path: ""}, // Empty means lookup in PATH
+			"cursor":      {Path: ""},
 		},
 		Defaults: DefaultsConfig{
 			AutoMerge:        true,

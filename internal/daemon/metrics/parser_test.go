@@ -202,6 +202,8 @@ func TestGetParserDispatch(t *testing.T) {
 		{"gemini-cli alias", "gemini-cli", "geminiParser"},
 		{"copilot", "copilot", "copilotParser"},
 		{"copilot-cli alias", "copilot-cli", "copilotParser"},
+		{"cursor falls back to null", "cursor", "nullParser"},
+		{"cursor-agent alias falls back to null", "cursor-agent", "nullParser"},
 		{"unknown falls back to null", "totally-made-up", "nullParser"},
 		{"empty string falls back to null", "", "nullParser"},
 	}

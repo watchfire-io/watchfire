@@ -13,7 +13,8 @@ interface Props {
 const DESCRIPTIONS: Record<string, string> = {
   'claude-code': 'Anthropic Claude Code CLI',
   codex: 'OpenAI Codex CLI',
-  opencode: 'opencode (SST)'
+  opencode: 'opencode (SST)',
+  cursor: 'Cursor Agent CLI'
 }
 
 export function StepAgent({ data, onChange, onValidChange }: Props) {

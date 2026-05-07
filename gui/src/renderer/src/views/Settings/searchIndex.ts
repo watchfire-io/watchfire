@@ -57,7 +57,7 @@ export const CATEGORY_LABELS: Record<SettingsCategoryId, string> =
 export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   { category: 'appearance', fieldId: 'theme', label: 'Theme', keywords: ['light', 'dark', 'system', 'mode', 'color scheme'] },
 
-  { category: 'defaults', fieldId: 'default-agent', label: 'Default Agent', keywords: ['agent', 'claude', 'codex', 'opencode', 'gemini', 'copilot'] },
+  { category: 'defaults', fieldId: 'default-agent', label: 'Default Agent', keywords: ['agent', 'claude', 'codex', 'opencode', 'gemini', 'copilot', 'cursor'] },
   { category: 'defaults', fieldId: 'auto-merge', label: 'Auto-merge', keywords: ['merge', 'branch', 'task'] },
   { category: 'defaults', fieldId: 'auto-delete-branch', label: 'Auto-delete branches', keywords: ['delete', 'cleanup', 'branch', 'worktree'] },
   { category: 'defaults', fieldId: 'auto-start-tasks', label: 'Auto-start tasks', keywords: ['chain', 'queue', 'task'] },
