@@ -12,7 +12,8 @@ interface Props {
 const PATH_PLACEHOLDERS: Record<string, string> = {
   'claude-code': '/opt/homebrew/bin/claude',
   codex: '/opt/homebrew/bin/codex',
-  opencode: '/opt/homebrew/bin/opencode'
+  opencode: '/opt/homebrew/bin/opencode',
+  cursor: '/opt/homebrew/bin/cursor-agent'
 }
 
 function placeholderFor(name: string): string {

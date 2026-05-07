@@ -54,6 +54,10 @@ func GetParser(agentName string) Parser {
 		return geminiParser{}
 	case "copilot", "github-copilot", "copilot-cli":
 		return copilotParser{}
+	case "cursor", "cursor-agent":
+		// Cursor's headless CLI does not emit a stable token/cost summary; fall
+		// back to duration-only metrics until the upstream format settles.
+		return nullParser{}
 	default:
 		return nullParser{}
 	}

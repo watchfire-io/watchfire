@@ -886,7 +886,7 @@ func (g *GlobalSettingsForm) searchIndex() []settingsSearchEntry {
 	// Defaults.
 	out = append(out, settingsSearchEntry{
 		Category: catDefaults, FieldID: "default-agent", Label: "Default Agent",
-		Keywords: []string{"agent", "claude", "codex", "opencode", "gemini", "copilot"},
+		Keywords: []string{"agent", "claude", "codex", "opencode", "gemini", "copilot", "cursor"},
 		rowIndex: g.defaultCursor(),
 	})
 	out = append(out, settingsSearchEntry{

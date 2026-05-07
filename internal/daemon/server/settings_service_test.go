@@ -66,9 +66,9 @@ func TestListAgentsIncludesUnavailableBackend(t *testing.T) {
 		t.Fatalf("ListAgents did not include backend %q. Filtering by availability breaks the picker for freshly-installed CLIs (issue #29).", probeName)
 	}
 
-	// All production backends (Claude, Codex, Gemini, opencode, Copilot)
+	// All production backends (Claude, Codex, Gemini, opencode, Copilot, Cursor)
 	// must also be present. A partial registry silently omits choices.
-	for _, required := range []string{"claude-code", "codex", "gemini", "opencode", "copilot"} {
+	for _, required := range []string{"claude-code", "codex", "gemini", "opencode", "copilot", "cursor"} {
 		var ok bool
 		for _, a := range resp.Agents {
 			if a.Name == required {
