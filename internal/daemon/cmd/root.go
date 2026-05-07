@@ -2,6 +2,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -56,18 +57,31 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	log.SetPrefix("[watchfired] ")
 	log.SetFlags(log.Ldate | log.Ltime | log.Lshortfile)
 
-	// Ensure global directory exists
+	// Ensure global directory exists — the lockfile lives inside it.
 	if err := config.EnsureGlobalDir(); err != nil {
 		log.Fatalf("Failed to create global directory: %v", err)
 	}
 
-	// Check if daemon is already running
-	running, info, err := config.IsDaemonRunning()
+	// Acquire the OS-level singleton lock BEFORE any other startup work.
+	// This is the authoritative "am I alone?" check — it closes the
+	// TOCTOU window between the legacy IsDaemonRunning() check and the
+	// post-waitForPort SaveDaemonInfo write, which let two daemons
+	// race to bind dynamic ports + add tray icons during app launch.
+	lockFile, err := config.AcquireDaemonLock()
 	if err != nil {
-		log.Fatalf("Failed to check daemon status: %v", err)
-	}
-	if running {
-		log.Fatalf("Daemon already running on port %d (PID %d)", info.Port, info.PID)
+		if errors.Is(err, config.ErrDaemonLockHeld) {
+			// A duplicate spawn is the expected outcome of a startup
+			// race, not an error — exit cleanly with status 0. Read
+			// daemon.yaml as a friendly diagnostic so the user knows
+			// which daemon is the live one.
+			if _, info, ierr := config.IsDaemonRunning(); ierr == nil && info != nil {
+				log.Printf("daemon already running on port %d (PID %d), exiting", info.Port, info.PID)
+			} else {
+				log.Println("daemon already running, exiting")
+			}
+			return nil
+		}
+		return fmt.Errorf("acquire daemon lock: %w", err)
 	}
 
 	if foreground {
@@ -75,14 +89,21 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	} else {
 		log.Println("Running in background mode (with system tray)")
 	}
-	runWithTray(port)
+
+	// Hold the lock for the full process lifetime — released only after
+	// tray.Run returns (i.e. signal-driven shutdown completes).
+	runWithTray(port, lockFile)
 
 	return nil
 }
 
 // runWithTray runs the daemon with a system tray icon on the main goroutine.
 // systray.Run must occupy the main goroutine on macOS (Cocoa requirement).
-func runWithTray(port int) {
+//
+// lockFile is the singleton-daemon flock acquired in runDaemon — it is
+// held for the lifetime of this call and released in onExit (after the
+// gRPC server stops and daemon.yaml is removed).
+func runWithTray(port int, lockFile *os.File) {
 	var srv *server.Server
 
 	onStart := func() {
@@ -141,6 +162,13 @@ func runWithTray(port int) {
 		}
 		if err := config.RemoveDaemonInfo(); err != nil {
 			log.Printf("Failed to remove daemon info: %v", err)
+		}
+
+		// Release the singleton lock last — once closed, a queued
+		// duplicate spawn can succeed. Do NOT delete the lockfile;
+		// flock release is tied to the file handle, not the path.
+		if lockFile != nil {
+			_ = lockFile.Close()
 		}
 
 		fmt.Println("Daemon stopped")
