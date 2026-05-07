@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -136,6 +137,14 @@ func SyncNextTaskNumber(projectPath string) error {
 	project, err := LoadProject(projectPath)
 	if err != nil || project == nil {
 		return err
+	}
+
+	// Defensive: never round-trip an incomplete project struct back to disk.
+	// LoadProject already rejects zero-valued reads, but keep the guard here
+	// so this function — which is the one that historically produced the
+	// data-loss bug — can never be the writer that clobbers good metadata.
+	if project.Version == 0 || project.ProjectID == "" {
+		return fmt.Errorf("refusing to sync next_task_number on incomplete project at %s", projectPath)
 	}
 
 	tasksDir := ProjectTasksDir(projectPath)

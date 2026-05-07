@@ -18,6 +18,7 @@ func setupTempProject(t *testing.T) string {
 	}
 	now := time.Now().UTC()
 	p := &models.Project{
+		Version:        1,
 		ProjectID:      "testproj",
 		Name:           "test",
 		Status:         "active",

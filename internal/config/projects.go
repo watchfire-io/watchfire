@@ -32,6 +32,11 @@ func SaveProjectsIndex(index *models.ProjectsIndex) error {
 }
 
 // LoadProject loads a project from its .watchfire/project.yaml file.
+//
+// A project.yaml that decodes to a zero/near-zero struct (Version == 0 or
+// empty ProjectID) is treated as corrupt: yaml.Unmarshal silently succeeds
+// on empty content, and we refuse to roll forward with that — callers must
+// surface the error rather than overwrite good metadata with zeros.
 func LoadProject(projectPath string) (*models.Project, error) {
 	path := ProjectFile(projectPath)
 
@@ -42,6 +47,10 @@ func LoadProject(projectPath string) (*models.Project, error) {
 	var project models.Project
 	if err := LoadYAML(path, &project); err != nil {
 		return nil, err
+	}
+
+	if project.Version == 0 || project.ProjectID == "" {
+		return nil, fmt.Errorf("corrupt project.yaml at %s: version=%d project_id=%q", path, project.Version, project.ProjectID)
 	}
 
 	// Load secrets instructions from secrets/instructions.md
