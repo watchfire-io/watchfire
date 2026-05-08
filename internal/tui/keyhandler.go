@@ -305,21 +305,70 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) tea.Cmd {
 	if m.settingsForm.IsEditing() {
 		switch msg.Type {
 		case tea.KeyEnter:
-			changed, k, v := m.settingsForm.FinishEdit()
-			if changed {
-				return updateProjectCmd(m.conn, m.projectID, map[string]interface{}{k: v})
+			out := m.settingsForm.FinishEdit()
+			if out.Err != "" {
+				m.err = fmt.Errorf("%s", out.Err)
+				return nil
 			}
-			return nil
+			if !out.Changed {
+				return nil
+			}
+			return m.dispatchSettingsEdit(out)
 		case tea.KeyEscape:
 			m.settingsForm.CancelEdit()
 			return nil
 		default:
-			// Forward to text input
 			ti := m.settingsForm.InputModel()
 			newTI, _ := ti.Update(msg)
 			*ti = newTI
 			return nil
 		}
+	}
+
+	if m.settingsForm.IsSearching() {
+		switch msg.String() {
+		case "esc":
+			m.settingsForm.CloseSearch()
+			return nil
+		case "enter":
+			m.settingsForm.ActivateSearch()
+			return nil
+		case "up":
+			m.settingsForm.MoveUp()
+			return nil
+		case "down":
+			m.settingsForm.MoveDown()
+			return nil
+		default:
+			ti := m.settingsForm.InputModel()
+			newTI, _ := ti.Update(msg)
+			*ti = newTI
+			return nil
+		}
+	}
+
+	switch msg.String() {
+	case "/":
+		m.settingsForm.OpenSearch()
+		return nil
+	case "tab", "shift+tab":
+		m.settingsForm.SwitchPane()
+		return nil
+	case "y":
+		// Copy focused metadata value.
+		if val, ok := m.settingsForm.CopySelectedValue(); ok {
+			return copyToClipboardCmd(val)
+		}
+		return nil
+	case "e":
+		// Shell out to $EDITOR on the secrets file.
+		if m.settingsForm.ActiveSection() == sectionSecrets {
+			path := m.settingsForm.SecretsPath()
+			if path != "" {
+				return launchEditorOnFileCmd(path)
+			}
+		}
+		return nil
 	}
 
 	switch {
@@ -328,21 +377,120 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) tea.Cmd {
 	case key.Matches(msg, settingsKeys.Down):
 		m.settingsForm.MoveDown()
 	case key.Matches(msg, settingsKeys.Toggle):
-		changed, k, v := m.settingsForm.Toggle()
+		changed, k, v, kind := m.settingsForm.Toggle()
 		if changed {
-			return updateProjectCmd(m.conn, m.projectID, map[string]interface{}{k: v})
+			return m.dispatchSettingsToggle(k, v, kind)
 		}
 	case key.Matches(msg, settingsKeys.Enter):
+		// On the sidebar, Enter drills into the fields pane.
+		if m.settingsForm.ActivePane() == settingsPaneSidebar {
+			m.settingsForm.SwitchPane()
+			return nil
+		}
+		// On an action row, fire the corresponding y/N confirm.
+		if cmd := m.maybeStartSettingsAction(); cmd != nil {
+			return cmd
+		}
+		// On a text row, start editing.
 		if m.settingsForm.StartEdit() {
 			return nil
 		}
-		// If it's a toggle field, toggle it
-		changed, k, v := m.settingsForm.Toggle()
+		// On a toggle / cycle row, fall back to Toggle.
+		changed, k, v, kind := m.settingsForm.Toggle()
 		if changed {
-			return updateProjectCmd(m.conn, m.projectID, map[string]interface{}{k: v})
+			return m.dispatchSettingsToggle(k, v, kind)
 		}
 	}
 	return nil
+}
+
+// dispatchSettingsToggle routes a toggle / cycle change to the right RPC
+// based on the row Kind. Notifications-block changes round-trip the whole
+// proto block in one call; integrations changes split between the
+// GitHub-scope RPC and the bindings RPC.
+func (m *Model) dispatchSettingsToggle(key string, value interface{}, kind settingsRowKind) tea.Cmd {
+	switch kind {
+	case rowKindNotifMute, rowKindNotifOverride, rowKindNotifEvent,
+		rowKindNotifQuietToggle:
+		return updateProjectCmd(m.conn, m.projectID, map[string]interface{}{
+			"notifications": m.settingsForm.CurrentNotificationsConfig(),
+		})
+	case rowKindIntegGitHub:
+		v, _ := value.(bool)
+		return setGitHubAutoPRScopeCmd(m.conn, m.projectID, v)
+	}
+	// Generic toggle / cycle — sandbox / status / agent / auto-* / etc.
+	return updateProjectCmd(m.conn, m.projectID, map[string]interface{}{key: value})
+}
+
+// dispatchSettingsEdit routes a text edit to the right RPC based on Kind.
+func (m *Model) dispatchSettingsEdit(out EditOutcome) tea.Cmd {
+	switch out.Kind {
+	case rowKindNotifQuietStart, rowKindNotifQuietEnd:
+		return updateProjectCmd(m.conn, m.projectID, map[string]interface{}{
+			"notifications": m.settingsForm.CurrentNotificationsConfig(),
+		})
+	case rowKindIntegSlackChannel:
+		// Slack channel binding — write through the bindings RPC. The
+		// Discord guild value is sent alongside so the daemon doesn't
+		// see a partial update; CurrentRow reads the live form state.
+		return setProjectIntegrationBindingsCmd(m.conn, m.projectID, out.Value, m.currentDiscordGuildBinding())
+	case rowKindIntegDiscordGuild:
+		return setProjectIntegrationBindingsCmd(m.conn, m.projectID, m.currentSlackChannelBinding(), out.Value)
+	}
+	return updateProjectCmd(m.conn, m.projectID, map[string]interface{}{out.Key: out.Value})
+}
+
+// maybeStartSettingsAction fires a y/N confirm when the cursor is on a
+// danger-zone action row, or executes the secrets-edit shortcut directly.
+// Returns nil when the row is not an action.
+func (m *Model) maybeStartSettingsAction() tea.Cmd {
+	row := m.settingsForm.CurrentRow()
+	if row == nil || row.Type != fieldAction {
+		return nil
+	}
+	switch row.Kind {
+	case rowKindSecretsEdit:
+		path := m.settingsForm.SecretsPath()
+		if path == "" {
+			return nil
+		}
+		return launchEditorOnFileCmd(path)
+	case rowKindDangerArchive:
+		m.confirmMode = confirmSettingsArchive
+		return nil
+	case rowKindDangerRegenID:
+		m.confirmMode = confirmSettingsRegenID
+		return nil
+	case rowKindDangerResetNumbering:
+		m.confirmMode = confirmSettingsResetNumbering
+		return nil
+	case rowKindDangerPruneBranches:
+		m.confirmMode = confirmSettingsPruneBranches
+		return nil
+	case rowKindDangerUnregister:
+		m.confirmMode = confirmSettingsUnregister
+		return nil
+	}
+	return nil
+}
+
+// currentSlackChannelBinding returns the Slack channel value from the
+// currently-loaded project. Used by dispatchSettingsEdit to send a
+// complete bindings payload when the user only edits one of the two
+// fields.
+func (m *Model) currentSlackChannelBinding() string {
+	if m.project != nil && m.project.Integrations != nil {
+		return m.project.Integrations.SlackChannel
+	}
+	return ""
+}
+
+func (m *Model) currentDiscordGuildBinding() string {
+	if m.project != nil && m.project.Integrations != nil {
+		return m.project.Integrations.DiscordGuildId
+	}
+	return ""
 }
 
 func (m *Model) handleTerminalKey(msg tea.KeyMsg) tea.Cmd {
@@ -474,6 +622,40 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) tea.Cmd {
 				return nil
 			}
 			return permanentDeleteTaskCmd(m.conn, m.projectID, num)
+		case confirmSettingsArchive:
+			m.confirmMode = confirmNone
+			if m.conn == nil {
+				return nil
+			}
+			next := "archived"
+			if m.project != nil && m.project.Status == "archived" {
+				next = "active"
+			}
+			return updateProjectCmd(m.conn, m.projectID, map[string]interface{}{"status": next})
+		case confirmSettingsRegenID:
+			m.confirmMode = confirmNone
+			if m.conn == nil {
+				return nil
+			}
+			return regenerateProjectIDCmd(m.conn, m.projectID)
+		case confirmSettingsResetNumbering:
+			m.confirmMode = confirmNone
+			if m.conn == nil {
+				return nil
+			}
+			return resetTaskNumberingCmd(m.conn, m.projectID)
+		case confirmSettingsPruneBranches:
+			m.confirmMode = confirmNone
+			if m.conn == nil {
+				return nil
+			}
+			return pruneBranchesCmd(m.conn, m.projectID)
+		case confirmSettingsUnregister:
+			m.confirmMode = confirmNone
+			if m.conn == nil {
+				return nil
+			}
+			return unregisterProjectCmd(m.conn, m.projectID)
 		}
 	case key.Matches(msg, confirmKeys.No), key.Matches(msg, confirmKeys.Cancel):
 		m.confirmMode = confirmNone

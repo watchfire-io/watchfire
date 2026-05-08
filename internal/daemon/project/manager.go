@@ -53,6 +53,23 @@ type UpdateOptions struct {
 	Definition          *string
 	SecretsInstructions *string
 	NotificationsMuted  *bool
+
+	// v6 (#0090) — Sandbox + Status surfacing.
+	Sandbox *string
+	Status  *string
+
+	// v6 (#0091) — full per-project notifications block override. When
+	// non-nil, replaces the entire on-disk notifications struct (including
+	// Muted, OverrideEvents, Events, QuietHoursOverride). Mutually exclusive
+	// with NotificationsMuted; when both are set, the full block wins and
+	// the legacy field is ignored.
+	Notifications *models.ProjectNotifications
+
+	// v6 (#0091) — per-project Slack channel + Discord guild bindings.
+	// Empty string clears the binding (= inherit global default). nil
+	// means "leave the field as-is".
+	SlackChannel   *string
+	DiscordGuildID *string
 }
 
 // ListProjects returns all registered projects with their index entry data.
@@ -243,6 +260,22 @@ func (m *Manager) UpdateProject(opts UpdateOptions) (ProjectWithEntry, error) {
 	if opts.NotificationsMuted != nil {
 		p.Notifications.Muted = *opts.NotificationsMuted
 	}
+	if opts.Notifications != nil {
+		// Full-block update wins over the legacy Muted-only path.
+		p.Notifications = *opts.Notifications
+	}
+	if opts.Sandbox != nil {
+		p.Sandbox = *opts.Sandbox
+	}
+	if opts.Status != nil {
+		p.Status = *opts.Status
+	}
+	if opts.SlackChannel != nil {
+		p.Integrations.SlackChannel = *opts.SlackChannel
+	}
+	if opts.DiscordGuildID != nil {
+		p.Integrations.DiscordGuildID = *opts.DiscordGuildID
+	}
 
 	p.UpdatedAt = time.Now().UTC()
 
@@ -338,6 +371,108 @@ func (m *Manager) ReorderProjects(projectIDs []string) ([]ProjectWithEntry, erro
 // DeleteProject removes a project from the registry.
 // Note: This does NOT delete the .watchfire directory, only unregisters the project.
 func (m *Manager) DeleteProject(projectID string) error {
+	return config.UnregisterProject(projectID)
+}
+
+// RegenerateProjectID mints a new UUID, rewrites the project file, and
+// updates the global index entry. The project path stays the same. The
+// prior ID is logged at INFO level for diagnostics.
+func (m *Manager) RegenerateProjectID(projectID string) (ProjectWithEntry, error) {
+	index, err := config.LoadProjectsIndex()
+	if err != nil {
+		return ProjectWithEntry{}, err
+	}
+	entry := index.FindProject(projectID)
+	if entry == nil {
+		return ProjectWithEntry{}, fmt.Errorf("project not found: %s", projectID)
+	}
+	p, err := config.LoadProject(entry.Path)
+	if err != nil {
+		return ProjectWithEntry{}, err
+	}
+	if p == nil {
+		return ProjectWithEntry{}, fmt.Errorf("project file not found: %s", entry.Path)
+	}
+
+	oldID := p.ProjectID
+	newID := uuid.New().String()
+	p.ProjectID = newID
+	p.UpdatedAt = time.Now().UTC()
+
+	if err := config.SaveProject(entry.Path, p); err != nil {
+		return ProjectWithEntry{}, err
+	}
+
+	// Update the global index in-place: drop the stale entry, insert the
+	// new one at the same position so display ordering is preserved.
+	pos := entry.Position
+	name := entry.Name
+	path := entry.Path
+	index.RemoveProject(oldID)
+	index.Projects = append(index.Projects, models.ProjectEntry{
+		ProjectID: newID,
+		Name:      name,
+		Path:      path,
+		Position:  pos,
+	})
+	if err := config.SaveProjectsIndex(index); err != nil {
+		return ProjectWithEntry{}, err
+	}
+
+	fmt.Printf("[project] regenerated ID for %q: %s → %s\n", name, oldID, newID)
+
+	return ProjectWithEntry{
+		Project:  p,
+		Path:     path,
+		Position: pos,
+	}, nil
+}
+
+// ResetTaskNumbering recomputes `next_task_number` from the on-disk task
+// list. With zero tasks it sets to 1. Persists project.yaml and returns
+// the updated entry.
+func (m *Manager) ResetTaskNumbering(projectID string) (ProjectWithEntry, error) {
+	index, err := config.LoadProjectsIndex()
+	if err != nil {
+		return ProjectWithEntry{}, err
+	}
+	entry := index.FindProject(projectID)
+	if entry == nil {
+		return ProjectWithEntry{}, fmt.Errorf("project not found: %s", projectID)
+	}
+	p, err := config.LoadProject(entry.Path)
+	if err != nil {
+		return ProjectWithEntry{}, err
+	}
+	if p == nil {
+		return ProjectWithEntry{}, fmt.Errorf("project file not found: %s", entry.Path)
+	}
+
+	highest, err := config.HighestTaskNumber(entry.Path)
+	if err != nil {
+		return ProjectWithEntry{}, err
+	}
+	if highest <= 0 {
+		p.NextTaskNumber = 1
+	} else {
+		p.NextTaskNumber = highest + 1
+	}
+	p.UpdatedAt = time.Now().UTC()
+
+	if err := config.SaveProject(entry.Path, p); err != nil {
+		return ProjectWithEntry{}, err
+	}
+
+	return ProjectWithEntry{
+		Project:  p,
+		Path:     entry.Path,
+		Position: entry.Position,
+	}, nil
+}
+
+// UnregisterProject drops the entry from the global projects.yaml. The
+// local .watchfire/ folder is left untouched.
+func (m *Manager) UnregisterProject(projectID string) error {
 	return config.UnregisterProject(projectID)
 }
 

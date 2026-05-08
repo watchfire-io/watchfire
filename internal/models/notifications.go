@@ -62,29 +62,82 @@ const (
 // reaches the OS layer: master toggle, per-event toggle, per-project mute,
 // and quiet hours. now is wall-clock local time (the caller passes
 // time.Now().Local() in production; tests pass a fixed time).
-func ShouldNotify(kind NotificationKind, cfg NotificationsConfig, projectMuted bool, now time.Time) bool {
-	if projectMuted {
+//
+// Pre-v6 callers can pass an empty ProjectNotifications{} — the function
+// then behaves identically to the v4.0 Beacon two-argument signature. New
+// callers can pass a fully-populated struct and the function will consult
+// per-project overrides for events and quiet hours before falling back to
+// the global config.
+func ShouldNotify(kind NotificationKind, cfg NotificationsConfig, project ProjectNotifications, now time.Time) bool {
+	if project.Muted {
 		return false
 	}
 	if !cfg.Enabled {
 		return false
 	}
-	switch kind {
-	case NotificationTaskFailed:
-		if !cfg.Events.TaskFailed {
-			return false
-		}
-	case NotificationRunComplete:
-		if !cfg.Events.RunComplete {
-			return false
-		}
-	case NotificationWeeklyDigest:
-		if !cfg.Events.WeeklyDigest {
-			return false
-		}
+	if !eventEnabled(kind, cfg, project) {
+		return false
 	}
-	if IsQuietHours(now, cfg.QuietHours) {
+	qh := cfg.QuietHours
+	if project.QuietHoursOverride != nil {
+		qh = *project.QuietHoursOverride
+	}
+	if IsQuietHours(now, qh) {
 		return false
 	}
 	return true
+}
+
+// eventEnabled reports whether the per-event gate lets `kind` through.
+// Project overrides win when OverrideEvents is set AND a row for the event
+// is present in the map; otherwise the global cfg.Events block decides.
+// A `nil` Events map with OverrideEvents=true is treated as "all events
+// inherit globally" — defensive, so a partial override never silently
+// disables every notification.
+func eventEnabled(kind NotificationKind, cfg NotificationsConfig, project ProjectNotifications) bool {
+	if project.OverrideEvents && project.Events != nil {
+		if pref, ok := project.Events[eventKey(kind)]; ok {
+			return pref.Enabled
+		}
+	}
+	switch kind {
+	case NotificationTaskFailed:
+		return cfg.Events.TaskFailed
+	case NotificationRunComplete:
+		return cfg.Events.RunComplete
+	case NotificationWeeklyDigest:
+		return cfg.Events.WeeklyDigest
+	}
+	return true
+}
+
+// eventKey is the YAML / map key for a NotificationKind. Stays internal so
+// callers don't reach into the map directly; the tests round-trip through
+// ShouldNotify rather than asserting on raw keys.
+func eventKey(kind NotificationKind) string {
+	switch kind {
+	case NotificationTaskFailed:
+		return "task_failed"
+	case NotificationRunComplete:
+		return "run_complete"
+	case NotificationWeeklyDigest:
+		return "weekly_digest"
+	}
+	return ""
+}
+
+// ResolveSound returns the sound name to play for a given notification
+// kind, honouring the per-project override when present and falling back
+// to the global default. Empty return means "no sound configured" — the
+// caller should not play one.
+func ResolveSound(kind NotificationKind, cfg NotificationsConfig, project ProjectNotifications, defaults map[NotificationKind]string) string {
+	if project.OverrideEvents && project.Events != nil {
+		if pref, ok := project.Events[eventKey(kind)]; ok && pref.Sound != "" {
+			return pref.Sound
+		}
+	}
+	if defaults != nil {
+		return defaults[kind]
+	}
+	return ""
 }

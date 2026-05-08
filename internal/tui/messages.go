@@ -80,6 +80,14 @@ type TickMsg struct{}
 // ClearErrorMsg clears the error display.
 type ClearErrorMsg struct{}
 
+// StatusMsg carries an informational status-bar message that auto-clears
+// after a few seconds (same lifetime as ProjectSavedMsg's "Saved" badge).
+// Used by danger-zone actions and integration toggles to acknowledge a
+// successful RPC without piggy-backing on the error channel.
+type StatusMsg struct {
+	Text string
+}
+
 // ClearSavedMsg clears the "Saved" indicator.
 type ClearSavedMsg struct{}
 

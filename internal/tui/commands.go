@@ -381,10 +381,101 @@ func updateProjectCmd(conn *grpc.ClientConn, projectID string, updates map[strin
 		if v, ok := updates["notifications_muted"].(bool); ok {
 			req.NotificationsMuted = &v
 		}
+		if v, ok := updates["sandbox"].(string); ok {
+			req.Sandbox = &v
+		}
+		if v, ok := updates["status"].(string); ok {
+			req.Status = &v
+		}
+		if v, ok := updates["notifications"].(*pb.ProjectNotifications); ok {
+			req.Notifications = v
+		}
 
 		project, err := client.UpdateProject(ctx, req)
 		if err != nil {
 			return ErrorMsg{Err: fmt.Errorf("failed to update project: %w", err)}
+		}
+		return ProjectSavedMsg{Project: project}
+	}
+}
+
+// regenerateProjectIDCmd dispatches the danger-zone "regenerate ID" RPC.
+// On success the daemon emits a ProjectChanged event; the response carries
+// the freshly-minted project so the TUI updates without a re-fetch.
+func regenerateProjectIDCmd(conn *grpc.ClientConn, projectID string) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewProjectServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		project, err := client.RegenerateProjectId(ctx, &pb.ProjectId{ProjectId: projectID})
+		if err != nil {
+			return ErrorMsg{Err: fmt.Errorf("failed to regenerate project id: %w", err)}
+		}
+		return ProjectSavedMsg{Project: project}
+	}
+}
+
+// resetTaskNumberingCmd dispatches the danger-zone "reset numbering" RPC.
+func resetTaskNumberingCmd(conn *grpc.ClientConn, projectID string) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewProjectServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		project, err := client.ResetTaskNumbering(ctx, &pb.ProjectId{ProjectId: projectID})
+		if err != nil {
+			return ErrorMsg{Err: fmt.Errorf("failed to reset task numbering: %w", err)}
+		}
+		return ProjectSavedMsg{Project: project}
+	}
+}
+
+// unregisterProjectCmd drops the project from the global index.
+func unregisterProjectCmd(conn *grpc.ClientConn, projectID string) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewProjectServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := client.UnregisterProject(ctx, &pb.ProjectId{ProjectId: projectID}); err != nil {
+			return ErrorMsg{Err: fmt.Errorf("failed to unregister project: %w", err)}
+		}
+		return StatusMsg{Text: "Project unregistered. Local files preserved."}
+	}
+}
+
+// setGitHubAutoPRScopeCmd toggles the project's membership in the global
+// `integrations.yaml` → `github.project_scopes` list.
+func setGitHubAutoPRScopeCmd(conn *grpc.ClientConn, projectID string, enabled bool) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewProjectServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		if _, err := client.SetGitHubAutoPRScope(ctx, &pb.SetGitHubAutoPRScopeRequest{
+			ProjectId: projectID,
+			Enabled:   enabled,
+		}); err != nil {
+			return ErrorMsg{Err: fmt.Errorf("failed to update GitHub auto-PR scope: %w", err)}
+		}
+		if enabled {
+			return StatusMsg{Text: "GitHub auto-PR enabled for this project."}
+		}
+		return StatusMsg{Text: "GitHub auto-PR disabled for this project."}
+	}
+}
+
+// setProjectIntegrationBindingsCmd persists the per-project Slack channel
+// + Discord guild bindings on the project YAML.
+func setProjectIntegrationBindingsCmd(conn *grpc.ClientConn, projectID, slackChannel, discordGuildID string) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewProjectServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		project, err := client.SetProjectIntegrationBindings(ctx, &pb.SetProjectIntegrationBindingsRequest{
+			ProjectId:      projectID,
+			SlackChannel:   slackChannel,
+			DiscordGuildId: discordGuildID,
+		})
+		if err != nil {
+			return ErrorMsg{Err: fmt.Errorf("failed to update project integration bindings: %w", err)}
 		}
 		return ProjectSavedMsg{Project: project}
 	}

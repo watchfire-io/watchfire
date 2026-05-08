@@ -106,11 +106,11 @@ func emitRunComplete(bus *notify.Bus, projectID, projectName, projectPath string
 	if settings != nil {
 		cfg = settings.Defaults.Notifications
 	}
-	muted := false
+	var projectNotif models.ProjectNotifications
 	if project != nil {
-		muted = project.Notifications.Muted
+		projectNotif = project.Notifications
 	}
-	if !models.ShouldNotify(models.NotificationRunComplete, cfg, muted, time.Now().Local()) {
+	if !models.ShouldNotify(models.NotificationRunComplete, cfg, projectNotif, time.Now().Local()) {
 		return
 	}
 

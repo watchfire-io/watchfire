@@ -163,26 +163,26 @@ func TestShouldNotifyWeeklyDigestGate(t *testing.T) {
 	now := time.Date(2026, 3, 9, 9, 0, 0, 0, time.UTC)
 
 	// Default config: weekly_digest is OFF.
-	if models.ShouldNotify(models.NotificationWeeklyDigest, cfg, false, now) {
+	if models.ShouldNotify(models.NotificationWeeklyDigest, cfg, models.ProjectNotifications{}, now) {
 		t.Errorf("default config should suppress weekly digest")
 	}
 
 	// Toggle on — passes.
 	cfg.Events.WeeklyDigest = true
-	if !models.ShouldNotify(models.NotificationWeeklyDigest, cfg, false, now) {
+	if !models.ShouldNotify(models.NotificationWeeklyDigest, cfg, models.ProjectNotifications{}, now) {
 		t.Errorf("weekly_digest enabled should pass the gate")
 	}
 
 	// Master toggle off — suppresses.
 	cfg.Enabled = false
-	if models.ShouldNotify(models.NotificationWeeklyDigest, cfg, false, now) {
+	if models.ShouldNotify(models.NotificationWeeklyDigest, cfg, models.ProjectNotifications{}, now) {
 		t.Errorf("master toggle off should suppress weekly digest")
 	}
 
 	// Reset, then quiet hours — suppresses.
 	cfg.Enabled = true
 	cfg.QuietHours = models.QuietHoursConfig{Enabled: true, Start: "08:00", End: "10:00"}
-	if models.ShouldNotify(models.NotificationWeeklyDigest, cfg, false, now) {
+	if models.ShouldNotify(models.NotificationWeeklyDigest, cfg, models.ProjectNotifications{}, now) {
 		t.Errorf("quiet hours should suppress weekly digest")
 	}
 }
