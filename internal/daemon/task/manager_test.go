@@ -295,6 +295,163 @@ func TestBulkUpdateStatusToDoneSetsSuccess(t *testing.T) {
 	}
 }
 
+// TestRestoreTaskRoundTrip verifies that DeleteTask + RestoreTask leave
+// the task fully visible again with deleted_at cleared, so the v6 trash
+// filter mode's `u` action returns the row to the active list on the
+// very next ListTasks call.
+func TestRestoreTaskRoundTrip(t *testing.T) {
+	projectPath := setupTempProject(t)
+	m := NewManager()
+
+	created, err := m.CreateTask(projectPath, CreateOptions{
+		Title:  "soon to be trash",
+		Prompt: "p",
+		Status: string(models.TaskStatusReady),
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	deleted, err := m.DeleteTask(projectPath, created.TaskNumber)
+	if err != nil {
+		t.Fatalf("DeleteTask: %v", err)
+	}
+	if !deleted.IsDeleted() {
+		t.Fatalf("DeleteTask did not mark task as deleted")
+	}
+
+	active, err := m.ListTasks(projectPath, ListOptions{})
+	if err != nil {
+		t.Fatalf("ListTasks active: %v", err)
+	}
+	for _, task := range active {
+		if task.TaskNumber == created.TaskNumber {
+			t.Fatalf("deleted task should not appear in active list")
+		}
+	}
+
+	restored, err := m.RestoreTask(projectPath, created.TaskNumber)
+	if err != nil {
+		t.Fatalf("RestoreTask: %v", err)
+	}
+	if restored.IsDeleted() {
+		t.Fatalf("RestoreTask did not clear deleted_at")
+	}
+
+	active, err = m.ListTasks(projectPath, ListOptions{})
+	if err != nil {
+		t.Fatalf("ListTasks after restore: %v", err)
+	}
+	found := false
+	for _, task := range active {
+		if task.TaskNumber == created.TaskNumber {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("restored task should appear in active list again")
+	}
+}
+
+// TestPermanentDeleteRefusesUnmergedBranch is the safety guard for `x`
+// in trash mode: when the branchMerged callback reports unmerged the
+// task YAML must remain on disk untouched.
+func TestPermanentDeleteRefusesUnmergedBranch(t *testing.T) {
+	projectPath := setupTempProject(t)
+	m := NewManager()
+
+	created, err := m.CreateTask(projectPath, CreateOptions{
+		Title:  "unmerged work",
+		Prompt: "p",
+		Status: string(models.TaskStatusReady),
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+	if _, err := m.DeleteTask(projectPath, created.TaskNumber); err != nil {
+		t.Fatalf("DeleteTask: %v", err)
+	}
+
+	unmerged := func(_ int) (bool, error) { return false, nil }
+	err = m.PermanentDelete(projectPath, created.TaskNumber, unmerged)
+	if err == nil {
+		t.Fatalf("PermanentDelete should refuse when branch is unmerged")
+	}
+
+	loaded, err := config.LoadTask(projectPath, created.TaskNumber)
+	if err != nil {
+		t.Fatalf("LoadTask after refused permanent delete: %v", err)
+	}
+	if loaded == nil {
+		t.Fatalf("task YAML should still exist after refused permanent delete")
+	}
+}
+
+// TestPermanentDeleteRefusesActiveTask makes sure the manager won't hard
+// delete a task that hasn't been soft-deleted first — protecting against
+// a UI bug that calls the RPC on the wrong row.
+func TestPermanentDeleteRefusesActiveTask(t *testing.T) {
+	projectPath := setupTempProject(t)
+	m := NewManager()
+
+	created, err := m.CreateTask(projectPath, CreateOptions{
+		Title:  "still alive",
+		Prompt: "p",
+		Status: string(models.TaskStatusReady),
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	if err := m.PermanentDelete(projectPath, created.TaskNumber, nil); err == nil {
+		t.Fatalf("PermanentDelete should refuse non-soft-deleted task")
+	}
+	if loaded, _ := config.LoadTask(projectPath, created.TaskNumber); loaded == nil {
+		t.Fatalf("active task YAML should still exist after refused permanent delete")
+	}
+}
+
+// TestPermanentDeleteRemovesYAMLAndMetrics verifies the happy path:
+// when the branch check passes (or is nil) the YAML is removed and the
+// optional `<n>.metrics.yaml` sibling is cleaned up alongside it.
+func TestPermanentDeleteRemovesYAMLAndMetrics(t *testing.T) {
+	projectPath := setupTempProject(t)
+	m := NewManager()
+
+	created, err := m.CreateTask(projectPath, CreateOptions{
+		Title:  "trash me",
+		Prompt: "p",
+		Status: string(models.TaskStatusReady),
+	})
+	if err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	// Drop a metrics sibling so we can confirm it gets cleaned up too.
+	if err := config.WriteMetrics(projectPath, &models.TaskMetrics{TaskNumber: created.TaskNumber}); err != nil {
+		t.Fatalf("WriteMetrics: %v", err)
+	}
+	if !config.MetricsExists(projectPath, created.TaskNumber) {
+		t.Fatalf("precondition: metrics sibling should exist on disk")
+	}
+
+	if _, err := m.DeleteTask(projectPath, created.TaskNumber); err != nil {
+		t.Fatalf("DeleteTask: %v", err)
+	}
+
+	if err := m.PermanentDelete(projectPath, created.TaskNumber, nil); err != nil {
+		t.Fatalf("PermanentDelete: %v", err)
+	}
+
+	loaded, _ := config.LoadTask(projectPath, created.TaskNumber)
+	if loaded != nil {
+		t.Fatalf("expected task YAML to be removed; still loaded as %+v", loaded)
+	}
+	if config.MetricsExists(projectPath, created.TaskNumber) {
+		t.Fatalf("expected metrics sibling to be removed alongside the task YAML")
+	}
+}
+
 func TestUpdateTaskNilAgentLeavesUnchanged(t *testing.T) {
 	projectPath := setupTempProject(t)
 	m := NewManager()

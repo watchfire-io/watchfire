@@ -2,6 +2,9 @@ package server
 
 import (
 	"context"
+	"fmt"
+	"os/exec"
+	"strings"
 
 	"google.golang.org/protobuf/types/known/emptypb"
 
@@ -145,6 +148,57 @@ func (s *taskService) RestoreTask(_ context.Context, req *pb.TaskId) (*pb.Task, 
 		return nil, err
 	}
 	return modelToProtoTask(t, req.ProjectId), nil
+}
+
+func (s *taskService) PermanentDeleteTask(_ context.Context, req *pb.TaskId) (*emptypb.Empty, error) {
+	projectPath, err := getProjectPath(req.ProjectId)
+	if err != nil {
+		return nil, err
+	}
+
+	check := func(taskNumber int) (bool, error) {
+		return branchSafeToDelete(projectPath, taskNumber), nil
+	}
+	if err := s.manager.PermanentDelete(projectPath, int(req.TaskNumber), check); err != nil {
+		return nil, err
+	}
+	return &emptypb.Empty{}, nil
+}
+
+// branchSafeToDelete reports whether the worktree branch for a task can be
+// safely discarded as part of a permanent delete. True when the branch is
+// already merged, no longer exists, or never existed; false when it exists
+// and has unmerged commits relative to the current branch.
+func branchSafeToDelete(projectPath string, taskNumber int) bool {
+	branchName := fmt.Sprintf("watchfire/%04d", taskNumber)
+	listCmd := exec.Command("git", "branch", "--list", branchName)
+	listCmd.Dir = projectPath
+	out, err := listCmd.Output()
+	if err != nil {
+		// Git unavailable / not a repo — don't block destructive cleanup.
+		return true
+	}
+	if strings.TrimSpace(string(out)) == "" {
+		return true
+	}
+
+	target := "main"
+	revCmd := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD")
+	revCmd.Dir = projectPath
+	if revOut, revErr := revCmd.Output(); revErr == nil {
+		t := strings.TrimSpace(string(revOut))
+		if t != "" && t != "HEAD" {
+			target = t
+		}
+	}
+
+	mergedCmd := exec.Command("git", "branch", "--merged", target, "--list", branchName)
+	mergedCmd.Dir = projectPath
+	mergedOut, err := mergedCmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(mergedOut)) != ""
 }
 
 func (s *taskService) BulkUpdateStatus(_ context.Context, req *pb.BulkUpdateStatusRequest) (*pb.TaskList, error) {

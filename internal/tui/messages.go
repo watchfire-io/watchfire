@@ -68,6 +68,12 @@ type ScreenEndedMsg struct{}
 // TaskDeletedMsg signals a task was deleted.
 type TaskDeletedMsg struct{}
 
+// TaskRestoredMsg signals a soft-deleted task was restored to active state.
+type TaskRestoredMsg struct{}
+
+// TaskPermanentDeletedMsg signals a task was hard-deleted from disk.
+type TaskPermanentDeletedMsg struct{}
+
 // TickMsg is a periodic tick for polling.
 type TickMsg struct{}
 

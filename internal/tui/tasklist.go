@@ -33,6 +33,11 @@ type TaskList struct {
 	// Search state
 	searchMode  bool
 	searchQuery string
+
+	// Trash mode — when true, only soft-deleted tasks are surfaced.
+	// Restore (`u`) / permanent delete (`x`) replace the usual mutating
+	// keys; toggled via `D` (capital) at the key handler.
+	trashMode bool
 }
 
 type taskItem struct {
@@ -208,15 +213,42 @@ func (tl *TaskList) ensureVisible() {
 func (tl *TaskList) rebuild() {
 	items := make([]taskItem, 0, len(tl.tasks)+3)
 
-	// Group tasks by status. Preserve the order the task manager gave us
-	// (canonical: descending by task_number) so within-group order remains
-	// newest-first without re-sorting.
+	if tl.trashMode {
+		// Trash view shows soft-deleted tasks under a single section.
+		// Within-section order stays newest-first (the task manager
+		// already returns descending by task_number).
+		var deleted []*pb.Task
+		for _, t := range tl.tasks {
+			if t.GetDeletedAt() != nil {
+				deleted = append(deleted, t)
+			}
+		}
+		if len(deleted) > 0 {
+			items = append(items, taskItem{
+				isHeader:  true,
+				headerStr: fmt.Sprintf("Deleted (%d)", len(deleted)),
+			})
+			for _, t := range deleted {
+				items = append(items, taskItem{task: t})
+			}
+		}
+		tl.flatItems = items
+		return
+	}
+
+	// Active view — drop soft-deleted tasks. The daemon's default
+	// ListTasks already filters them out, but a stale snapshot can carry
+	// one through; the UI must never show a deleted row alongside the
+	// live ones.
 	groups := map[string][]*pb.Task{
 		"draft": {},
 		"ready": {},
 		"done":  {},
 	}
 	for _, t := range tl.tasks {
+		if t.GetDeletedAt() != nil {
+			continue
+		}
 		groups[t.Status] = append(groups[t.Status], t)
 	}
 
@@ -247,10 +279,49 @@ func (tl *TaskList) rebuild() {
 	tl.flatItems = items
 }
 
+// SetTrashMode toggles between active and trash views. Returns the new mode.
+// Callers reset the cursor and scroll so the user lands on a sensible row
+// after the flip.
+func (tl *TaskList) SetTrashMode(enabled bool) {
+	if tl.trashMode == enabled {
+		return
+	}
+	tl.trashMode = enabled
+	// Trash mode is incompatible with an active text-search filter — the
+	// search predicate ran against the active list, so the matches it
+	// produced won't line up with the soft-deleted set. Clearing keeps
+	// the row dispatch unambiguous.
+	tl.searchMode = false
+	tl.searchQuery = ""
+	tl.filteredItems = nil
+	tl.cursor = 0
+	tl.scrollOffset = 0
+	tl.rebuild()
+	tl.skipHeaders(1)
+}
+
+// TrashMode reports whether the list is in trash-filter mode.
+func (tl *TaskList) TrashMode() bool { return tl.trashMode }
+
+// DeletedCount returns the number of soft-deleted tasks currently held by
+// the list, regardless of which mode is active. Used by the status bar.
+func (tl *TaskList) DeletedCount() int {
+	n := 0
+	for _, t := range tl.tasks {
+		if t.GetDeletedAt() != nil {
+			n++
+		}
+	}
+	return n
+}
+
 // View renders the task list.
 func (tl *TaskList) View(width int) string {
 	items := tl.activeItems()
 	if len(items) == 0 {
+		if tl.trashMode {
+			return lipgloss.NewStyle().Foreground(colorDim).Render("No deleted tasks. Press D to return.")
+		}
 		if tl.searchMode || tl.searchQuery != "" {
 			return lipgloss.NewStyle().Foreground(colorDim).Render("No matching tasks.")
 		}

@@ -54,8 +54,12 @@ func loadTasksCmd(conn *grpc.ClientConn, projectID string) tea.Cmd {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
 
+		// IncludeDeleted=true so the v6 trash filter mode can render
+		// soft-deleted tasks without a second round trip. Active mode
+		// drops them in TaskList.rebuild.
 		resp, err := client.ListTasks(ctx, &pb.ListTasksRequest{
-			ProjectId: projectID,
+			ProjectId:      projectID,
+			IncludeDeleted: true,
 		})
 		if err != nil {
 			return ErrorMsg{Err: fmt.Errorf("failed to load tasks: %w", err)}
@@ -289,6 +293,40 @@ func updateTaskCmd(conn *grpc.ClientConn, projectID string, taskNumber int32, up
 			return ErrorMsg{Err: fmt.Errorf("failed to update task: %w", err)}
 		}
 		return TaskSavedMsg{Task: task}
+	}
+}
+
+func restoreTaskCmd(conn *grpc.ClientConn, projectID string, taskNumber int32) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewTaskServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		_, err := client.RestoreTask(ctx, &pb.TaskId{
+			ProjectId:  projectID,
+			TaskNumber: taskNumber,
+		})
+		if err != nil {
+			return ErrorMsg{Err: fmt.Errorf("failed to restore task: %w", err)}
+		}
+		return TaskRestoredMsg{}
+	}
+}
+
+func permanentDeleteTaskCmd(conn *grpc.ClientConn, projectID string, taskNumber int32) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewTaskServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		_, err := client.PermanentDeleteTask(ctx, &pb.TaskId{
+			ProjectId:  projectID,
+			TaskNumber: taskNumber,
+		})
+		if err != nil {
+			return ErrorMsg{Err: fmt.Errorf("failed to permanently delete task: %w", err)}
+		}
+		return TaskPermanentDeletedMsg{}
 	}
 }
 

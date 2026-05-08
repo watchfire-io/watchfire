@@ -354,17 +354,18 @@ var ProjectService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	TaskService_ListTasks_FullMethodName        = "/watchfire.TaskService/ListTasks"
-	TaskService_GetTask_FullMethodName          = "/watchfire.TaskService/GetTask"
-	TaskService_CreateTask_FullMethodName       = "/watchfire.TaskService/CreateTask"
-	TaskService_UpdateTask_FullMethodName       = "/watchfire.TaskService/UpdateTask"
-	TaskService_DeleteTask_FullMethodName       = "/watchfire.TaskService/DeleteTask"
-	TaskService_RestoreTask_FullMethodName      = "/watchfire.TaskService/RestoreTask"
-	TaskService_EmptyTrash_FullMethodName       = "/watchfire.TaskService/EmptyTrash"
-	TaskService_BulkUpdateStatus_FullMethodName = "/watchfire.TaskService/BulkUpdateStatus"
-	TaskService_BulkDelete_FullMethodName       = "/watchfire.TaskService/BulkDelete"
-	TaskService_BulkRestore_FullMethodName      = "/watchfire.TaskService/BulkRestore"
-	TaskService_ReorderTasks_FullMethodName     = "/watchfire.TaskService/ReorderTasks"
+	TaskService_ListTasks_FullMethodName           = "/watchfire.TaskService/ListTasks"
+	TaskService_GetTask_FullMethodName             = "/watchfire.TaskService/GetTask"
+	TaskService_CreateTask_FullMethodName          = "/watchfire.TaskService/CreateTask"
+	TaskService_UpdateTask_FullMethodName          = "/watchfire.TaskService/UpdateTask"
+	TaskService_DeleteTask_FullMethodName          = "/watchfire.TaskService/DeleteTask"
+	TaskService_RestoreTask_FullMethodName         = "/watchfire.TaskService/RestoreTask"
+	TaskService_PermanentDeleteTask_FullMethodName = "/watchfire.TaskService/PermanentDeleteTask"
+	TaskService_EmptyTrash_FullMethodName          = "/watchfire.TaskService/EmptyTrash"
+	TaskService_BulkUpdateStatus_FullMethodName    = "/watchfire.TaskService/BulkUpdateStatus"
+	TaskService_BulkDelete_FullMethodName          = "/watchfire.TaskService/BulkDelete"
+	TaskService_BulkRestore_FullMethodName         = "/watchfire.TaskService/BulkRestore"
+	TaskService_ReorderTasks_FullMethodName        = "/watchfire.TaskService/ReorderTasks"
 )
 
 // TaskServiceClient is the client API for TaskService service.
@@ -379,6 +380,7 @@ type TaskServiceClient interface {
 	UpdateTask(ctx context.Context, in *UpdateTaskRequest, opts ...grpc.CallOption) (*Task, error)
 	DeleteTask(ctx context.Context, in *TaskId, opts ...grpc.CallOption) (*Task, error)
 	RestoreTask(ctx context.Context, in *TaskId, opts ...grpc.CallOption) (*Task, error)
+	PermanentDeleteTask(ctx context.Context, in *TaskId, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	EmptyTrash(ctx context.Context, in *ProjectId, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	BulkUpdateStatus(ctx context.Context, in *BulkUpdateStatusRequest, opts ...grpc.CallOption) (*TaskList, error)
 	BulkDelete(ctx context.Context, in *BulkDeleteRequest, opts ...grpc.CallOption) (*TaskList, error)
@@ -454,6 +456,16 @@ func (c *taskServiceClient) RestoreTask(ctx context.Context, in *TaskId, opts ..
 	return out, nil
 }
 
+func (c *taskServiceClient) PermanentDeleteTask(ctx context.Context, in *TaskId, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, TaskService_PermanentDeleteTask_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *taskServiceClient) EmptyTrash(ctx context.Context, in *ProjectId, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(emptypb.Empty)
@@ -516,6 +528,7 @@ type TaskServiceServer interface {
 	UpdateTask(context.Context, *UpdateTaskRequest) (*Task, error)
 	DeleteTask(context.Context, *TaskId) (*Task, error)
 	RestoreTask(context.Context, *TaskId) (*Task, error)
+	PermanentDeleteTask(context.Context, *TaskId) (*emptypb.Empty, error)
 	EmptyTrash(context.Context, *ProjectId) (*emptypb.Empty, error)
 	BulkUpdateStatus(context.Context, *BulkUpdateStatusRequest) (*TaskList, error)
 	BulkDelete(context.Context, *BulkDeleteRequest) (*TaskList, error)
@@ -548,6 +561,9 @@ func (UnimplementedTaskServiceServer) DeleteTask(context.Context, *TaskId) (*Tas
 }
 func (UnimplementedTaskServiceServer) RestoreTask(context.Context, *TaskId) (*Task, error) {
 	return nil, status.Error(codes.Unimplemented, "method RestoreTask not implemented")
+}
+func (UnimplementedTaskServiceServer) PermanentDeleteTask(context.Context, *TaskId) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method PermanentDeleteTask not implemented")
 }
 func (UnimplementedTaskServiceServer) EmptyTrash(context.Context, *ProjectId) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method EmptyTrash not implemented")
@@ -693,6 +709,24 @@ func _TaskService_RestoreTask_Handler(srv interface{}, ctx context.Context, dec 
 	return interceptor(ctx, in, info, handler)
 }
 
+func _TaskService_PermanentDeleteTask_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(TaskId)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TaskServiceServer).PermanentDeleteTask(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TaskService_PermanentDeleteTask_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TaskServiceServer).PermanentDeleteTask(ctx, req.(*TaskId))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _TaskService_EmptyTrash_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(ProjectId)
 	if err := dec(in); err != nil {
@@ -813,6 +847,10 @@ var TaskService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "RestoreTask",
 			Handler:    _TaskService_RestoreTask_Handler,
+		},
+		{
+			MethodName: "PermanentDeleteTask",
+			Handler:    _TaskService_PermanentDeleteTask_Handler,
 		},
 		{
 			MethodName: "EmptyTrash",

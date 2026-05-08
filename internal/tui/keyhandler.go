@@ -201,6 +201,38 @@ func (m *Model) handleTaskListKey(msg tea.KeyMsg) tea.Cmd {
 
 	agentRunning := m.agentStatus != nil && m.agentStatus.IsRunning
 
+	// `D` flips the trash-mode filter regardless of which subset is
+	// currently rendered. Caught ahead of the `/` and movement keys so
+	// the toggle is always reachable.
+	if key.Matches(msg, taskListKeys.TrashToggle) {
+		m.taskList.SetTrashMode(!m.taskList.TrashMode())
+		return nil
+	}
+
+	// Trash mode dispatches a different set of mutating keys: `u`
+	// restores, `x` permanent-deletes (with confirm), `enter` reads the
+	// task back as a regular detail view. The mutating keys that don't
+	// make sense (`a`, `s`, `S`, `w`, `!`, `r`, `t`, `d`) are no-ops —
+	// the status-bar banner reminds the user which mode they're in.
+	if m.taskList.TrashMode() {
+		switch {
+		case key.Matches(msg, taskListKeys.Up):
+			m.taskList.MoveUp()
+			return nil
+		case key.Matches(msg, taskListKeys.Down):
+			m.taskList.MoveDown()
+			return nil
+		case key.Matches(msg, taskListKeys.Restore):
+			return m.restoreSelectedTask()
+		case key.Matches(msg, taskListKeys.Delete):
+			return m.confirmPermanentDeleteTask()
+		case key.Matches(msg, taskListKeys.Enter):
+			m.openEditTaskForm()
+			return nil
+		}
+		return nil
+	}
+
 	// "/" to start search
 	if msg.Type == tea.KeyRunes && string(msg.Runes) == "/" {
 		m.taskList.StartSearch()
@@ -432,6 +464,13 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) tea.Cmd {
 			}
 			m.logViewer.MarkDeleting(logID)
 			return deleteLogCmd(m.conn, m.projectID, logID)
+		case confirmPermanentDelete:
+			num := m.confirmTaskNum
+			m.confirmMode = confirmNone
+			if m.conn == nil {
+				return nil
+			}
+			return permanentDeleteTaskCmd(m.conn, m.projectID, num)
 		}
 	case key.Matches(msg, confirmKeys.No), key.Matches(msg, confirmKeys.Cancel):
 		m.confirmMode = confirmNone
