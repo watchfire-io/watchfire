@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/watchfire-io/watchfire/internal/config"
+	"github.com/watchfire-io/watchfire/internal/editor"
 )
 
 var defineCmd = &cobra.Command{
@@ -22,7 +22,7 @@ The definition is a markdown document that describes your project.
 It provides context to coding agents about the project's purpose,
 architecture, and any special instructions.
 
-The editor is selected in order: $EDITOR, $VISUAL, vim, vi, nano.`,
+The editor is selected in order: $VISUAL, $EDITOR, vim, vi.`,
 	RunE: runDefine,
 }
 
@@ -40,19 +40,16 @@ func runDefine(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("failed to load project configuration")
 	}
 
-	// Edit definition in external editor
 	newDefinition, err := editInEditor(project.Definition, "definition.md")
 	if err != nil {
 		return fmt.Errorf("failed to edit definition: %w", err)
 	}
 
-	// Check if changed
-	if newDefinition == project.Definition {
+	if !editor.ShouldSave(project.Definition, newDefinition) {
 		fmt.Println("No changes made.")
 		return nil
 	}
 
-	// Save updated project
 	project.Definition = newDefinition
 	project.UpdatedAt = time.Now().UTC()
 
@@ -64,59 +61,31 @@ func runDefine(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
-// editInEditor opens the content in an external editor and returns the edited content.
+// editInEditor opens content in the user's external editor, blocking
+// on the foreground process, and returns the post-editor content.
+// Used by `watchfire define` (CLI). The TUI Definition tab consumes
+// the same internal/editor helpers but wraps the editor launch in
+// tea.ExecProcess so Bubble Tea's render loop suspends cleanly.
 func editInEditor(content, filename string) (string, error) {
-	// Find editor
-	editor := findEditor()
-	if editor == "" {
-		return "", fmt.Errorf("no editor found. Set $EDITOR or $VISUAL environment variable")
+	bin := editor.Find()
+	if bin == "" {
+		return "", fmt.Errorf("no editor found. Set $VISUAL or $EDITOR environment variable")
 	}
 
-	// Create temp file
-	tmpDir := os.TempDir()
-	tmpFile := filepath.Join(tmpDir, "watchfire-"+filename)
-
-	if err := os.WriteFile(tmpFile, []byte(content), 0o600); err != nil {
-		return "", fmt.Errorf("failed to create temp file: %w", err)
+	tmpFile, err := editor.WriteTempFile(filename, content)
+	if err != nil {
+		return "", err
 	}
-	defer func() { _ = os.Remove(tmpFile) }()
 
-	// Run editor
-	cmd := exec.Command(editor, tmpFile)
+	cmd := exec.Command(bin, tmpFile)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
 	if err := cmd.Run(); err != nil {
+		_ = os.Remove(tmpFile)
 		return "", fmt.Errorf("editor exited with error: %w", err)
 	}
 
-	// Read edited content
-	edited, err := os.ReadFile(tmpFile)
-	if err != nil {
-		return "", fmt.Errorf("failed to read edited content: %w", err)
-	}
-
-	return string(edited), nil
-}
-
-// findEditor returns the user's preferred editor.
-func findEditor() string {
-	// Check environment variables
-	if editor := os.Getenv("EDITOR"); editor != "" {
-		return editor
-	}
-	if editor := os.Getenv("VISUAL"); editor != "" {
-		return editor
-	}
-
-	// Try common editors
-	editors := []string{"vim", "vi", "nano"}
-	for _, editor := range editors {
-		if path, err := exec.LookPath(editor); err == nil {
-			return path
-		}
-	}
-
-	return ""
+	return editor.ReadTempFile(tmpFile)
 }

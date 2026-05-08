@@ -69,7 +69,8 @@ var helpSections = []helpSection{
 	{
 		title: "Definition",
 		keys: []helpKey{
-			{"e / Enter", "Edit in $EDITOR"},
+			{"e", "edit definition in $EDITOR"},
+			{"Enter", "edit definition in $EDITOR"},
 			{"j/k", "Scroll"},
 		},
 	},
