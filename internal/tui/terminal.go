@@ -11,12 +11,22 @@ import (
 )
 
 // Terminal is the terminal viewport component for the right panel.
+//
+// The TUI runs its own vt10x emulator (vtBuffer) fed by the daemon's
+// SubscribeRawOutput stream so it can layer scrollback on top — the
+// daemon's vt10x has a fixed-size grid and no history, so consuming
+// the rendered-snapshot stream gave the user nowhere to scroll. Now
+// the viewport's content = scrollback + current screen, and PgUp /
+// Shift+arrows / wheel-up actually go somewhere.
 type Terminal struct {
 	viewport     viewport.Model
+	buf          *vtBuffer
 	agentStatus  *pb.AgentStatus
 	issue        *pb.AgentIssue
 	width        int
 	height       int
+	rows         int
+	cols         int
 	hasContent   bool
 	userScrolled bool // true when user has scrolled away from bottom
 }
@@ -27,10 +37,25 @@ func NewTerminal() *Terminal {
 	vp.Style = lipgloss.NewStyle()
 	return &Terminal{
 		viewport: vp,
+		buf:      newVTBuffer(24, 80),
+		rows:     24,
+		cols:     80,
 	}
 }
 
-// SetSize updates terminal dimensions.
+// SetInputForwarder wires the emulator's terminal-query responses
+// (DA1, DSR, focus, mouse, …) back to the daemon's PTY. Without this,
+// the agent emits a query and then blocks waiting for an answer that
+// never comes — claude in particular sends a DA1 on startup.
+func (t *Terminal) SetInputForwarder(fn func([]byte)) {
+	if t.buf != nil {
+		t.buf.SetForwarder(fn)
+	}
+}
+
+// SetSize updates terminal dimensions. Both the viewport (visible
+// window) and the internal vt10x emulator (grid size) get reshaped so
+// the agent's view of the terminal matches what's painted.
 func (t *Terminal) SetSize(width, height int) {
 	t.width = width
 	t.height = height
@@ -52,6 +77,21 @@ func (t *Terminal) SetSize(width, height int) {
 	}
 	t.viewport.Width = width
 	t.viewport.Height = vpHeight
+
+	t.rows = vpHeight
+	t.cols = width
+	if t.buf != nil {
+		t.buf.Resize(t.rows, t.cols)
+		t.refresh()
+	}
+}
+
+// PTYDimensions returns (rows, cols) the daemon should size the agent
+// PTY to. Equals the visible vt-buffer grid since scrollback is
+// layered on top of the current screen — the agent itself only sees a
+// rows×cols window.
+func (t *Terminal) PTYDimensions() (rows, cols int) {
+	return t.rows, t.cols
 }
 
 // SetAgentStatus updates the agent status for wildfire phase display.
@@ -66,10 +106,26 @@ func (t *Terminal) SetIssue(issue *pb.AgentIssue) {
 	t.SetSize(t.width, t.height)
 }
 
-// SetContent replaces the terminal viewport with pre-rendered ANSI content from the daemon.
-func (t *Terminal) SetContent(ansiContent string) {
+// WriteRaw feeds a chunk of raw PTY bytes from the daemon's
+// SubscribeRawOutput stream into the local emulator and refreshes the
+// viewport.
+func (t *Terminal) WriteRaw(data []byte) {
+	if t.buf == nil || len(data) == 0 {
+		return
+	}
 	t.hasContent = true
-	t.viewport.SetContent(ansiContent)
+	t.buf.Write(data)
+	t.refresh()
+}
+
+// refresh repaints the viewport with the buffer's current rendered
+// state (scrollback + screen). Auto-bottom is preserved unless the
+// user has scrolled up.
+func (t *Terminal) refresh() {
+	if t.buf == nil {
+		return
+	}
+	t.viewport.SetContent(t.buf.Render())
 	if !t.userScrolled {
 		t.viewport.GotoBottom()
 	}
@@ -79,6 +135,9 @@ func (t *Terminal) SetContent(ansiContent string) {
 func (t *Terminal) Clear() {
 	t.hasContent = false
 	t.userScrolled = false
+	if t.buf != nil {
+		t.buf.Clear()
+	}
 	t.viewport.SetContent("")
 }
 

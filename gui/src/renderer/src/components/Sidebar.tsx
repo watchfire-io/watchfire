@@ -75,8 +75,8 @@ export function Sidebar() {
         <div className="h-10" />
         {!collapsed ? (
           <div className="flex items-center gap-2 px-4 pb-3 titlebar-no-drag">
-            <img src={watchfireIcon} alt="Watchfire" className="w-6 h-6 shrink-0" />
-            <span className="font-heading font-semibold text-sm tracking-tight text-[var(--wf-text-primary)]">
+            <img src={watchfireIcon} alt="Watchfire" className="w-7 h-7 shrink-0" />
+            <span className="font-heading font-semibold text-xl tracking-tight text-[var(--wf-text-primary)]">
               watchfire
             </span>
           </div>

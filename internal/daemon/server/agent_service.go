@@ -304,14 +304,17 @@ func (s *agentService) SubscribeRawOutput(req *pb.SubscribeRawOutputRequest, str
 	}
 
 	subID := uuid.New().String()
-	ch := running.Process.SubscribeRaw(subID)
+	// Atomic subscribe-and-snapshot. The previous "subscribe then
+	// GetRawBuffer" pattern raced broadcastRaw — bytes broadcast in
+	// between would arrive on both the snapshot and the live channel,
+	// leaving a client-side vt10x replaying double-applied state.
+	snapshot, ch := running.Process.SubscribeRawWithSnapshot(subID)
 	defer running.Process.UnsubscribeRaw(subID)
 
-	// Send buffered output for late-join catch-up
-	if buf := running.Process.GetRawBuffer(); len(buf) > 0 {
+	if len(snapshot) > 0 {
 		if err := stream.Send(&pb.RawOutputChunk{
 			ProjectId: req.ProjectId,
-			Data:      buf,
+			Data:      snapshot,
 		}); err != nil {
 			return err
 		}

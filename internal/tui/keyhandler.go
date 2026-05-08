@@ -2,12 +2,21 @@ package tui
 
 import (
 	"fmt"
+	"regexp"
 
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 
 	pb "github.com/watchfire-io/watchfire/proto"
 )
+
+// csiMouseResidueRe matches the trailing fragment of an SGR mouse event
+// after Bubble Tea v1.3.10's input parser consumed the leading `\x1b[`
+// as a separate Alt+rune. When stdin reads cut a wheel sequence
+// mid-flight, the `<button;col;row M` tail leaks through as a KeyRunes
+// message — without this filter it would be forwarded into the chat
+// agent's stdin and submitted as part of the user's next message.
+var csiMouseResidueRe = regexp.MustCompile(`^<[0-9;]+[Mm]$`)
 
 // handleKey processes key events.
 func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
@@ -531,6 +540,20 @@ func (m *Model) handleTerminalKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
+	// CSI mouse-event byte-leak guard. Bubble Tea v1.3.10 reads stdin
+	// in 256-byte chunks; rapid wheel scrolling regularly cuts an SGR
+	// mouse sequence mid-flight. The parser then emits the leading
+	// `\x1b[` as Alt+[ and the tail `<64;105;35M` as a separate
+	// KeyRunes — both would otherwise fall through to the
+	// forward-to-agent block below and end up typed into Claude's
+	// chat input. Drop both shapes; neither is valid agent input.
+	if msg.Alt && msg.Type == tea.KeyRunes {
+		return nil
+	}
+	if msg.Type == tea.KeyRunes && csiMouseResidueRe.MatchString(string(msg.Runes)) {
+		return nil
+	}
+
 	// Forward all other input to agent
 	if m.agentStatus != nil && m.agentStatus.IsRunning && m.conn != nil {
 		var data []byte
@@ -565,6 +588,15 @@ func (m *Model) handleTerminalKey(msg tea.KeyMsg) tea.Cmd {
 			}
 		}
 		if len(data) > 0 {
+			// Ctrl+C makes the agent abort its current draw pass mid-flight,
+			// which leaves the terminal pane in a torn state — typing lands
+			// at the top while old content sits below — until a window
+			// resize forces Bubble Tea's renderer to drop its frame cache.
+			// Batch tea.ClearScreen with the input so the next View() does
+			// the same full repaint without the user having to resize.
+			if msg.Type == tea.KeyCtrlC {
+				return tea.Batch(sendInputCmd(m.conn, m.projectID, data), tea.ClearScreen)
+			}
 			return sendInputCmd(m.conn, m.projectID, data)
 		}
 	}

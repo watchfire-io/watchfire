@@ -22,6 +22,15 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 		m.reconnectAttempts = 0
 		m.streamCancel()
 		m.streamCtx, m.streamCancel = context.WithCancel(context.Background())
+		// Forward terminal-query responses (DA1, DSR, focus, mouse, …)
+		// from the TUI's emulator back to the daemon's PTY so the agent
+		// gets answers it's waiting for. Without this, claude blocks on
+		// startup after emitting \x1b[c.
+		conn := m.conn
+		projectID := m.projectID
+		m.terminal.SetInputForwarder(func(data []byte) {
+			forwardEmulatorResponse(conn, projectID, data)
+		})
 		cmds = append(cmds,
 			loadProjectCmd(m.conn, m.projectID),
 			loadTasksCmd(m.conn, m.projectID),
@@ -126,8 +135,8 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 		return true, tea.Batch(cmds...)
 
 	// ── Terminal output ────────────────────────────────────────────
-	case ScreenUpdateMsg:
-		m.terminal.SetContent(msg.AnsiContent)
+	case RawOutputMsg:
+		m.terminal.WriteRaw(msg.Data)
 		return true, nil
 
 	case ScreenEndedMsg:
@@ -345,7 +354,7 @@ func (m *Model) handleAgentStatus(msg AgentStatusMsg) tea.Cmd {
 		m.subscribed = true
 		rows, cols := m.ptyDimensions()
 		cmds = append(cmds,
-			subscribeScreenCmd(m.streamCtx, m.conn, m.projectID, rows, cols, m.program),
+			subscribeRawOutputCmd(m.streamCtx, m.conn, m.projectID, rows, cols, m.program),
 			subscribeAgentIssuesCmd(m.streamCtx, m.conn, m.projectID, m.program),
 		)
 	}

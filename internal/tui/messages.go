@@ -29,9 +29,12 @@ type AgentStatusMsg struct {
 	Status *pb.AgentStatus
 }
 
-// ScreenUpdateMsg carries rendered ANSI screen content from SubscribeScreen stream.
-type ScreenUpdateMsg struct {
-	AnsiContent string
+// RawOutputMsg carries a chunk of raw PTY bytes from the daemon's
+// SubscribeRawOutput stream. Replaced ScreenUpdateMsg in v6 — the TUI
+// now drives its own vt10x emulator so it can layer scrollback on top
+// of the visible grid.
+type RawOutputMsg struct {
+	Data []byte
 }
 
 // AgentIssueMsg carries an agent issue notification.

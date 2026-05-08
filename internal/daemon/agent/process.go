@@ -12,6 +12,8 @@ import (
 
 	"github.com/creack/pty"
 	"github.com/hinshun/vt10x"
+
+	"github.com/watchfire-io/watchfire/internal/vtansi"
 )
 
 // Process-level constants.
@@ -195,146 +197,11 @@ func (p *Process) SnapshotScreen() *ScreenUpdate {
 	return p.snapshotScreen()
 }
 
-// vt10x attr constants (unexported in the package).
-const (
-	vtAttrReverse   = 1
-	vtAttrUnderline = 2
-	vtAttrBold      = 4
-	vtAttrItalic    = 16
-)
-
-// renderScreenANSI iterates over the vt10x cell grid and emits ANSI SGR-colored text.
-// Trailing default-color spaces are stripped to avoid overflowing the viewport.
+// renderScreenANSI emits the current vt10x grid as ANSI SGR-coloured
+// text. Delegates to the shared vtansi package so the TUI can use the
+// same renderer when driving its own emulator from the raw stream.
 func (p *Process) renderScreenANSI(rows, cols int) string {
-	var sb strings.Builder
-	sb.Grow(cols * rows * 3)
-
-	for row := 0; row < rows; row++ {
-		if row > 0 {
-			sb.WriteString("\r\n")
-		}
-
-		// Find last significant column (non-space or non-default attributes)
-		lastCol := cols - 1
-		for lastCol >= 0 {
-			g := p.vt.Cell(lastCol, row)
-			ch := g.Char
-			if ch == 0 {
-				ch = ' '
-			}
-			if ch != ' ' || g.FG != vt10x.DefaultFG || g.BG != vt10x.DefaultBG || g.Mode != 0 {
-				break
-			}
-			lastCol--
-		}
-
-		var lastFG vt10x.Color = vt10x.DefaultFG
-		var lastBG vt10x.Color = vt10x.DefaultBG
-		var lastBold, lastItalic, lastUnderline, lastReverse bool
-		inSGR := false
-
-		for col := 0; col <= lastCol; col++ {
-			g := p.vt.Cell(col, row)
-
-			ch := g.Char
-			if ch == 0 {
-				ch = ' '
-			}
-
-			fg := g.FG
-			bg := g.BG
-			bold := g.Mode&vtAttrBold != 0
-			italic := g.Mode&vtAttrItalic != 0
-			underline := g.Mode&vtAttrUnderline != 0
-			reverse := g.Mode&vtAttrReverse != 0
-
-			if fg != lastFG || bg != lastBG || bold != lastBold || italic != lastItalic || underline != lastUnderline || reverse != lastReverse {
-				sb.WriteString("\033[0")
-
-				if bold {
-					sb.WriteString(";1")
-				}
-				if italic {
-					sb.WriteString(";3")
-				}
-				if underline {
-					sb.WriteString(";4")
-				}
-				if reverse {
-					sb.WriteString(";7")
-				}
-
-				if fg != vt10x.DefaultFG {
-					writeSGRColor(&sb, fg, true)
-				}
-				if bg != vt10x.DefaultBG {
-					writeSGRColor(&sb, bg, false)
-				}
-
-				sb.WriteByte('m')
-				inSGR = true
-
-				lastFG = fg
-				lastBG = bg
-				lastBold = bold
-				lastItalic = italic
-				lastUnderline = underline
-				lastReverse = reverse
-			}
-
-			sb.WriteRune(ch)
-		}
-
-		if inSGR {
-			sb.WriteString("\033[0m")
-		}
-	}
-
-	return sb.String()
-}
-
-// writeSGRColor writes an SGR color parameter for the given vt10x color.
-func writeSGRColor(sb *strings.Builder, c vt10x.Color, isFG bool) {
-	idx := uint32(c)
-
-	// Sentinel values (DefaultFG, DefaultBG, DefaultCursor) have bit 24 set — skip
-	if idx >= 1<<24 {
-		return
-	}
-
-	switch {
-	case idx < 8:
-		// Standard ANSI 0-7
-		if isFG {
-			fmt.Fprintf(sb, ";%d", 30+idx)
-		} else {
-			fmt.Fprintf(sb, ";%d", 40+idx)
-		}
-	case idx < 16:
-		// Bright ANSI 8-15
-		if isFG {
-			fmt.Fprintf(sb, ";%d", 90+idx-8)
-		} else {
-			fmt.Fprintf(sb, ";%d", 100+idx-8)
-		}
-	case idx < 256:
-		// 256-color palette
-		if isFG {
-			fmt.Fprintf(sb, ";38;5;%d", idx)
-		} else {
-			fmt.Fprintf(sb, ";48;5;%d", idx)
-		}
-	default:
-		// 24-bit RGB: value is r<<16 | g<<8 | b
-		r := (idx >> 16) & 0xFF
-		g := (idx >> 8) & 0xFF
-		b := idx & 0xFF
-		if isFG {
-			fmt.Fprintf(sb, ";38;2;%d;%d;%d", r, g, b)
-		} else {
-			fmt.Fprintf(sb, ";48;2;%d;%d;%d", r, g, b)
-		}
-	}
+	return vtansi.RenderScreen(p.vt, rows, cols)
 }
 
 // SendInput writes data to the PTY (user input).
@@ -397,6 +264,28 @@ func (p *Process) SubscribeRaw(id string) chan []byte {
 	return ch
 }
 
+// SubscribeRawWithSnapshot atomically registers a subscriber and
+// captures the current raw buffer at the same instant — closing the
+// race in the older Subscribe-then-GetRawBuffer pattern where a
+// broadcast landing between the two steps would deliver the same
+// bytes twice (once via the buffer snapshot, once via the live
+// channel). The TUI's vt10x replays bytes in order and double-
+// delivery leaves it in a state that disagrees with the daemon's.
+func (p *Process) SubscribeRawWithSnapshot(id string) (snapshot []byte, ch chan []byte) {
+	p.rawBufMu.Lock()
+	p.subMu.Lock()
+	defer p.subMu.Unlock()
+	defer p.rawBufMu.Unlock()
+
+	if len(p.rawBuf) > 0 {
+		snapshot = make([]byte, len(p.rawBuf))
+		copy(snapshot, p.rawBuf)
+	}
+	ch = make(chan []byte, rawSubsChannelSize)
+	p.rawSubs[id] = ch
+	return snapshot, ch
+}
+
 // UnsubscribeRaw removes a raw output subscription.
 func (p *Process) UnsubscribeRaw(id string) {
 	p.subMu.Lock()
@@ -429,17 +318,21 @@ func (p *Process) UnsubscribeScreen(id string) {
 	}
 }
 
-// broadcastRaw sends raw data to all raw subscribers. Non-blocking: drops if channel full.
-// Also buffers data for late-join catch-up (capped at 1MB).
+// broadcastRaw sends raw data to all raw subscribers and appends to
+// the late-join buffer atomically. Holding rawBufMu across both the
+// append and the channel sends (in the same order
+// SubscribeRawWithSnapshot uses) eliminates the window where a new
+// subscriber could see the same bytes twice — once in its initial
+// buffer snapshot and once via the live channel. Channel sends are
+// non-blocking so holding the lock won't stall on a slow consumer.
 func (p *Process) broadcastRaw(data []byte) {
-	// Buffer raw output for late-join subscribers
 	p.rawBufMu.Lock()
+	defer p.rawBufMu.Unlock()
+
 	p.rawBuf = append(p.rawBuf, data...)
-	// Cap at 1MB — keep the tail
 	if len(p.rawBuf) > maxRawBufferSize {
 		p.rawBuf = p.rawBuf[len(p.rawBuf)-maxRawBufferSize:]
 	}
-	p.rawBufMu.Unlock()
 
 	p.subMu.RLock()
 	defer p.subMu.RUnlock()
