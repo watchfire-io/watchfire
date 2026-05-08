@@ -41,10 +41,31 @@ message Project {
   int32 position = 16;                          // Display ordering in GUI
   string secrets_instructions = 17;             // Content of secrets/instructions.md
   ProjectNotifications notifications = 18;      // Per-project notification overrides
+  ProjectIntegrations integrations = 19;        // v6 (#0091) per-project integration bindings
+}
+
+// ProjectIntegrations holds per-project bindings that override global
+// integrations.yaml defaults. Each field is empty when the project wants
+// to inherit. `github_auto_pr` is a *projection* of the global
+// `github.project_scopes` membership for this project, set on the wire
+// for convenience but not persisted in project.yaml (the source of truth
+// stays the global integrations.yaml).
+message ProjectIntegrations {
+  string slack_channel = 1;
+  string discord_guild_id = 2;
+  bool github_auto_pr = 3;
 }
 
 message ProjectNotifications {
   bool muted = 1;                               // If true, suppress all notifications for this project
+  bool override_events = 2;                     // v6: when true, the per-event map overrides global Events
+  map<string, ProjectEventPref> events = 3;     // v6: keys "task_failed" / "run_complete" / "weekly_digest"
+  QuietHoursConfig quiet_hours_override = 4;    // v6: when set, replaces global quiet hours for this project
+}
+
+message ProjectEventPref {
+  bool enabled = 1;
+  string sound = 2;                             // empty = inherit global sound
 }
 
 message ProjectId {
@@ -79,7 +100,14 @@ message UpdateProjectRequest {
   optional bool auto_start_tasks = 9;
   optional string definition = 10;
   optional string secrets_instructions = 11;
-  optional bool notifications_muted = 12;       // Per-project notification mute
+  optional bool notifications_muted = 12;       // Per-project notification mute (legacy field)
+  optional string sandbox = 13;                 // v6: "auto" | "sandbox-exec" | "off"
+  optional string status = 14;                  // v6: "active" | "archived"
+  // v6 (#0091): full per-project notifications block. When non-nil, replaces
+  // the existing block on disk (mute + per-event overrides + quiet-hours
+  // override). The legacy `notifications_muted` field stays usable on its
+  // own for callers that only need to flip the master mute.
+  ProjectNotifications notifications = 15;
 }
 
 message ReorderProjectsRequest {
@@ -426,6 +454,42 @@ service ProjectService {
   rpc DeleteProject(ProjectId) returns (google.protobuf.Empty);
   rpc GetGitInfo(ProjectId) returns (GitInfo);
   rpc ReorderProjects(ReorderProjectsRequest) returns (ProjectList);
+
+  // v6 (#0091) — Danger-zone actions
+  // RegenerateProjectId mints a new UUID for the project, rewrites
+  // project.yaml + the global projects.yaml entry, and logs the prior ID
+  // for diagnostics. The project file path stays the same.
+  rpc RegenerateProjectId(ProjectId) returns (Project);
+  // ResetTaskNumbering recomputes `next_task_number` from the highest
+  // existing task on disk + 1. With zero tasks it sets it to 1. Cheap
+  // recovery from an out-of-sync counter.
+  rpc ResetTaskNumbering(ProjectId) returns (Project);
+  // UnregisterProject drops the entry from the global projects.yaml index;
+  // the local .watchfire/ folder is left untouched. EnsureProjectRegistered
+  // re-adds the project on next contact.
+  rpc UnregisterProject(ProjectId) returns (google.protobuf.Empty);
+  // SetGitHubAutoPRScope toggles a project's membership in
+  // `integrations.yaml` → `github.project_scopes`. Adding when missing,
+  // removing when present, no-ops otherwise.
+  rpc SetGitHubAutoPRScope(SetGitHubAutoPRScopeRequest) returns (google.protobuf.Empty);
+  // SetProjectIntegrationBindings persists per-project Slack channel +
+  // Discord guild bindings on the project YAML (project.yaml under
+  // `integrations:` block). Empty string clears the binding (= inherit
+  // global default).
+  rpc SetProjectIntegrationBindings(SetProjectIntegrationBindingsRequest) returns (Project);
+}
+
+message SetGitHubAutoPRScopeRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+  bool enabled = 3;
+}
+
+message SetProjectIntegrationBindingsRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+  string slack_channel = 3;
+  string discord_guild_id = 4;
 }
 
 // TaskService handles task CRUD and bulk operations

@@ -20,13 +20,18 @@ import (
 const _ = grpc.SupportPackageIsVersion9
 
 const (
-	ProjectService_ListProjects_FullMethodName    = "/watchfire.ProjectService/ListProjects"
-	ProjectService_GetProject_FullMethodName      = "/watchfire.ProjectService/GetProject"
-	ProjectService_CreateProject_FullMethodName   = "/watchfire.ProjectService/CreateProject"
-	ProjectService_UpdateProject_FullMethodName   = "/watchfire.ProjectService/UpdateProject"
-	ProjectService_DeleteProject_FullMethodName   = "/watchfire.ProjectService/DeleteProject"
-	ProjectService_GetGitInfo_FullMethodName      = "/watchfire.ProjectService/GetGitInfo"
-	ProjectService_ReorderProjects_FullMethodName = "/watchfire.ProjectService/ReorderProjects"
+	ProjectService_ListProjects_FullMethodName                  = "/watchfire.ProjectService/ListProjects"
+	ProjectService_GetProject_FullMethodName                    = "/watchfire.ProjectService/GetProject"
+	ProjectService_CreateProject_FullMethodName                 = "/watchfire.ProjectService/CreateProject"
+	ProjectService_UpdateProject_FullMethodName                 = "/watchfire.ProjectService/UpdateProject"
+	ProjectService_DeleteProject_FullMethodName                 = "/watchfire.ProjectService/DeleteProject"
+	ProjectService_GetGitInfo_FullMethodName                    = "/watchfire.ProjectService/GetGitInfo"
+	ProjectService_ReorderProjects_FullMethodName               = "/watchfire.ProjectService/ReorderProjects"
+	ProjectService_RegenerateProjectId_FullMethodName           = "/watchfire.ProjectService/RegenerateProjectId"
+	ProjectService_ResetTaskNumbering_FullMethodName            = "/watchfire.ProjectService/ResetTaskNumbering"
+	ProjectService_UnregisterProject_FullMethodName             = "/watchfire.ProjectService/UnregisterProject"
+	ProjectService_SetGitHubAutoPRScope_FullMethodName          = "/watchfire.ProjectService/SetGitHubAutoPRScope"
+	ProjectService_SetProjectIntegrationBindings_FullMethodName = "/watchfire.ProjectService/SetProjectIntegrationBindings"
 )
 
 // ProjectServiceClient is the client API for ProjectService service.
@@ -42,6 +47,28 @@ type ProjectServiceClient interface {
 	DeleteProject(ctx context.Context, in *ProjectId, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	GetGitInfo(ctx context.Context, in *ProjectId, opts ...grpc.CallOption) (*GitInfo, error)
 	ReorderProjects(ctx context.Context, in *ReorderProjectsRequest, opts ...grpc.CallOption) (*ProjectList, error)
+	// v6 (#0091) — Danger-zone actions
+	// RegenerateProjectId mints a new UUID for the project, rewrites
+	// project.yaml + the global projects.yaml entry, and logs the prior ID
+	// for diagnostics. The project file path stays the same.
+	RegenerateProjectId(ctx context.Context, in *ProjectId, opts ...grpc.CallOption) (*Project, error)
+	// ResetTaskNumbering recomputes `next_task_number` from the highest
+	// existing task on disk + 1. With zero tasks it sets it to 1. Cheap
+	// recovery from an out-of-sync counter.
+	ResetTaskNumbering(ctx context.Context, in *ProjectId, opts ...grpc.CallOption) (*Project, error)
+	// UnregisterProject drops the entry from the global projects.yaml index;
+	// the local .watchfire/ folder is left untouched. EnsureProjectRegistered
+	// re-adds the project on next contact.
+	UnregisterProject(ctx context.Context, in *ProjectId, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// SetGitHubAutoPRScope toggles a project's membership in
+	// `integrations.yaml` → `github.project_scopes`. Adding when missing,
+	// removing when present, no-ops otherwise.
+	SetGitHubAutoPRScope(ctx context.Context, in *SetGitHubAutoPRScopeRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	// SetProjectIntegrationBindings persists per-project Slack channel +
+	// Discord guild bindings on the project YAML (project.yaml under
+	// `integrations:` block). Empty string clears the binding (= inherit
+	// global default).
+	SetProjectIntegrationBindings(ctx context.Context, in *SetProjectIntegrationBindingsRequest, opts ...grpc.CallOption) (*Project, error)
 }
 
 type projectServiceClient struct {
@@ -122,6 +149,56 @@ func (c *projectServiceClient) ReorderProjects(ctx context.Context, in *ReorderP
 	return out, nil
 }
 
+func (c *projectServiceClient) RegenerateProjectId(ctx context.Context, in *ProjectId, opts ...grpc.CallOption) (*Project, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Project)
+	err := c.cc.Invoke(ctx, ProjectService_RegenerateProjectId_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *projectServiceClient) ResetTaskNumbering(ctx context.Context, in *ProjectId, opts ...grpc.CallOption) (*Project, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Project)
+	err := c.cc.Invoke(ctx, ProjectService_ResetTaskNumbering_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *projectServiceClient) UnregisterProject(ctx context.Context, in *ProjectId, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, ProjectService_UnregisterProject_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *projectServiceClient) SetGitHubAutoPRScope(ctx context.Context, in *SetGitHubAutoPRScopeRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, ProjectService_SetGitHubAutoPRScope_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *projectServiceClient) SetProjectIntegrationBindings(ctx context.Context, in *SetProjectIntegrationBindingsRequest, opts ...grpc.CallOption) (*Project, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Project)
+	err := c.cc.Invoke(ctx, ProjectService_SetProjectIntegrationBindings_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // ProjectServiceServer is the server API for ProjectService service.
 // All implementations must embed UnimplementedProjectServiceServer
 // for forward compatibility.
@@ -135,6 +212,28 @@ type ProjectServiceServer interface {
 	DeleteProject(context.Context, *ProjectId) (*emptypb.Empty, error)
 	GetGitInfo(context.Context, *ProjectId) (*GitInfo, error)
 	ReorderProjects(context.Context, *ReorderProjectsRequest) (*ProjectList, error)
+	// v6 (#0091) — Danger-zone actions
+	// RegenerateProjectId mints a new UUID for the project, rewrites
+	// project.yaml + the global projects.yaml entry, and logs the prior ID
+	// for diagnostics. The project file path stays the same.
+	RegenerateProjectId(context.Context, *ProjectId) (*Project, error)
+	// ResetTaskNumbering recomputes `next_task_number` from the highest
+	// existing task on disk + 1. With zero tasks it sets it to 1. Cheap
+	// recovery from an out-of-sync counter.
+	ResetTaskNumbering(context.Context, *ProjectId) (*Project, error)
+	// UnregisterProject drops the entry from the global projects.yaml index;
+	// the local .watchfire/ folder is left untouched. EnsureProjectRegistered
+	// re-adds the project on next contact.
+	UnregisterProject(context.Context, *ProjectId) (*emptypb.Empty, error)
+	// SetGitHubAutoPRScope toggles a project's membership in
+	// `integrations.yaml` → `github.project_scopes`. Adding when missing,
+	// removing when present, no-ops otherwise.
+	SetGitHubAutoPRScope(context.Context, *SetGitHubAutoPRScopeRequest) (*emptypb.Empty, error)
+	// SetProjectIntegrationBindings persists per-project Slack channel +
+	// Discord guild bindings on the project YAML (project.yaml under
+	// `integrations:` block). Empty string clears the binding (= inherit
+	// global default).
+	SetProjectIntegrationBindings(context.Context, *SetProjectIntegrationBindingsRequest) (*Project, error)
 	mustEmbedUnimplementedProjectServiceServer()
 }
 
@@ -165,6 +264,21 @@ func (UnimplementedProjectServiceServer) GetGitInfo(context.Context, *ProjectId)
 }
 func (UnimplementedProjectServiceServer) ReorderProjects(context.Context, *ReorderProjectsRequest) (*ProjectList, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReorderProjects not implemented")
+}
+func (UnimplementedProjectServiceServer) RegenerateProjectId(context.Context, *ProjectId) (*Project, error) {
+	return nil, status.Error(codes.Unimplemented, "method RegenerateProjectId not implemented")
+}
+func (UnimplementedProjectServiceServer) ResetTaskNumbering(context.Context, *ProjectId) (*Project, error) {
+	return nil, status.Error(codes.Unimplemented, "method ResetTaskNumbering not implemented")
+}
+func (UnimplementedProjectServiceServer) UnregisterProject(context.Context, *ProjectId) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method UnregisterProject not implemented")
+}
+func (UnimplementedProjectServiceServer) SetGitHubAutoPRScope(context.Context, *SetGitHubAutoPRScopeRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetGitHubAutoPRScope not implemented")
+}
+func (UnimplementedProjectServiceServer) SetProjectIntegrationBindings(context.Context, *SetProjectIntegrationBindingsRequest) (*Project, error) {
+	return nil, status.Error(codes.Unimplemented, "method SetProjectIntegrationBindings not implemented")
 }
 func (UnimplementedProjectServiceServer) mustEmbedUnimplementedProjectServiceServer() {}
 func (UnimplementedProjectServiceServer) testEmbeddedByValue()                        {}
@@ -313,6 +427,96 @@ func _ProjectService_ReorderProjects_Handler(srv interface{}, ctx context.Contex
 	return interceptor(ctx, in, info, handler)
 }
 
+func _ProjectService_RegenerateProjectId_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ProjectId)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProjectServiceServer).RegenerateProjectId(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProjectService_RegenerateProjectId_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProjectServiceServer).RegenerateProjectId(ctx, req.(*ProjectId))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ProjectService_ResetTaskNumbering_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ProjectId)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProjectServiceServer).ResetTaskNumbering(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProjectService_ResetTaskNumbering_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProjectServiceServer).ResetTaskNumbering(ctx, req.(*ProjectId))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ProjectService_UnregisterProject_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ProjectId)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProjectServiceServer).UnregisterProject(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProjectService_UnregisterProject_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProjectServiceServer).UnregisterProject(ctx, req.(*ProjectId))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ProjectService_SetGitHubAutoPRScope_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetGitHubAutoPRScopeRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProjectServiceServer).SetGitHubAutoPRScope(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProjectService_SetGitHubAutoPRScope_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProjectServiceServer).SetGitHubAutoPRScope(ctx, req.(*SetGitHubAutoPRScopeRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _ProjectService_SetProjectIntegrationBindings_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(SetProjectIntegrationBindingsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(ProjectServiceServer).SetProjectIntegrationBindings(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: ProjectService_SetProjectIntegrationBindings_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(ProjectServiceServer).SetProjectIntegrationBindings(ctx, req.(*SetProjectIntegrationBindingsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // ProjectService_ServiceDesc is the grpc.ServiceDesc for ProjectService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -347,6 +551,26 @@ var ProjectService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReorderProjects",
 			Handler:    _ProjectService_ReorderProjects_Handler,
+		},
+		{
+			MethodName: "RegenerateProjectId",
+			Handler:    _ProjectService_RegenerateProjectId_Handler,
+		},
+		{
+			MethodName: "ResetTaskNumbering",
+			Handler:    _ProjectService_ResetTaskNumbering_Handler,
+		},
+		{
+			MethodName: "UnregisterProject",
+			Handler:    _ProjectService_UnregisterProject_Handler,
+		},
+		{
+			MethodName: "SetGitHubAutoPRScope",
+			Handler:    _ProjectService_SetGitHubAutoPRScope_Handler,
+		},
+		{
+			MethodName: "SetProjectIntegrationBindings",
+			Handler:    _ProjectService_SetProjectIntegrationBindings_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

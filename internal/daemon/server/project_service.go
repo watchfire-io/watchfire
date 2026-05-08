@@ -13,6 +13,7 @@ import (
 	"github.com/watchfire-io/watchfire/internal/config"
 	"github.com/watchfire-io/watchfire/internal/daemon/agent"
 	"github.com/watchfire-io/watchfire/internal/daemon/project"
+	"github.com/watchfire-io/watchfire/internal/models"
 	pb "github.com/watchfire-io/watchfire/proto"
 )
 
@@ -87,6 +88,17 @@ func (s *projectService) UpdateProject(_ context.Context, req *pb.UpdateProjectR
 	}
 	if req.NotificationsMuted != nil {
 		opts.NotificationsMuted = req.NotificationsMuted
+	}
+	if req.Sandbox != nil {
+		opts.Sandbox = req.Sandbox
+	}
+	if req.Status != nil {
+		opts.Status = req.Status
+	}
+	if req.Notifications != nil {
+		// Project sends the full block — convert + override on disk.
+		converted := projectNotificationsFromProto(req.Notifications)
+		opts.Notifications = &converted
 	}
 
 	pwe, err := s.manager.UpdateProject(opts)
@@ -173,6 +185,102 @@ func (s *projectService) GetGitInfo(_ context.Context, req *pb.ProjectId) (*pb.G
 	}
 
 	return info, nil
+}
+
+// RegenerateProjectId regenerates the project's UUID + updates the global
+// index entry. The local project path stays the same.
+func (s *projectService) RegenerateProjectId(_ context.Context, req *pb.ProjectId) (*pb.Project, error) {
+	pwe, err := s.manager.RegenerateProjectID(req.ProjectId)
+	if err != nil {
+		return nil, err
+	}
+	analytics.Track("project_id_regenerated", posthog.NewProperties().Set("origin", req.GetMeta().GetOrigin()))
+	return modelToProtoProject(pwe), nil
+}
+
+// ResetTaskNumbering recomputes next_task_number from the highest existing
+// task on disk + 1. With zero tasks it sets the counter to 1.
+func (s *projectService) ResetTaskNumbering(_ context.Context, req *pb.ProjectId) (*pb.Project, error) {
+	pwe, err := s.manager.ResetTaskNumbering(req.ProjectId)
+	if err != nil {
+		return nil, err
+	}
+	return modelToProtoProject(pwe), nil
+}
+
+// UnregisterProject drops the project from ~/.watchfire/projects.yaml.
+// The local .watchfire/ folder is left untouched.
+func (s *projectService) UnregisterProject(_ context.Context, req *pb.ProjectId) (*emptypb.Empty, error) {
+	// Stop any running agent before unregistering.
+	_ = s.agentMgr.StopAgent(req.ProjectId)
+	if err := s.manager.UnregisterProject(req.ProjectId); err != nil {
+		return nil, err
+	}
+	analytics.Track("project_unregistered", posthog.NewProperties().Set("origin", req.GetMeta().GetOrigin()))
+	return &emptypb.Empty{}, nil
+}
+
+// SetGitHubAutoPRScope toggles the project's membership in
+// `~/.watchfire/integrations.yaml` → `github.project_scopes`.
+func (s *projectService) SetGitHubAutoPRScope(_ context.Context, req *pb.SetGitHubAutoPRScopeRequest) (*emptypb.Empty, error) {
+	cfg, err := config.LoadIntegrations()
+	if err != nil {
+		return nil, err
+	}
+	if cfg == nil {
+		// No integrations.yaml yet — nothing to do when disabling. When
+		// enabling, materialise a fresh config so the membership lands.
+		if !req.Enabled {
+			return &emptypb.Empty{}, nil
+		}
+		cfg = models.NewIntegrationsConfig()
+	}
+
+	scopes := cfg.GitHub.ProjectScopes
+	contains := false
+	for _, id := range scopes {
+		if id == req.ProjectId {
+			contains = true
+			break
+		}
+	}
+	switch {
+	case req.Enabled && !contains:
+		scopes = append(scopes, req.ProjectId)
+	case !req.Enabled && contains:
+		out := scopes[:0]
+		for _, id := range scopes {
+			if id != req.ProjectId {
+				out = append(out, id)
+			}
+		}
+		scopes = out
+	default:
+		// no-op
+		return &emptypb.Empty{}, nil
+	}
+	cfg.GitHub.ProjectScopes = scopes
+	if err := config.SaveIntegrations(cfg); err != nil {
+		return nil, err
+	}
+	return &emptypb.Empty{}, nil
+}
+
+// SetProjectIntegrationBindings persists the project's per-integration
+// bindings (Slack channel + Discord guild) onto the project YAML. Empty
+// strings clear the binding (= inherit global default).
+func (s *projectService) SetProjectIntegrationBindings(_ context.Context, req *pb.SetProjectIntegrationBindingsRequest) (*pb.Project, error) {
+	slack := req.SlackChannel
+	guild := req.DiscordGuildId
+	pwe, err := s.manager.UpdateProject(project.UpdateOptions{
+		ProjectID:      req.ProjectId,
+		SlackChannel:   &slack,
+		DiscordGuildID: &guild,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return modelToProtoProject(pwe), nil
 }
 
 // runGit runs a git command in the given directory and returns trimmed stdout.

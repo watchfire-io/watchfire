@@ -3,6 +3,7 @@ package server
 import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
+	"github.com/watchfire-io/watchfire/internal/config"
 	"github.com/watchfire-io/watchfire/internal/daemon/project"
 	"github.com/watchfire-io/watchfire/internal/models"
 	pb "github.com/watchfire-io/watchfire/proto"
@@ -27,9 +28,87 @@ func modelToProtoProject(pwe project.ProjectWithEntry) *pb.Project {
 		UpdatedAt:           timestamppb.New(p.UpdatedAt),
 		NextTaskNumber:      int32(p.NextTaskNumber),
 		Position:            int32(pwe.Position),
-		Notifications: &pb.ProjectNotifications{
-			Muted: p.Notifications.Muted,
-		},
+		Notifications:       projectNotificationsToProto(p.Notifications),
+		Integrations:        projectIntegrationsToProto(p),
+	}
+}
+
+// projectNotificationsToProto fans the model's per-project notification
+// override block into the wire shape. nil-safe on the QuietHoursOverride
+// pointer; an absent override surfaces as a nil pb.QuietHoursConfig so the
+// UI can distinguish "inherit global" from "explicit override".
+func projectNotificationsToProto(n models.ProjectNotifications) *pb.ProjectNotifications {
+	out := &pb.ProjectNotifications{
+		Muted:          n.Muted,
+		OverrideEvents: n.OverrideEvents,
+	}
+	if len(n.Events) > 0 {
+		out.Events = make(map[string]*pb.ProjectEventPref, len(n.Events))
+		for k, v := range n.Events {
+			out.Events[k] = &pb.ProjectEventPref{
+				Enabled: v.Enabled,
+				Sound:   v.Sound,
+			}
+		}
+	}
+	if n.QuietHoursOverride != nil {
+		out.QuietHoursOverride = &pb.QuietHoursConfig{
+			Enabled: n.QuietHoursOverride.Enabled,
+			Start:   n.QuietHoursOverride.Start,
+			End:     n.QuietHoursOverride.End,
+		}
+	}
+	return out
+}
+
+// projectNotificationsFromProto inverts projectNotificationsToProto. A nil
+// proto returns the zero value (= inherit globals). When the on-disk model
+// already had per-event overrides, an empty `events` map in the proto wipes
+// them — call sites must round-trip the existing block (rather than zeroing
+// it) when they only intend to flip the master mute.
+func projectNotificationsFromProto(p *pb.ProjectNotifications) models.ProjectNotifications {
+	if p == nil {
+		return models.ProjectNotifications{}
+	}
+	out := models.ProjectNotifications{
+		Muted:          p.Muted,
+		OverrideEvents: p.OverrideEvents,
+	}
+	if len(p.Events) > 0 {
+		out.Events = make(map[string]models.ProjectEventPref, len(p.Events))
+		for k, v := range p.Events {
+			if v == nil {
+				continue
+			}
+			out.Events[k] = models.ProjectEventPref{
+				Enabled: v.Enabled,
+				Sound:   v.Sound,
+			}
+		}
+	}
+	if p.QuietHoursOverride != nil {
+		out.QuietHoursOverride = &models.QuietHoursConfig{
+			Enabled: p.QuietHoursOverride.Enabled,
+			Start:   p.QuietHoursOverride.Start,
+			End:     p.QuietHoursOverride.End,
+		}
+	}
+	return out
+}
+
+// projectIntegrationsToProto fans the project's integration bindings into
+// the wire shape. The GitHub auto-PR boolean is computed from the global
+// `integrations.yaml` membership rather than the project YAML — see
+// `integrations.go` for the source of truth.
+func projectIntegrationsToProto(p *models.Project) *pb.ProjectIntegrations {
+	autoPR := false
+	if cfg, err := config.LoadIntegrations(); err == nil && cfg != nil {
+		autoPR = cfg.GitHub.AutoPRApplies(p.ProjectID)
+	}
+	return &pb.ProjectIntegrations{
+		SlackChannel:   p.Integrations.SlackChannel,
+		DiscordGuildId: p.Integrations.DiscordGuildID,
+		GithubAutoPr:   autoPR,
 	}
 }
 

@@ -9,12 +9,17 @@ import (
 
 // confirmMode values.
 const (
-	confirmNone             = 0
-	confirmDelete           = 1
-	confirmQuit             = 2
-	confirmStop             = 3
-	confirmDeleteLog        = 4
-	confirmPermanentDelete  = 5
+	confirmNone                   = 0
+	confirmDelete                 = 1
+	confirmQuit                   = 2
+	confirmStop                   = 3
+	confirmDeleteLog              = 4
+	confirmPermanentDelete        = 5
+	confirmSettingsArchive        = 6
+	confirmSettingsRegenID        = 7
+	confirmSettingsResetNumbering = 8
+	confirmSettingsPruneBranches  = 9
+	confirmSettingsUnregister     = 10
 )
 
 func renderStatusBar(m *Model, width int) string {
@@ -55,6 +60,22 @@ func renderStatusBar(m *Model, width int) string {
 			fmt.Sprintf("Permanently delete task #%04d? (y/N)", m.confirmTaskNum),
 			width,
 		)
+	}
+	switch m.confirmMode {
+	case confirmSettingsArchive:
+		label := "Archive project? Daemon will stop auto-starting tasks. (y/N)"
+		if m.project != nil && m.project.Status == "archived" {
+			label = "Unarchive project? (y/N)"
+		}
+		return renderConfirmBar(label, width)
+	case confirmSettingsRegenID:
+		return renderConfirmBar("Regenerate project ID? Existing references stay valid. (y/N)", width)
+	case confirmSettingsResetNumbering:
+		return renderConfirmBar("Reset next_task_number to highest+1? (y/N)", width)
+	case confirmSettingsPruneBranches:
+		return renderConfirmBar("Prune merged-orphan watchfire/* branches? (y/N)", width)
+	case confirmSettingsUnregister:
+		return renderConfirmBar("Unregister project from global index? Local files stay. (y/N)", width)
 	}
 
 	// Trash mode banner — supersedes the normal hint line so the user

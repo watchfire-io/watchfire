@@ -397,7 +397,7 @@ func (x FileDiff_Status) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use FileDiff_Status.Descriptor instead.
 func (FileDiff_Status) EnumDescriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{70, 0}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{74, 0}
 }
 
 type DiffLine_Kind int32
@@ -446,7 +446,7 @@ func (x DiffLine_Kind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use DiffLine_Kind.Descriptor instead.
 func (DiffLine_Kind) EnumDescriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{72, 0}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{76, 0}
 }
 
 // RequestMeta is included in every request for tracking and analytics
@@ -529,6 +529,7 @@ type Project struct {
 	Position            int32                  `protobuf:"varint,16,opt,name=position,proto3" json:"position,omitempty"`                                                 // Display ordering in GUI
 	SecretsInstructions string                 `protobuf:"bytes,17,opt,name=secrets_instructions,json=secretsInstructions,proto3" json:"secrets_instructions,omitempty"` // Content of secrets/instructions.md
 	Notifications       *ProjectNotifications  `protobuf:"bytes,18,opt,name=notifications,proto3" json:"notifications,omitempty"`                                        // Per-project notification overrides
+	Integrations        *ProjectIntegrations   `protobuf:"bytes,19,opt,name=integrations,proto3" json:"integrations,omitempty"`                                          // v6 (#0091) per-project integration bindings
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }
@@ -682,16 +683,92 @@ func (x *Project) GetNotifications() *ProjectNotifications {
 	return nil
 }
 
+func (x *Project) GetIntegrations() *ProjectIntegrations {
+	if x != nil {
+		return x.Integrations
+	}
+	return nil
+}
+
+// ProjectIntegrations holds per-project bindings that override global
+// integrations.yaml defaults. Each field is empty when the project wants
+// to inherit. `github_auto_pr` is a *projection* of the global
+// `github.project_scopes` membership for this project, set on the wire
+// for convenience but not persisted in project.yaml (the source of truth
+// stays the global integrations.yaml).
+type ProjectIntegrations struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	SlackChannel   string                 `protobuf:"bytes,1,opt,name=slack_channel,json=slackChannel,proto3" json:"slack_channel,omitempty"`
+	DiscordGuildId string                 `protobuf:"bytes,2,opt,name=discord_guild_id,json=discordGuildId,proto3" json:"discord_guild_id,omitempty"`
+	GithubAutoPr   bool                   `protobuf:"varint,3,opt,name=github_auto_pr,json=githubAutoPr,proto3" json:"github_auto_pr,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ProjectIntegrations) Reset() {
+	*x = ProjectIntegrations{}
+	mi := &file_proto_watchfire_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectIntegrations) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectIntegrations) ProtoMessage() {}
+
+func (x *ProjectIntegrations) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_watchfire_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectIntegrations.ProtoReflect.Descriptor instead.
+func (*ProjectIntegrations) Descriptor() ([]byte, []int) {
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *ProjectIntegrations) GetSlackChannel() string {
+	if x != nil {
+		return x.SlackChannel
+	}
+	return ""
+}
+
+func (x *ProjectIntegrations) GetDiscordGuildId() string {
+	if x != nil {
+		return x.DiscordGuildId
+	}
+	return ""
+}
+
+func (x *ProjectIntegrations) GetGithubAutoPr() bool {
+	if x != nil {
+		return x.GithubAutoPr
+	}
+	return false
+}
+
 type ProjectNotifications struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Muted         bool                   `protobuf:"varint,1,opt,name=muted,proto3" json:"muted,omitempty"` // If true, suppress all notifications for this project
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state              protoimpl.MessageState       `protogen:"open.v1"`
+	Muted              bool                         `protobuf:"varint,1,opt,name=muted,proto3" json:"muted,omitempty"`                                                                            // If true, suppress all notifications for this project
+	OverrideEvents     bool                         `protobuf:"varint,2,opt,name=override_events,json=overrideEvents,proto3" json:"override_events,omitempty"`                                    // v6: when true, the per-event map overrides global Events
+	Events             map[string]*ProjectEventPref `protobuf:"bytes,3,rep,name=events,proto3" json:"events,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"` // v6: keys "task_failed" / "run_complete" / "weekly_digest"
+	QuietHoursOverride *QuietHoursConfig            `protobuf:"bytes,4,opt,name=quiet_hours_override,json=quietHoursOverride,proto3" json:"quiet_hours_override,omitempty"`                       // v6: when set, replaces global quiet hours for this project
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ProjectNotifications) Reset() {
 	*x = ProjectNotifications{}
-	mi := &file_proto_watchfire_proto_msgTypes[2]
+	mi := &file_proto_watchfire_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -703,7 +780,7 @@ func (x *ProjectNotifications) String() string {
 func (*ProjectNotifications) ProtoMessage() {}
 
 func (x *ProjectNotifications) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[2]
+	mi := &file_proto_watchfire_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -716,7 +793,7 @@ func (x *ProjectNotifications) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectNotifications.ProtoReflect.Descriptor instead.
 func (*ProjectNotifications) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{2}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *ProjectNotifications) GetMuted() bool {
@@ -724,6 +801,79 @@ func (x *ProjectNotifications) GetMuted() bool {
 		return x.Muted
 	}
 	return false
+}
+
+func (x *ProjectNotifications) GetOverrideEvents() bool {
+	if x != nil {
+		return x.OverrideEvents
+	}
+	return false
+}
+
+func (x *ProjectNotifications) GetEvents() map[string]*ProjectEventPref {
+	if x != nil {
+		return x.Events
+	}
+	return nil
+}
+
+func (x *ProjectNotifications) GetQuietHoursOverride() *QuietHoursConfig {
+	if x != nil {
+		return x.QuietHoursOverride
+	}
+	return nil
+}
+
+type ProjectEventPref struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Enabled       bool                   `protobuf:"varint,1,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	Sound         string                 `protobuf:"bytes,2,opt,name=sound,proto3" json:"sound,omitempty"` // empty = inherit global sound
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProjectEventPref) Reset() {
+	*x = ProjectEventPref{}
+	mi := &file_proto_watchfire_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProjectEventPref) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProjectEventPref) ProtoMessage() {}
+
+func (x *ProjectEventPref) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_watchfire_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProjectEventPref.ProtoReflect.Descriptor instead.
+func (*ProjectEventPref) Descriptor() ([]byte, []int) {
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *ProjectEventPref) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+func (x *ProjectEventPref) GetSound() string {
+	if x != nil {
+		return x.Sound
+	}
+	return ""
 }
 
 type ProjectId struct {
@@ -736,7 +886,7 @@ type ProjectId struct {
 
 func (x *ProjectId) Reset() {
 	*x = ProjectId{}
-	mi := &file_proto_watchfire_proto_msgTypes[3]
+	mi := &file_proto_watchfire_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -748,7 +898,7 @@ func (x *ProjectId) String() string {
 func (*ProjectId) ProtoMessage() {}
 
 func (x *ProjectId) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[3]
+	mi := &file_proto_watchfire_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -761,7 +911,7 @@ func (x *ProjectId) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectId.ProtoReflect.Descriptor instead.
 func (*ProjectId) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{3}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ProjectId) GetMeta() *RequestMeta {
@@ -787,7 +937,7 @@ type ProjectList struct {
 
 func (x *ProjectList) Reset() {
 	*x = ProjectList{}
-	mi := &file_proto_watchfire_proto_msgTypes[4]
+	mi := &file_proto_watchfire_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -799,7 +949,7 @@ func (x *ProjectList) String() string {
 func (*ProjectList) ProtoMessage() {}
 
 func (x *ProjectList) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[4]
+	mi := &file_proto_watchfire_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -812,7 +962,7 @@ func (x *ProjectList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectList.ProtoReflect.Descriptor instead.
 func (*ProjectList) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{4}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *ProjectList) GetProjects() []*Project {
@@ -837,7 +987,7 @@ type CreateProjectRequest struct {
 
 func (x *CreateProjectRequest) Reset() {
 	*x = CreateProjectRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[5]
+	mi := &file_proto_watchfire_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -849,7 +999,7 @@ func (x *CreateProjectRequest) String() string {
 func (*CreateProjectRequest) ProtoMessage() {}
 
 func (x *CreateProjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[5]
+	mi := &file_proto_watchfire_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -862,7 +1012,7 @@ func (x *CreateProjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateProjectRequest.ProtoReflect.Descriptor instead.
 func (*CreateProjectRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{5}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *CreateProjectRequest) GetMeta() *RequestMeta {
@@ -926,14 +1076,21 @@ type UpdateProjectRequest struct {
 	AutoStartTasks      *bool                  `protobuf:"varint,9,opt,name=auto_start_tasks,json=autoStartTasks,proto3,oneof" json:"auto_start_tasks,omitempty"`
 	Definition          *string                `protobuf:"bytes,10,opt,name=definition,proto3,oneof" json:"definition,omitempty"`
 	SecretsInstructions *string                `protobuf:"bytes,11,opt,name=secrets_instructions,json=secretsInstructions,proto3,oneof" json:"secrets_instructions,omitempty"`
-	NotificationsMuted  *bool                  `protobuf:"varint,12,opt,name=notifications_muted,json=notificationsMuted,proto3,oneof" json:"notifications_muted,omitempty"` // Per-project notification mute
-	unknownFields       protoimpl.UnknownFields
-	sizeCache           protoimpl.SizeCache
+	NotificationsMuted  *bool                  `protobuf:"varint,12,opt,name=notifications_muted,json=notificationsMuted,proto3,oneof" json:"notifications_muted,omitempty"` // Per-project notification mute (legacy field)
+	Sandbox             *string                `protobuf:"bytes,13,opt,name=sandbox,proto3,oneof" json:"sandbox,omitempty"`                                                  // v6: "auto" | "sandbox-exec" | "off"
+	Status              *string                `protobuf:"bytes,14,opt,name=status,proto3,oneof" json:"status,omitempty"`                                                    // v6: "active" | "archived"
+	// v6 (#0091): full per-project notifications block. When non-nil, replaces
+	// the existing block on disk (mute + per-event overrides + quiet-hours
+	// override). The legacy `notifications_muted` field stays usable on its
+	// own for callers that only need to flip the master mute.
+	Notifications *ProjectNotifications `protobuf:"bytes,15,opt,name=notifications,proto3" json:"notifications,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *UpdateProjectRequest) Reset() {
 	*x = UpdateProjectRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[6]
+	mi := &file_proto_watchfire_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -945,7 +1102,7 @@ func (x *UpdateProjectRequest) String() string {
 func (*UpdateProjectRequest) ProtoMessage() {}
 
 func (x *UpdateProjectRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[6]
+	mi := &file_proto_watchfire_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -958,7 +1115,7 @@ func (x *UpdateProjectRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateProjectRequest.ProtoReflect.Descriptor instead.
 func (*UpdateProjectRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{6}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *UpdateProjectRequest) GetMeta() *RequestMeta {
@@ -1038,6 +1195,27 @@ func (x *UpdateProjectRequest) GetNotificationsMuted() bool {
 	return false
 }
 
+func (x *UpdateProjectRequest) GetSandbox() string {
+	if x != nil && x.Sandbox != nil {
+		return *x.Sandbox
+	}
+	return ""
+}
+
+func (x *UpdateProjectRequest) GetStatus() string {
+	if x != nil && x.Status != nil {
+		return *x.Status
+	}
+	return ""
+}
+
+func (x *UpdateProjectRequest) GetNotifications() *ProjectNotifications {
+	if x != nil {
+		return x.Notifications
+	}
+	return nil
+}
+
 type ReorderProjectsRequest struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Meta          *RequestMeta           `protobuf:"bytes,1,opt,name=meta,proto3" json:"meta,omitempty"`
@@ -1048,7 +1226,7 @@ type ReorderProjectsRequest struct {
 
 func (x *ReorderProjectsRequest) Reset() {
 	*x = ReorderProjectsRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[7]
+	mi := &file_proto_watchfire_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1060,7 +1238,7 @@ func (x *ReorderProjectsRequest) String() string {
 func (*ReorderProjectsRequest) ProtoMessage() {}
 
 func (x *ReorderProjectsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[7]
+	mi := &file_proto_watchfire_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1073,7 +1251,7 @@ func (x *ReorderProjectsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReorderProjectsRequest.ProtoReflect.Descriptor instead.
 func (*ReorderProjectsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{7}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *ReorderProjectsRequest) GetMeta() *RequestMeta {
@@ -1104,7 +1282,7 @@ type GitInfo struct {
 
 func (x *GitInfo) Reset() {
 	*x = GitInfo{}
-	mi := &file_proto_watchfire_proto_msgTypes[8]
+	mi := &file_proto_watchfire_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1116,7 +1294,7 @@ func (x *GitInfo) String() string {
 func (*GitInfo) ProtoMessage() {}
 
 func (x *GitInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[8]
+	mi := &file_proto_watchfire_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1129,7 +1307,7 @@ func (x *GitInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GitInfo.ProtoReflect.Descriptor instead.
 func (*GitInfo) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{8}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *GitInfo) GetCurrentBranch() string {
@@ -1200,7 +1378,7 @@ type Task struct {
 
 func (x *Task) Reset() {
 	*x = Task{}
-	mi := &file_proto_watchfire_proto_msgTypes[9]
+	mi := &file_proto_watchfire_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1212,7 +1390,7 @@ func (x *Task) String() string {
 func (*Task) ProtoMessage() {}
 
 func (x *Task) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[9]
+	mi := &file_proto_watchfire_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1225,7 +1403,7 @@ func (x *Task) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Task.ProtoReflect.Descriptor instead.
 func (*Task) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{9}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *Task) GetTaskId() string {
@@ -1365,7 +1543,7 @@ type TaskId struct {
 
 func (x *TaskId) Reset() {
 	*x = TaskId{}
-	mi := &file_proto_watchfire_proto_msgTypes[10]
+	mi := &file_proto_watchfire_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1377,7 +1555,7 @@ func (x *TaskId) String() string {
 func (*TaskId) ProtoMessage() {}
 
 func (x *TaskId) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[10]
+	mi := &file_proto_watchfire_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1390,7 +1568,7 @@ func (x *TaskId) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskId.ProtoReflect.Descriptor instead.
 func (*TaskId) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{10}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *TaskId) GetMeta() *RequestMeta {
@@ -1423,7 +1601,7 @@ type TaskList struct {
 
 func (x *TaskList) Reset() {
 	*x = TaskList{}
-	mi := &file_proto_watchfire_proto_msgTypes[11]
+	mi := &file_proto_watchfire_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1435,7 +1613,7 @@ func (x *TaskList) String() string {
 func (*TaskList) ProtoMessage() {}
 
 func (x *TaskList) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[11]
+	mi := &file_proto_watchfire_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1448,7 +1626,7 @@ func (x *TaskList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TaskList.ProtoReflect.Descriptor instead.
 func (*TaskList) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{11}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *TaskList) GetTasks() []*Task {
@@ -1470,7 +1648,7 @@ type ListTasksRequest struct {
 
 func (x *ListTasksRequest) Reset() {
 	*x = ListTasksRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[12]
+	mi := &file_proto_watchfire_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1482,7 +1660,7 @@ func (x *ListTasksRequest) String() string {
 func (*ListTasksRequest) ProtoMessage() {}
 
 func (x *ListTasksRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[12]
+	mi := &file_proto_watchfire_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1495,7 +1673,7 @@ func (x *ListTasksRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListTasksRequest.ProtoReflect.Descriptor instead.
 func (*ListTasksRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{12}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ListTasksRequest) GetMeta() *RequestMeta {
@@ -1542,7 +1720,7 @@ type CreateTaskRequest struct {
 
 func (x *CreateTaskRequest) Reset() {
 	*x = CreateTaskRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[13]
+	mi := &file_proto_watchfire_proto_msgTypes[15]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1554,7 +1732,7 @@ func (x *CreateTaskRequest) String() string {
 func (*CreateTaskRequest) ProtoMessage() {}
 
 func (x *CreateTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[13]
+	mi := &file_proto_watchfire_proto_msgTypes[15]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1567,7 +1745,7 @@ func (x *CreateTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CreateTaskRequest.ProtoReflect.Descriptor instead.
 func (*CreateTaskRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{13}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{15}
 }
 
 func (x *CreateTaskRequest) GetMeta() *RequestMeta {
@@ -1645,7 +1823,7 @@ type UpdateTaskRequest struct {
 
 func (x *UpdateTaskRequest) Reset() {
 	*x = UpdateTaskRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[14]
+	mi := &file_proto_watchfire_proto_msgTypes[16]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1657,7 +1835,7 @@ func (x *UpdateTaskRequest) String() string {
 func (*UpdateTaskRequest) ProtoMessage() {}
 
 func (x *UpdateTaskRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[14]
+	mi := &file_proto_watchfire_proto_msgTypes[16]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1670,7 +1848,7 @@ func (x *UpdateTaskRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateTaskRequest.ProtoReflect.Descriptor instead.
 func (*UpdateTaskRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{14}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{16}
 }
 
 func (x *UpdateTaskRequest) GetMeta() *RequestMeta {
@@ -1762,7 +1940,7 @@ type BulkUpdateStatusRequest struct {
 
 func (x *BulkUpdateStatusRequest) Reset() {
 	*x = BulkUpdateStatusRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[15]
+	mi := &file_proto_watchfire_proto_msgTypes[17]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1774,7 +1952,7 @@ func (x *BulkUpdateStatusRequest) String() string {
 func (*BulkUpdateStatusRequest) ProtoMessage() {}
 
 func (x *BulkUpdateStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[15]
+	mi := &file_proto_watchfire_proto_msgTypes[17]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1787,7 +1965,7 @@ func (x *BulkUpdateStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BulkUpdateStatusRequest.ProtoReflect.Descriptor instead.
 func (*BulkUpdateStatusRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{15}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{17}
 }
 
 func (x *BulkUpdateStatusRequest) GetMeta() *RequestMeta {
@@ -1829,7 +2007,7 @@ type BulkDeleteRequest struct {
 
 func (x *BulkDeleteRequest) Reset() {
 	*x = BulkDeleteRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[16]
+	mi := &file_proto_watchfire_proto_msgTypes[18]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1841,7 +2019,7 @@ func (x *BulkDeleteRequest) String() string {
 func (*BulkDeleteRequest) ProtoMessage() {}
 
 func (x *BulkDeleteRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[16]
+	mi := &file_proto_watchfire_proto_msgTypes[18]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1854,7 +2032,7 @@ func (x *BulkDeleteRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BulkDeleteRequest.ProtoReflect.Descriptor instead.
 func (*BulkDeleteRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{16}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{18}
 }
 
 func (x *BulkDeleteRequest) GetMeta() *RequestMeta {
@@ -1889,7 +2067,7 @@ type BulkRestoreRequest struct {
 
 func (x *BulkRestoreRequest) Reset() {
 	*x = BulkRestoreRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[17]
+	mi := &file_proto_watchfire_proto_msgTypes[19]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1901,7 +2079,7 @@ func (x *BulkRestoreRequest) String() string {
 func (*BulkRestoreRequest) ProtoMessage() {}
 
 func (x *BulkRestoreRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[17]
+	mi := &file_proto_watchfire_proto_msgTypes[19]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1914,7 +2092,7 @@ func (x *BulkRestoreRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BulkRestoreRequest.ProtoReflect.Descriptor instead.
 func (*BulkRestoreRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{17}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{19}
 }
 
 func (x *BulkRestoreRequest) GetMeta() *RequestMeta {
@@ -1949,7 +2127,7 @@ type ReorderTasksRequest struct {
 
 func (x *ReorderTasksRequest) Reset() {
 	*x = ReorderTasksRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[18]
+	mi := &file_proto_watchfire_proto_msgTypes[20]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1961,7 +2139,7 @@ func (x *ReorderTasksRequest) String() string {
 func (*ReorderTasksRequest) ProtoMessage() {}
 
 func (x *ReorderTasksRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[18]
+	mi := &file_proto_watchfire_proto_msgTypes[20]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1974,7 +2152,7 @@ func (x *ReorderTasksRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ReorderTasksRequest.ProtoReflect.Descriptor instead.
 func (*ReorderTasksRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{18}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{20}
 }
 
 func (x *ReorderTasksRequest) GetMeta() *RequestMeta {
@@ -2015,7 +2193,7 @@ type DaemonStatus struct {
 
 func (x *DaemonStatus) Reset() {
 	*x = DaemonStatus{}
-	mi := &file_proto_watchfire_proto_msgTypes[19]
+	mi := &file_proto_watchfire_proto_msgTypes[21]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2027,7 +2205,7 @@ func (x *DaemonStatus) String() string {
 func (*DaemonStatus) ProtoMessage() {}
 
 func (x *DaemonStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[19]
+	mi := &file_proto_watchfire_proto_msgTypes[21]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2040,7 +2218,7 @@ func (x *DaemonStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DaemonStatus.ProtoReflect.Descriptor instead.
 func (*DaemonStatus) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{19}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{21}
 }
 
 func (x *DaemonStatus) GetHost() string {
@@ -2123,7 +2301,7 @@ type AgentStatus struct {
 
 func (x *AgentStatus) Reset() {
 	*x = AgentStatus{}
-	mi := &file_proto_watchfire_proto_msgTypes[20]
+	mi := &file_proto_watchfire_proto_msgTypes[22]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2135,7 +2313,7 @@ func (x *AgentStatus) String() string {
 func (*AgentStatus) ProtoMessage() {}
 
 func (x *AgentStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[20]
+	mi := &file_proto_watchfire_proto_msgTypes[22]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2148,7 +2326,7 @@ func (x *AgentStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentStatus.ProtoReflect.Descriptor instead.
 func (*AgentStatus) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{20}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{22}
 }
 
 func (x *AgentStatus) GetProjectId() string {
@@ -2229,7 +2407,7 @@ type StartAgentRequest struct {
 
 func (x *StartAgentRequest) Reset() {
 	*x = StartAgentRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[21]
+	mi := &file_proto_watchfire_proto_msgTypes[23]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2241,7 +2419,7 @@ func (x *StartAgentRequest) String() string {
 func (*StartAgentRequest) ProtoMessage() {}
 
 func (x *StartAgentRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[21]
+	mi := &file_proto_watchfire_proto_msgTypes[23]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2254,7 +2432,7 @@ func (x *StartAgentRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartAgentRequest.ProtoReflect.Descriptor instead.
 func (*StartAgentRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{21}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{23}
 }
 
 func (x *StartAgentRequest) GetMeta() *RequestMeta {
@@ -2321,7 +2499,7 @@ type ScreenBuffer struct {
 
 func (x *ScreenBuffer) Reset() {
 	*x = ScreenBuffer{}
-	mi := &file_proto_watchfire_proto_msgTypes[22]
+	mi := &file_proto_watchfire_proto_msgTypes[24]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2333,7 +2511,7 @@ func (x *ScreenBuffer) String() string {
 func (*ScreenBuffer) ProtoMessage() {}
 
 func (x *ScreenBuffer) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[22]
+	mi := &file_proto_watchfire_proto_msgTypes[24]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2346,7 +2524,7 @@ func (x *ScreenBuffer) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScreenBuffer.ProtoReflect.Descriptor instead.
 func (*ScreenBuffer) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{22}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{24}
 }
 
 func (x *ScreenBuffer) GetProjectId() string {
@@ -2408,7 +2586,7 @@ type SubscribeScreenRequest struct {
 
 func (x *SubscribeScreenRequest) Reset() {
 	*x = SubscribeScreenRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[23]
+	mi := &file_proto_watchfire_proto_msgTypes[25]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2420,7 +2598,7 @@ func (x *SubscribeScreenRequest) String() string {
 func (*SubscribeScreenRequest) ProtoMessage() {}
 
 func (x *SubscribeScreenRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[23]
+	mi := &file_proto_watchfire_proto_msgTypes[25]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2433,7 +2611,7 @@ func (x *SubscribeScreenRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscribeScreenRequest.ProtoReflect.Descriptor instead.
 func (*SubscribeScreenRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{23}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{25}
 }
 
 func (x *SubscribeScreenRequest) GetMeta() *RequestMeta {
@@ -2462,7 +2640,7 @@ type ScrollbackRequest struct {
 
 func (x *ScrollbackRequest) Reset() {
 	*x = ScrollbackRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[24]
+	mi := &file_proto_watchfire_proto_msgTypes[26]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2474,7 +2652,7 @@ func (x *ScrollbackRequest) String() string {
 func (*ScrollbackRequest) ProtoMessage() {}
 
 func (x *ScrollbackRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[24]
+	mi := &file_proto_watchfire_proto_msgTypes[26]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2487,7 +2665,7 @@ func (x *ScrollbackRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScrollbackRequest.ProtoReflect.Descriptor instead.
 func (*ScrollbackRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{24}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{26}
 }
 
 func (x *ScrollbackRequest) GetMeta() *RequestMeta {
@@ -2528,7 +2706,7 @@ type ScrollbackLines struct {
 
 func (x *ScrollbackLines) Reset() {
 	*x = ScrollbackLines{}
-	mi := &file_proto_watchfire_proto_msgTypes[25]
+	mi := &file_proto_watchfire_proto_msgTypes[27]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2540,7 +2718,7 @@ func (x *ScrollbackLines) String() string {
 func (*ScrollbackLines) ProtoMessage() {}
 
 func (x *ScrollbackLines) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[25]
+	mi := &file_proto_watchfire_proto_msgTypes[27]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2553,7 +2731,7 @@ func (x *ScrollbackLines) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ScrollbackLines.ProtoReflect.Descriptor instead.
 func (*ScrollbackLines) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{25}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{27}
 }
 
 func (x *ScrollbackLines) GetLines() []string {
@@ -2581,7 +2759,7 @@ type SendInputRequest struct {
 
 func (x *SendInputRequest) Reset() {
 	*x = SendInputRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[26]
+	mi := &file_proto_watchfire_proto_msgTypes[28]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2593,7 +2771,7 @@ func (x *SendInputRequest) String() string {
 func (*SendInputRequest) ProtoMessage() {}
 
 func (x *SendInputRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[26]
+	mi := &file_proto_watchfire_proto_msgTypes[28]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2606,7 +2784,7 @@ func (x *SendInputRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SendInputRequest.ProtoReflect.Descriptor instead.
 func (*SendInputRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{26}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{28}
 }
 
 func (x *SendInputRequest) GetMeta() *RequestMeta {
@@ -2642,7 +2820,7 @@ type ResizeRequest struct {
 
 func (x *ResizeRequest) Reset() {
 	*x = ResizeRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[27]
+	mi := &file_proto_watchfire_proto_msgTypes[29]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2654,7 +2832,7 @@ func (x *ResizeRequest) String() string {
 func (*ResizeRequest) ProtoMessage() {}
 
 func (x *ResizeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[27]
+	mi := &file_proto_watchfire_proto_msgTypes[29]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2667,7 +2845,7 @@ func (x *ResizeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ResizeRequest.ProtoReflect.Descriptor instead.
 func (*ResizeRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{27}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{29}
 }
 
 func (x *ResizeRequest) GetMeta() *RequestMeta {
@@ -2708,7 +2886,7 @@ type SubscribeRawOutputRequest struct {
 
 func (x *SubscribeRawOutputRequest) Reset() {
 	*x = SubscribeRawOutputRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[28]
+	mi := &file_proto_watchfire_proto_msgTypes[30]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2720,7 +2898,7 @@ func (x *SubscribeRawOutputRequest) String() string {
 func (*SubscribeRawOutputRequest) ProtoMessage() {}
 
 func (x *SubscribeRawOutputRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[28]
+	mi := &file_proto_watchfire_proto_msgTypes[30]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2733,7 +2911,7 @@ func (x *SubscribeRawOutputRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscribeRawOutputRequest.ProtoReflect.Descriptor instead.
 func (*SubscribeRawOutputRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{28}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{30}
 }
 
 func (x *SubscribeRawOutputRequest) GetMeta() *RequestMeta {
@@ -2760,7 +2938,7 @@ type RawOutputChunk struct {
 
 func (x *RawOutputChunk) Reset() {
 	*x = RawOutputChunk{}
-	mi := &file_proto_watchfire_proto_msgTypes[29]
+	mi := &file_proto_watchfire_proto_msgTypes[31]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2772,7 +2950,7 @@ func (x *RawOutputChunk) String() string {
 func (*RawOutputChunk) ProtoMessage() {}
 
 func (x *RawOutputChunk) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[29]
+	mi := &file_proto_watchfire_proto_msgTypes[31]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2785,7 +2963,7 @@ func (x *RawOutputChunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RawOutputChunk.ProtoReflect.Descriptor instead.
 func (*RawOutputChunk) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{29}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{31}
 }
 
 func (x *RawOutputChunk) GetProjectId() string {
@@ -2815,7 +2993,7 @@ type AgentIssue struct {
 
 func (x *AgentIssue) Reset() {
 	*x = AgentIssue{}
-	mi := &file_proto_watchfire_proto_msgTypes[30]
+	mi := &file_proto_watchfire_proto_msgTypes[32]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2827,7 +3005,7 @@ func (x *AgentIssue) String() string {
 func (*AgentIssue) ProtoMessage() {}
 
 func (x *AgentIssue) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[30]
+	mi := &file_proto_watchfire_proto_msgTypes[32]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2840,7 +3018,7 @@ func (x *AgentIssue) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentIssue.ProtoReflect.Descriptor instead.
 func (*AgentIssue) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{30}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{32}
 }
 
 func (x *AgentIssue) GetIssueType() string {
@@ -2888,7 +3066,7 @@ type SubscribeAgentIssuesRequest struct {
 
 func (x *SubscribeAgentIssuesRequest) Reset() {
 	*x = SubscribeAgentIssuesRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[31]
+	mi := &file_proto_watchfire_proto_msgTypes[33]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2900,7 +3078,7 @@ func (x *SubscribeAgentIssuesRequest) String() string {
 func (*SubscribeAgentIssuesRequest) ProtoMessage() {}
 
 func (x *SubscribeAgentIssuesRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[31]
+	mi := &file_proto_watchfire_proto_msgTypes[33]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2913,7 +3091,7 @@ func (x *SubscribeAgentIssuesRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscribeAgentIssuesRequest.ProtoReflect.Descriptor instead.
 func (*SubscribeAgentIssuesRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{31}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{33}
 }
 
 func (x *SubscribeAgentIssuesRequest) GetMeta() *RequestMeta {
@@ -2944,7 +3122,7 @@ type Branch struct {
 
 func (x *Branch) Reset() {
 	*x = Branch{}
-	mi := &file_proto_watchfire_proto_msgTypes[32]
+	mi := &file_proto_watchfire_proto_msgTypes[34]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -2956,7 +3134,7 @@ func (x *Branch) String() string {
 func (*Branch) ProtoMessage() {}
 
 func (x *Branch) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[32]
+	mi := &file_proto_watchfire_proto_msgTypes[34]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -2969,7 +3147,7 @@ func (x *Branch) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Branch.ProtoReflect.Descriptor instead.
 func (*Branch) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{32}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{34}
 }
 
 func (x *Branch) GetName() string {
@@ -3023,7 +3201,7 @@ type BranchList struct {
 
 func (x *BranchList) Reset() {
 	*x = BranchList{}
-	mi := &file_proto_watchfire_proto_msgTypes[33]
+	mi := &file_proto_watchfire_proto_msgTypes[35]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3035,7 +3213,7 @@ func (x *BranchList) String() string {
 func (*BranchList) ProtoMessage() {}
 
 func (x *BranchList) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[33]
+	mi := &file_proto_watchfire_proto_msgTypes[35]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3048,7 +3226,7 @@ func (x *BranchList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BranchList.ProtoReflect.Descriptor instead.
 func (*BranchList) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{33}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{35}
 }
 
 func (x *BranchList) GetBranches() []*Branch {
@@ -3070,7 +3248,7 @@ type BranchId struct {
 
 func (x *BranchId) Reset() {
 	*x = BranchId{}
-	mi := &file_proto_watchfire_proto_msgTypes[34]
+	mi := &file_proto_watchfire_proto_msgTypes[36]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3082,7 +3260,7 @@ func (x *BranchId) String() string {
 func (*BranchId) ProtoMessage() {}
 
 func (x *BranchId) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[34]
+	mi := &file_proto_watchfire_proto_msgTypes[36]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3095,7 +3273,7 @@ func (x *BranchId) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BranchId.ProtoReflect.Descriptor instead.
 func (*BranchId) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{34}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{36}
 }
 
 func (x *BranchId) GetMeta() *RequestMeta {
@@ -3138,7 +3316,7 @@ type MergeBranchRequest struct {
 
 func (x *MergeBranchRequest) Reset() {
 	*x = MergeBranchRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[35]
+	mi := &file_proto_watchfire_proto_msgTypes[37]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3150,7 +3328,7 @@ func (x *MergeBranchRequest) String() string {
 func (*MergeBranchRequest) ProtoMessage() {}
 
 func (x *MergeBranchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[35]
+	mi := &file_proto_watchfire_proto_msgTypes[37]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3163,7 +3341,7 @@ func (x *MergeBranchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use MergeBranchRequest.ProtoReflect.Descriptor instead.
 func (*MergeBranchRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{35}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{37}
 }
 
 func (x *MergeBranchRequest) GetMeta() *RequestMeta {
@@ -3205,7 +3383,7 @@ type BulkBranchRequest struct {
 
 func (x *BulkBranchRequest) Reset() {
 	*x = BulkBranchRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[36]
+	mi := &file_proto_watchfire_proto_msgTypes[38]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3217,7 +3395,7 @@ func (x *BulkBranchRequest) String() string {
 func (*BulkBranchRequest) ProtoMessage() {}
 
 func (x *BulkBranchRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[36]
+	mi := &file_proto_watchfire_proto_msgTypes[38]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3230,7 +3408,7 @@ func (x *BulkBranchRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BulkBranchRequest.ProtoReflect.Descriptor instead.
 func (*BulkBranchRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{36}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{38}
 }
 
 func (x *BulkBranchRequest) GetMeta() *RequestMeta {
@@ -3263,7 +3441,7 @@ type AgentConfig struct {
 
 func (x *AgentConfig) Reset() {
 	*x = AgentConfig{}
-	mi := &file_proto_watchfire_proto_msgTypes[37]
+	mi := &file_proto_watchfire_proto_msgTypes[39]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3275,7 +3453,7 @@ func (x *AgentConfig) String() string {
 func (*AgentConfig) ProtoMessage() {}
 
 func (x *AgentConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[37]
+	mi := &file_proto_watchfire_proto_msgTypes[39]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3288,7 +3466,7 @@ func (x *AgentConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentConfig.ProtoReflect.Descriptor instead.
 func (*AgentConfig) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{37}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{39}
 }
 
 func (x *AgentConfig) GetPath() string {
@@ -3313,7 +3491,7 @@ type DefaultsConfig struct {
 
 func (x *DefaultsConfig) Reset() {
 	*x = DefaultsConfig{}
-	mi := &file_proto_watchfire_proto_msgTypes[38]
+	mi := &file_proto_watchfire_proto_msgTypes[40]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3325,7 +3503,7 @@ func (x *DefaultsConfig) String() string {
 func (*DefaultsConfig) ProtoMessage() {}
 
 func (x *DefaultsConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[38]
+	mi := &file_proto_watchfire_proto_msgTypes[40]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3338,7 +3516,7 @@ func (x *DefaultsConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DefaultsConfig.ProtoReflect.Descriptor instead.
 func (*DefaultsConfig) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{38}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{40}
 }
 
 func (x *DefaultsConfig) GetAutoMerge() bool {
@@ -3401,7 +3579,7 @@ type NotificationsEvents struct {
 
 func (x *NotificationsEvents) Reset() {
 	*x = NotificationsEvents{}
-	mi := &file_proto_watchfire_proto_msgTypes[39]
+	mi := &file_proto_watchfire_proto_msgTypes[41]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3413,7 +3591,7 @@ func (x *NotificationsEvents) String() string {
 func (*NotificationsEvents) ProtoMessage() {}
 
 func (x *NotificationsEvents) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[39]
+	mi := &file_proto_watchfire_proto_msgTypes[41]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3426,7 +3604,7 @@ func (x *NotificationsEvents) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NotificationsEvents.ProtoReflect.Descriptor instead.
 func (*NotificationsEvents) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{39}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{41}
 }
 
 func (x *NotificationsEvents) GetTaskFailed() bool {
@@ -3462,7 +3640,7 @@ type NotificationsSounds struct {
 
 func (x *NotificationsSounds) Reset() {
 	*x = NotificationsSounds{}
-	mi := &file_proto_watchfire_proto_msgTypes[40]
+	mi := &file_proto_watchfire_proto_msgTypes[42]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3474,7 +3652,7 @@ func (x *NotificationsSounds) String() string {
 func (*NotificationsSounds) ProtoMessage() {}
 
 func (x *NotificationsSounds) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[40]
+	mi := &file_proto_watchfire_proto_msgTypes[42]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3487,7 +3665,7 @@ func (x *NotificationsSounds) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NotificationsSounds.ProtoReflect.Descriptor instead.
 func (*NotificationsSounds) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{40}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{42}
 }
 
 func (x *NotificationsSounds) GetEnabled() bool {
@@ -3529,7 +3707,7 @@ type QuietHoursConfig struct {
 
 func (x *QuietHoursConfig) Reset() {
 	*x = QuietHoursConfig{}
-	mi := &file_proto_watchfire_proto_msgTypes[41]
+	mi := &file_proto_watchfire_proto_msgTypes[43]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3541,7 +3719,7 @@ func (x *QuietHoursConfig) String() string {
 func (*QuietHoursConfig) ProtoMessage() {}
 
 func (x *QuietHoursConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[41]
+	mi := &file_proto_watchfire_proto_msgTypes[43]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3554,7 +3732,7 @@ func (x *QuietHoursConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use QuietHoursConfig.ProtoReflect.Descriptor instead.
 func (*QuietHoursConfig) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{41}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{43}
 }
 
 func (x *QuietHoursConfig) GetEnabled() bool {
@@ -3591,7 +3769,7 @@ type NotificationsConfig struct {
 
 func (x *NotificationsConfig) Reset() {
 	*x = NotificationsConfig{}
-	mi := &file_proto_watchfire_proto_msgTypes[42]
+	mi := &file_proto_watchfire_proto_msgTypes[44]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3603,7 +3781,7 @@ func (x *NotificationsConfig) String() string {
 func (*NotificationsConfig) ProtoMessage() {}
 
 func (x *NotificationsConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[42]
+	mi := &file_proto_watchfire_proto_msgTypes[44]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3616,7 +3794,7 @@ func (x *NotificationsConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use NotificationsConfig.ProtoReflect.Descriptor instead.
 func (*NotificationsConfig) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{42}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{44}
 }
 
 func (x *NotificationsConfig) GetEnabled() bool {
@@ -3665,7 +3843,7 @@ type UpdatesConfig struct {
 
 func (x *UpdatesConfig) Reset() {
 	*x = UpdatesConfig{}
-	mi := &file_proto_watchfire_proto_msgTypes[43]
+	mi := &file_proto_watchfire_proto_msgTypes[45]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3677,7 +3855,7 @@ func (x *UpdatesConfig) String() string {
 func (*UpdatesConfig) ProtoMessage() {}
 
 func (x *UpdatesConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[43]
+	mi := &file_proto_watchfire_proto_msgTypes[45]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3690,7 +3868,7 @@ func (x *UpdatesConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdatesConfig.ProtoReflect.Descriptor instead.
 func (*UpdatesConfig) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{43}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{45}
 }
 
 func (x *UpdatesConfig) GetCheckOnStartup() bool {
@@ -3723,7 +3901,7 @@ type AppearanceConfig struct {
 
 func (x *AppearanceConfig) Reset() {
 	*x = AppearanceConfig{}
-	mi := &file_proto_watchfire_proto_msgTypes[44]
+	mi := &file_proto_watchfire_proto_msgTypes[46]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3735,7 +3913,7 @@ func (x *AppearanceConfig) String() string {
 func (*AppearanceConfig) ProtoMessage() {}
 
 func (x *AppearanceConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[44]
+	mi := &file_proto_watchfire_proto_msgTypes[46]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3748,7 +3926,7 @@ func (x *AppearanceConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AppearanceConfig.ProtoReflect.Descriptor instead.
 func (*AppearanceConfig) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{44}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{46}
 }
 
 func (x *AppearanceConfig) GetTheme() string {
@@ -3772,7 +3950,7 @@ type Settings struct {
 
 func (x *Settings) Reset() {
 	*x = Settings{}
-	mi := &file_proto_watchfire_proto_msgTypes[45]
+	mi := &file_proto_watchfire_proto_msgTypes[47]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3784,7 +3962,7 @@ func (x *Settings) String() string {
 func (*Settings) ProtoMessage() {}
 
 func (x *Settings) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[45]
+	mi := &file_proto_watchfire_proto_msgTypes[47]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3797,7 +3975,7 @@ func (x *Settings) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Settings.ProtoReflect.Descriptor instead.
 func (*Settings) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{45}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{47}
 }
 
 func (x *Settings) GetVersion() int32 {
@@ -3855,7 +4033,7 @@ type UpdateSettingsRequest struct {
 
 func (x *UpdateSettingsRequest) Reset() {
 	*x = UpdateSettingsRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[46]
+	mi := &file_proto_watchfire_proto_msgTypes[48]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3867,7 +4045,7 @@ func (x *UpdateSettingsRequest) String() string {
 func (*UpdateSettingsRequest) ProtoMessage() {}
 
 func (x *UpdateSettingsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[46]
+	mi := &file_proto_watchfire_proto_msgTypes[48]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3880,7 +4058,7 @@ func (x *UpdateSettingsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use UpdateSettingsRequest.ProtoReflect.Descriptor instead.
 func (*UpdateSettingsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{46}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{48}
 }
 
 func (x *UpdateSettingsRequest) GetMeta() *RequestMeta {
@@ -3929,7 +4107,7 @@ type AgentInfo struct {
 
 func (x *AgentInfo) Reset() {
 	*x = AgentInfo{}
-	mi := &file_proto_watchfire_proto_msgTypes[47]
+	mi := &file_proto_watchfire_proto_msgTypes[49]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3941,7 +4119,7 @@ func (x *AgentInfo) String() string {
 func (*AgentInfo) ProtoMessage() {}
 
 func (x *AgentInfo) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[47]
+	mi := &file_proto_watchfire_proto_msgTypes[49]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -3954,7 +4132,7 @@ func (x *AgentInfo) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentInfo.ProtoReflect.Descriptor instead.
 func (*AgentInfo) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{47}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{49}
 }
 
 func (x *AgentInfo) GetName() string {
@@ -3987,7 +4165,7 @@ type AgentList struct {
 
 func (x *AgentList) Reset() {
 	*x = AgentList{}
-	mi := &file_proto_watchfire_proto_msgTypes[48]
+	mi := &file_proto_watchfire_proto_msgTypes[50]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -3999,7 +4177,7 @@ func (x *AgentList) String() string {
 func (*AgentList) ProtoMessage() {}
 
 func (x *AgentList) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[48]
+	mi := &file_proto_watchfire_proto_msgTypes[50]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4012,7 +4190,7 @@ func (x *AgentList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentList.ProtoReflect.Descriptor instead.
 func (*AgentList) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{48}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{50}
 }
 
 func (x *AgentList) GetAgents() []*AgentInfo {
@@ -4020,6 +4198,134 @@ func (x *AgentList) GetAgents() []*AgentInfo {
 		return x.Agents
 	}
 	return nil
+}
+
+type SetGitHubAutoPRScopeRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Meta          *RequestMeta           `protobuf:"bytes,1,opt,name=meta,proto3" json:"meta,omitempty"`
+	ProjectId     string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	Enabled       bool                   `protobuf:"varint,3,opt,name=enabled,proto3" json:"enabled,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SetGitHubAutoPRScopeRequest) Reset() {
+	*x = SetGitHubAutoPRScopeRequest{}
+	mi := &file_proto_watchfire_proto_msgTypes[51]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetGitHubAutoPRScopeRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetGitHubAutoPRScopeRequest) ProtoMessage() {}
+
+func (x *SetGitHubAutoPRScopeRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_watchfire_proto_msgTypes[51]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetGitHubAutoPRScopeRequest.ProtoReflect.Descriptor instead.
+func (*SetGitHubAutoPRScopeRequest) Descriptor() ([]byte, []int) {
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{51}
+}
+
+func (x *SetGitHubAutoPRScopeRequest) GetMeta() *RequestMeta {
+	if x != nil {
+		return x.Meta
+	}
+	return nil
+}
+
+func (x *SetGitHubAutoPRScopeRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *SetGitHubAutoPRScopeRequest) GetEnabled() bool {
+	if x != nil {
+		return x.Enabled
+	}
+	return false
+}
+
+type SetProjectIntegrationBindingsRequest struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Meta           *RequestMeta           `protobuf:"bytes,1,opt,name=meta,proto3" json:"meta,omitempty"`
+	ProjectId      string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	SlackChannel   string                 `protobuf:"bytes,3,opt,name=slack_channel,json=slackChannel,proto3" json:"slack_channel,omitempty"`
+	DiscordGuildId string                 `protobuf:"bytes,4,opt,name=discord_guild_id,json=discordGuildId,proto3" json:"discord_guild_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *SetProjectIntegrationBindingsRequest) Reset() {
+	*x = SetProjectIntegrationBindingsRequest{}
+	mi := &file_proto_watchfire_proto_msgTypes[52]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SetProjectIntegrationBindingsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SetProjectIntegrationBindingsRequest) ProtoMessage() {}
+
+func (x *SetProjectIntegrationBindingsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_proto_watchfire_proto_msgTypes[52]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SetProjectIntegrationBindingsRequest.ProtoReflect.Descriptor instead.
+func (*SetProjectIntegrationBindingsRequest) Descriptor() ([]byte, []int) {
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{52}
+}
+
+func (x *SetProjectIntegrationBindingsRequest) GetMeta() *RequestMeta {
+	if x != nil {
+		return x.Meta
+	}
+	return nil
+}
+
+func (x *SetProjectIntegrationBindingsRequest) GetProjectId() string {
+	if x != nil {
+		return x.ProjectId
+	}
+	return ""
+}
+
+func (x *SetProjectIntegrationBindingsRequest) GetSlackChannel() string {
+	if x != nil {
+		return x.SlackChannel
+	}
+	return ""
+}
+
+func (x *SetProjectIntegrationBindingsRequest) GetDiscordGuildId() string {
+	if x != nil {
+		return x.DiscordGuildId
+	}
+	return ""
 }
 
 type SubscribeFocusEventsRequest struct {
@@ -4031,7 +4337,7 @@ type SubscribeFocusEventsRequest struct {
 
 func (x *SubscribeFocusEventsRequest) Reset() {
 	*x = SubscribeFocusEventsRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[49]
+	mi := &file_proto_watchfire_proto_msgTypes[53]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4043,7 +4349,7 @@ func (x *SubscribeFocusEventsRequest) String() string {
 func (*SubscribeFocusEventsRequest) ProtoMessage() {}
 
 func (x *SubscribeFocusEventsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[49]
+	mi := &file_proto_watchfire_proto_msgTypes[53]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4056,7 +4362,7 @@ func (x *SubscribeFocusEventsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscribeFocusEventsRequest.ProtoReflect.Descriptor instead.
 func (*SubscribeFocusEventsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{49}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{53}
 }
 
 func (x *SubscribeFocusEventsRequest) GetMeta() *RequestMeta {
@@ -4078,7 +4384,7 @@ type FocusEvent struct {
 
 func (x *FocusEvent) Reset() {
 	*x = FocusEvent{}
-	mi := &file_proto_watchfire_proto_msgTypes[50]
+	mi := &file_proto_watchfire_proto_msgTypes[54]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4090,7 +4396,7 @@ func (x *FocusEvent) String() string {
 func (*FocusEvent) ProtoMessage() {}
 
 func (x *FocusEvent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[50]
+	mi := &file_proto_watchfire_proto_msgTypes[54]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4103,7 +4409,7 @@ func (x *FocusEvent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FocusEvent.ProtoReflect.Descriptor instead.
 func (*FocusEvent) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{50}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{54}
 }
 
 func (x *FocusEvent) GetProjectId() string {
@@ -4144,7 +4450,7 @@ type ListLogsRequest struct {
 
 func (x *ListLogsRequest) Reset() {
 	*x = ListLogsRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[51]
+	mi := &file_proto_watchfire_proto_msgTypes[55]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4156,7 +4462,7 @@ func (x *ListLogsRequest) String() string {
 func (*ListLogsRequest) ProtoMessage() {}
 
 func (x *ListLogsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[51]
+	mi := &file_proto_watchfire_proto_msgTypes[55]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4169,7 +4475,7 @@ func (x *ListLogsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListLogsRequest.ProtoReflect.Descriptor instead.
 func (*ListLogsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{51}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{55}
 }
 
 func (x *ListLogsRequest) GetMeta() *RequestMeta {
@@ -4203,7 +4509,7 @@ type LogEntry struct {
 
 func (x *LogEntry) Reset() {
 	*x = LogEntry{}
-	mi := &file_proto_watchfire_proto_msgTypes[52]
+	mi := &file_proto_watchfire_proto_msgTypes[56]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4215,7 +4521,7 @@ func (x *LogEntry) String() string {
 func (*LogEntry) ProtoMessage() {}
 
 func (x *LogEntry) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[52]
+	mi := &file_proto_watchfire_proto_msgTypes[56]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4228,7 +4534,7 @@ func (x *LogEntry) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogEntry.ProtoReflect.Descriptor instead.
 func (*LogEntry) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{52}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{56}
 }
 
 func (x *LogEntry) GetLogId() string {
@@ -4303,7 +4609,7 @@ type LogList struct {
 
 func (x *LogList) Reset() {
 	*x = LogList{}
-	mi := &file_proto_watchfire_proto_msgTypes[53]
+	mi := &file_proto_watchfire_proto_msgTypes[57]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4315,7 +4621,7 @@ func (x *LogList) String() string {
 func (*LogList) ProtoMessage() {}
 
 func (x *LogList) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[53]
+	mi := &file_proto_watchfire_proto_msgTypes[57]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4328,7 +4634,7 @@ func (x *LogList) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogList.ProtoReflect.Descriptor instead.
 func (*LogList) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{53}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{57}
 }
 
 func (x *LogList) GetLogs() []*LogEntry {
@@ -4349,7 +4655,7 @@ type GetLogRequest struct {
 
 func (x *GetLogRequest) Reset() {
 	*x = GetLogRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[54]
+	mi := &file_proto_watchfire_proto_msgTypes[58]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4361,7 +4667,7 @@ func (x *GetLogRequest) String() string {
 func (*GetLogRequest) ProtoMessage() {}
 
 func (x *GetLogRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[54]
+	mi := &file_proto_watchfire_proto_msgTypes[58]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4374,7 +4680,7 @@ func (x *GetLogRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetLogRequest.ProtoReflect.Descriptor instead.
 func (*GetLogRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{54}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{58}
 }
 
 func (x *GetLogRequest) GetMeta() *RequestMeta {
@@ -4408,7 +4714,7 @@ type LogContent struct {
 
 func (x *LogContent) Reset() {
 	*x = LogContent{}
-	mi := &file_proto_watchfire_proto_msgTypes[55]
+	mi := &file_proto_watchfire_proto_msgTypes[59]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4420,7 +4726,7 @@ func (x *LogContent) String() string {
 func (*LogContent) ProtoMessage() {}
 
 func (x *LogContent) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[55]
+	mi := &file_proto_watchfire_proto_msgTypes[59]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4433,7 +4739,7 @@ func (x *LogContent) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LogContent.ProtoReflect.Descriptor instead.
 func (*LogContent) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{55}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{59}
 }
 
 func (x *LogContent) GetEntry() *LogEntry {
@@ -4461,7 +4767,7 @@ type DeleteLogRequest struct {
 
 func (x *DeleteLogRequest) Reset() {
 	*x = DeleteLogRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[56]
+	mi := &file_proto_watchfire_proto_msgTypes[60]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4473,7 +4779,7 @@ func (x *DeleteLogRequest) String() string {
 func (*DeleteLogRequest) ProtoMessage() {}
 
 func (x *DeleteLogRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[56]
+	mi := &file_proto_watchfire_proto_msgTypes[60]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4486,7 +4792,7 @@ func (x *DeleteLogRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteLogRequest.ProtoReflect.Descriptor instead.
 func (*DeleteLogRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{56}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{60}
 }
 
 func (x *DeleteLogRequest) GetMeta() *RequestMeta {
@@ -4528,7 +4834,7 @@ type Notification struct {
 
 func (x *Notification) Reset() {
 	*x = Notification{}
-	mi := &file_proto_watchfire_proto_msgTypes[57]
+	mi := &file_proto_watchfire_proto_msgTypes[61]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4540,7 +4846,7 @@ func (x *Notification) String() string {
 func (*Notification) ProtoMessage() {}
 
 func (x *Notification) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[57]
+	mi := &file_proto_watchfire_proto_msgTypes[61]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4553,7 +4859,7 @@ func (x *Notification) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Notification.ProtoReflect.Descriptor instead.
 func (*Notification) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{57}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{61}
 }
 
 func (x *Notification) GetId() string {
@@ -4614,7 +4920,7 @@ type SubscribeNotificationsRequest struct {
 
 func (x *SubscribeNotificationsRequest) Reset() {
 	*x = SubscribeNotificationsRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[58]
+	mi := &file_proto_watchfire_proto_msgTypes[62]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4626,7 +4932,7 @@ func (x *SubscribeNotificationsRequest) String() string {
 func (*SubscribeNotificationsRequest) ProtoMessage() {}
 
 func (x *SubscribeNotificationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[58]
+	mi := &file_proto_watchfire_proto_msgTypes[62]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4639,7 +4945,7 @@ func (x *SubscribeNotificationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubscribeNotificationsRequest.ProtoReflect.Descriptor instead.
 func (*SubscribeNotificationsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{58}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{62}
 }
 
 func (x *SubscribeNotificationsRequest) GetMeta() *RequestMeta {
@@ -4670,7 +4976,7 @@ type ExportReportRequest struct {
 
 func (x *ExportReportRequest) Reset() {
 	*x = ExportReportRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[59]
+	mi := &file_proto_watchfire_proto_msgTypes[63]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4682,7 +4988,7 @@ func (x *ExportReportRequest) String() string {
 func (*ExportReportRequest) ProtoMessage() {}
 
 func (x *ExportReportRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[59]
+	mi := &file_proto_watchfire_proto_msgTypes[63]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4695,7 +5001,7 @@ func (x *ExportReportRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportReportRequest.ProtoReflect.Descriptor instead.
 func (*ExportReportRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{59}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{63}
 }
 
 func (x *ExportReportRequest) GetMeta() *RequestMeta {
@@ -4796,7 +5102,7 @@ type ExportReportResponse struct {
 
 func (x *ExportReportResponse) Reset() {
 	*x = ExportReportResponse{}
-	mi := &file_proto_watchfire_proto_msgTypes[60]
+	mi := &file_proto_watchfire_proto_msgTypes[64]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4808,7 +5114,7 @@ func (x *ExportReportResponse) String() string {
 func (*ExportReportResponse) ProtoMessage() {}
 
 func (x *ExportReportResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[60]
+	mi := &file_proto_watchfire_proto_msgTypes[64]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4821,7 +5127,7 @@ func (x *ExportReportResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ExportReportResponse.ProtoReflect.Descriptor instead.
 func (*ExportReportResponse) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{60}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{64}
 }
 
 func (x *ExportReportResponse) GetFilename() string {
@@ -4859,7 +5165,7 @@ type GetGlobalInsightsRequest struct {
 
 func (x *GetGlobalInsightsRequest) Reset() {
 	*x = GetGlobalInsightsRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[61]
+	mi := &file_proto_watchfire_proto_msgTypes[65]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4871,7 +5177,7 @@ func (x *GetGlobalInsightsRequest) String() string {
 func (*GetGlobalInsightsRequest) ProtoMessage() {}
 
 func (x *GetGlobalInsightsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[61]
+	mi := &file_proto_watchfire_proto_msgTypes[65]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4884,7 +5190,7 @@ func (x *GetGlobalInsightsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetGlobalInsightsRequest.ProtoReflect.Descriptor instead.
 func (*GetGlobalInsightsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{61}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{65}
 }
 
 func (x *GetGlobalInsightsRequest) GetMeta() *RequestMeta {
@@ -4922,7 +5228,7 @@ type DayBucket struct {
 
 func (x *DayBucket) Reset() {
 	*x = DayBucket{}
-	mi := &file_proto_watchfire_proto_msgTypes[62]
+	mi := &file_proto_watchfire_proto_msgTypes[66]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -4934,7 +5240,7 @@ func (x *DayBucket) String() string {
 func (*DayBucket) ProtoMessage() {}
 
 func (x *DayBucket) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[62]
+	mi := &file_proto_watchfire_proto_msgTypes[66]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -4947,7 +5253,7 @@ func (x *DayBucket) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DayBucket.ProtoReflect.Descriptor instead.
 func (*DayBucket) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{62}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{66}
 }
 
 func (x *DayBucket) GetDate() string {
@@ -4996,7 +5302,7 @@ type AgentBreakdown struct {
 
 func (x *AgentBreakdown) Reset() {
 	*x = AgentBreakdown{}
-	mi := &file_proto_watchfire_proto_msgTypes[63]
+	mi := &file_proto_watchfire_proto_msgTypes[67]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5008,7 +5314,7 @@ func (x *AgentBreakdown) String() string {
 func (*AgentBreakdown) ProtoMessage() {}
 
 func (x *AgentBreakdown) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[63]
+	mi := &file_proto_watchfire_proto_msgTypes[67]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5021,7 +5327,7 @@ func (x *AgentBreakdown) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AgentBreakdown.ProtoReflect.Descriptor instead.
 func (*AgentBreakdown) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{63}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{67}
 }
 
 func (x *AgentBreakdown) GetAgent() string {
@@ -5089,7 +5395,7 @@ type TopProject struct {
 
 func (x *TopProject) Reset() {
 	*x = TopProject{}
-	mi := &file_proto_watchfire_proto_msgTypes[64]
+	mi := &file_proto_watchfire_proto_msgTypes[68]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5101,7 +5407,7 @@ func (x *TopProject) String() string {
 func (*TopProject) ProtoMessage() {}
 
 func (x *TopProject) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[64]
+	mi := &file_proto_watchfire_proto_msgTypes[68]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5114,7 +5420,7 @@ func (x *TopProject) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TopProject.ProtoReflect.Descriptor instead.
 func (*TopProject) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{64}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{68}
 }
 
 func (x *TopProject) GetProjectId() string {
@@ -5175,7 +5481,7 @@ type GlobalInsights struct {
 
 func (x *GlobalInsights) Reset() {
 	*x = GlobalInsights{}
-	mi := &file_proto_watchfire_proto_msgTypes[65]
+	mi := &file_proto_watchfire_proto_msgTypes[69]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5187,7 +5493,7 @@ func (x *GlobalInsights) String() string {
 func (*GlobalInsights) ProtoMessage() {}
 
 func (x *GlobalInsights) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[65]
+	mi := &file_proto_watchfire_proto_msgTypes[69]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5200,7 +5506,7 @@ func (x *GlobalInsights) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GlobalInsights.ProtoReflect.Descriptor instead.
 func (*GlobalInsights) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{65}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{69}
 }
 
 func (x *GlobalInsights) GetTasksTotal() int32 {
@@ -5294,7 +5600,7 @@ type GetProjectInsightsRequest struct {
 
 func (x *GetProjectInsightsRequest) Reset() {
 	*x = GetProjectInsightsRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[66]
+	mi := &file_proto_watchfire_proto_msgTypes[70]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5306,7 +5612,7 @@ func (x *GetProjectInsightsRequest) String() string {
 func (*GetProjectInsightsRequest) ProtoMessage() {}
 
 func (x *GetProjectInsightsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[66]
+	mi := &file_proto_watchfire_proto_msgTypes[70]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5319,7 +5625,7 @@ func (x *GetProjectInsightsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProjectInsightsRequest.ProtoReflect.Descriptor instead.
 func (*GetProjectInsightsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{66}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{70}
 }
 
 func (x *GetProjectInsightsRequest) GetMeta() *RequestMeta {
@@ -5376,7 +5682,7 @@ type ProjectInsights struct {
 
 func (x *ProjectInsights) Reset() {
 	*x = ProjectInsights{}
-	mi := &file_proto_watchfire_proto_msgTypes[67]
+	mi := &file_proto_watchfire_proto_msgTypes[71]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5388,7 +5694,7 @@ func (x *ProjectInsights) String() string {
 func (*ProjectInsights) ProtoMessage() {}
 
 func (x *ProjectInsights) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[67]
+	mi := &file_proto_watchfire_proto_msgTypes[71]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5401,7 +5707,7 @@ func (x *ProjectInsights) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProjectInsights.ProtoReflect.Descriptor instead.
 func (*ProjectInsights) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{67}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{71}
 }
 
 func (x *ProjectInsights) GetProjectId() string {
@@ -5517,7 +5823,7 @@ type GetTaskDiffRequest struct {
 
 func (x *GetTaskDiffRequest) Reset() {
 	*x = GetTaskDiffRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[68]
+	mi := &file_proto_watchfire_proto_msgTypes[72]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5529,7 +5835,7 @@ func (x *GetTaskDiffRequest) String() string {
 func (*GetTaskDiffRequest) ProtoMessage() {}
 
 func (x *GetTaskDiffRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[68]
+	mi := &file_proto_watchfire_proto_msgTypes[72]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5542,7 +5848,7 @@ func (x *GetTaskDiffRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetTaskDiffRequest.ProtoReflect.Descriptor instead.
 func (*GetTaskDiffRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{68}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{72}
 }
 
 func (x *GetTaskDiffRequest) GetMeta() *RequestMeta {
@@ -5582,7 +5888,7 @@ type FileDiffSet struct {
 
 func (x *FileDiffSet) Reset() {
 	*x = FileDiffSet{}
-	mi := &file_proto_watchfire_proto_msgTypes[69]
+	mi := &file_proto_watchfire_proto_msgTypes[73]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5594,7 +5900,7 @@ func (x *FileDiffSet) String() string {
 func (*FileDiffSet) ProtoMessage() {}
 
 func (x *FileDiffSet) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[69]
+	mi := &file_proto_watchfire_proto_msgTypes[73]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5607,7 +5913,7 @@ func (x *FileDiffSet) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileDiffSet.ProtoReflect.Descriptor instead.
 func (*FileDiffSet) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{69}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{73}
 }
 
 func (x *FileDiffSet) GetFiles() []*FileDiff {
@@ -5654,7 +5960,7 @@ type FileDiff struct {
 
 func (x *FileDiff) Reset() {
 	*x = FileDiff{}
-	mi := &file_proto_watchfire_proto_msgTypes[70]
+	mi := &file_proto_watchfire_proto_msgTypes[74]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5666,7 +5972,7 @@ func (x *FileDiff) String() string {
 func (*FileDiff) ProtoMessage() {}
 
 func (x *FileDiff) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[70]
+	mi := &file_proto_watchfire_proto_msgTypes[74]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5679,7 +5985,7 @@ func (x *FileDiff) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use FileDiff.ProtoReflect.Descriptor instead.
 func (*FileDiff) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{70}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{74}
 }
 
 func (x *FileDiff) GetPath() string {
@@ -5727,7 +6033,7 @@ type Hunk struct {
 
 func (x *Hunk) Reset() {
 	*x = Hunk{}
-	mi := &file_proto_watchfire_proto_msgTypes[71]
+	mi := &file_proto_watchfire_proto_msgTypes[75]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5739,7 +6045,7 @@ func (x *Hunk) String() string {
 func (*Hunk) ProtoMessage() {}
 
 func (x *Hunk) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[71]
+	mi := &file_proto_watchfire_proto_msgTypes[75]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5752,7 +6058,7 @@ func (x *Hunk) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use Hunk.ProtoReflect.Descriptor instead.
 func (*Hunk) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{71}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{75}
 }
 
 func (x *Hunk) GetOldStart() int32 {
@@ -5809,7 +6115,7 @@ type DiffLine struct {
 
 func (x *DiffLine) Reset() {
 	*x = DiffLine{}
-	mi := &file_proto_watchfire_proto_msgTypes[72]
+	mi := &file_proto_watchfire_proto_msgTypes[76]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5821,7 +6127,7 @@ func (x *DiffLine) String() string {
 func (*DiffLine) ProtoMessage() {}
 
 func (x *DiffLine) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[72]
+	mi := &file_proto_watchfire_proto_msgTypes[76]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5834,7 +6140,7 @@ func (x *DiffLine) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiffLine.ProtoReflect.Descriptor instead.
 func (*DiffLine) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{72}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{76}
 }
 
 func (x *DiffLine) GetKind() DiffLine_Kind {
@@ -5866,7 +6172,7 @@ type IntegrationEvents struct {
 
 func (x *IntegrationEvents) Reset() {
 	*x = IntegrationEvents{}
-	mi := &file_proto_watchfire_proto_msgTypes[73]
+	mi := &file_proto_watchfire_proto_msgTypes[77]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5878,7 +6184,7 @@ func (x *IntegrationEvents) String() string {
 func (*IntegrationEvents) ProtoMessage() {}
 
 func (x *IntegrationEvents) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[73]
+	mi := &file_proto_watchfire_proto_msgTypes[77]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5891,7 +6197,7 @@ func (x *IntegrationEvents) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IntegrationEvents.ProtoReflect.Descriptor instead.
 func (*IntegrationEvents) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{73}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{77}
 }
 
 func (x *IntegrationEvents) GetTaskFailed() bool {
@@ -5935,7 +6241,7 @@ type WebhookIntegration struct {
 
 func (x *WebhookIntegration) Reset() {
 	*x = WebhookIntegration{}
-	mi := &file_proto_watchfire_proto_msgTypes[74]
+	mi := &file_proto_watchfire_proto_msgTypes[78]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -5947,7 +6253,7 @@ func (x *WebhookIntegration) String() string {
 func (*WebhookIntegration) ProtoMessage() {}
 
 func (x *WebhookIntegration) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[74]
+	mi := &file_proto_watchfire_proto_msgTypes[78]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -5960,7 +6266,7 @@ func (x *WebhookIntegration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WebhookIntegration.ProtoReflect.Descriptor instead.
 func (*WebhookIntegration) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{74}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{78}
 }
 
 func (x *WebhookIntegration) GetId() string {
@@ -6037,7 +6343,7 @@ type SlackIntegration struct {
 
 func (x *SlackIntegration) Reset() {
 	*x = SlackIntegration{}
-	mi := &file_proto_watchfire_proto_msgTypes[75]
+	mi := &file_proto_watchfire_proto_msgTypes[79]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6049,7 +6355,7 @@ func (x *SlackIntegration) String() string {
 func (*SlackIntegration) ProtoMessage() {}
 
 func (x *SlackIntegration) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[75]
+	mi := &file_proto_watchfire_proto_msgTypes[79]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6062,7 +6368,7 @@ func (x *SlackIntegration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SlackIntegration.ProtoReflect.Descriptor instead.
 func (*SlackIntegration) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{75}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{79}
 }
 
 func (x *SlackIntegration) GetId() string {
@@ -6131,7 +6437,7 @@ type DiscordIntegration struct {
 
 func (x *DiscordIntegration) Reset() {
 	*x = DiscordIntegration{}
-	mi := &file_proto_watchfire_proto_msgTypes[76]
+	mi := &file_proto_watchfire_proto_msgTypes[80]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6143,7 +6449,7 @@ func (x *DiscordIntegration) String() string {
 func (*DiscordIntegration) ProtoMessage() {}
 
 func (x *DiscordIntegration) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[76]
+	mi := &file_proto_watchfire_proto_msgTypes[80]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6156,7 +6462,7 @@ func (x *DiscordIntegration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiscordIntegration.ProtoReflect.Descriptor instead.
 func (*DiscordIntegration) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{76}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{80}
 }
 
 func (x *DiscordIntegration) GetId() string {
@@ -6221,7 +6527,7 @@ type GitHubIntegration struct {
 
 func (x *GitHubIntegration) Reset() {
 	*x = GitHubIntegration{}
-	mi := &file_proto_watchfire_proto_msgTypes[77]
+	mi := &file_proto_watchfire_proto_msgTypes[81]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6233,7 +6539,7 @@ func (x *GitHubIntegration) String() string {
 func (*GitHubIntegration) ProtoMessage() {}
 
 func (x *GitHubIntegration) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[77]
+	mi := &file_proto_watchfire_proto_msgTypes[81]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6246,7 +6552,7 @@ func (x *GitHubIntegration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GitHubIntegration.ProtoReflect.Descriptor instead.
 func (*GitHubIntegration) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{77}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{81}
 }
 
 func (x *GitHubIntegration) GetEnabled() bool {
@@ -6284,7 +6590,7 @@ type IntegrationsConfig struct {
 
 func (x *IntegrationsConfig) Reset() {
 	*x = IntegrationsConfig{}
-	mi := &file_proto_watchfire_proto_msgTypes[78]
+	mi := &file_proto_watchfire_proto_msgTypes[82]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6296,7 +6602,7 @@ func (x *IntegrationsConfig) String() string {
 func (*IntegrationsConfig) ProtoMessage() {}
 
 func (x *IntegrationsConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[78]
+	mi := &file_proto_watchfire_proto_msgTypes[82]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6309,7 +6615,7 @@ func (x *IntegrationsConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use IntegrationsConfig.ProtoReflect.Descriptor instead.
 func (*IntegrationsConfig) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{78}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{82}
 }
 
 func (x *IntegrationsConfig) GetWebhooks() []*WebhookIntegration {
@@ -6349,7 +6655,7 @@ type ListIntegrationsRequest struct {
 
 func (x *ListIntegrationsRequest) Reset() {
 	*x = ListIntegrationsRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[79]
+	mi := &file_proto_watchfire_proto_msgTypes[83]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6361,7 +6667,7 @@ func (x *ListIntegrationsRequest) String() string {
 func (*ListIntegrationsRequest) ProtoMessage() {}
 
 func (x *ListIntegrationsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[79]
+	mi := &file_proto_watchfire_proto_msgTypes[83]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6374,7 +6680,7 @@ func (x *ListIntegrationsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListIntegrationsRequest.ProtoReflect.Descriptor instead.
 func (*ListIntegrationsRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{79}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{83}
 }
 
 func (x *ListIntegrationsRequest) GetMeta() *RequestMeta {
@@ -6404,7 +6710,7 @@ type SaveIntegrationRequest struct {
 
 func (x *SaveIntegrationRequest) Reset() {
 	*x = SaveIntegrationRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[80]
+	mi := &file_proto_watchfire_proto_msgTypes[84]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6416,7 +6722,7 @@ func (x *SaveIntegrationRequest) String() string {
 func (*SaveIntegrationRequest) ProtoMessage() {}
 
 func (x *SaveIntegrationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[80]
+	mi := &file_proto_watchfire_proto_msgTypes[84]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6429,7 +6735,7 @@ func (x *SaveIntegrationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveIntegrationRequest.ProtoReflect.Descriptor instead.
 func (*SaveIntegrationRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{80}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{84}
 }
 
 func (x *SaveIntegrationRequest) GetMeta() *RequestMeta {
@@ -6523,7 +6829,7 @@ type DeleteIntegrationRequest struct {
 
 func (x *DeleteIntegrationRequest) Reset() {
 	*x = DeleteIntegrationRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[81]
+	mi := &file_proto_watchfire_proto_msgTypes[85]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6535,7 +6841,7 @@ func (x *DeleteIntegrationRequest) String() string {
 func (*DeleteIntegrationRequest) ProtoMessage() {}
 
 func (x *DeleteIntegrationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[81]
+	mi := &file_proto_watchfire_proto_msgTypes[85]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6548,7 +6854,7 @@ func (x *DeleteIntegrationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DeleteIntegrationRequest.ProtoReflect.Descriptor instead.
 func (*DeleteIntegrationRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{81}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{85}
 }
 
 func (x *DeleteIntegrationRequest) GetMeta() *RequestMeta {
@@ -6586,7 +6892,7 @@ type TestIntegrationRequest struct {
 
 func (x *TestIntegrationRequest) Reset() {
 	*x = TestIntegrationRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[82]
+	mi := &file_proto_watchfire_proto_msgTypes[86]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6598,7 +6904,7 @@ func (x *TestIntegrationRequest) String() string {
 func (*TestIntegrationRequest) ProtoMessage() {}
 
 func (x *TestIntegrationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[82]
+	mi := &file_proto_watchfire_proto_msgTypes[86]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6611,7 +6917,7 @@ func (x *TestIntegrationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TestIntegrationRequest.ProtoReflect.Descriptor instead.
 func (*TestIntegrationRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{82}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{86}
 }
 
 func (x *TestIntegrationRequest) GetMeta() *RequestMeta {
@@ -6646,7 +6952,7 @@ type TestIntegrationResponse struct {
 
 func (x *TestIntegrationResponse) Reset() {
 	*x = TestIntegrationResponse{}
-	mi := &file_proto_watchfire_proto_msgTypes[83]
+	mi := &file_proto_watchfire_proto_msgTypes[87]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6658,7 +6964,7 @@ func (x *TestIntegrationResponse) String() string {
 func (*TestIntegrationResponse) ProtoMessage() {}
 
 func (x *TestIntegrationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[83]
+	mi := &file_proto_watchfire_proto_msgTypes[87]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6671,7 +6977,7 @@ func (x *TestIntegrationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TestIntegrationResponse.ProtoReflect.Descriptor instead.
 func (*TestIntegrationResponse) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{83}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{87}
 }
 
 func (x *TestIntegrationResponse) GetOk() bool {
@@ -6708,7 +7014,7 @@ type BeginOAuthRequest struct {
 
 func (x *BeginOAuthRequest) Reset() {
 	*x = BeginOAuthRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[84]
+	mi := &file_proto_watchfire_proto_msgTypes[88]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6720,7 +7026,7 @@ func (x *BeginOAuthRequest) String() string {
 func (*BeginOAuthRequest) ProtoMessage() {}
 
 func (x *BeginOAuthRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[84]
+	mi := &file_proto_watchfire_proto_msgTypes[88]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6733,7 +7039,7 @@ func (x *BeginOAuthRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginOAuthRequest.ProtoReflect.Descriptor instead.
 func (*BeginOAuthRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{84}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{88}
 }
 
 func (x *BeginOAuthRequest) GetMeta() *RequestMeta {
@@ -6773,7 +7079,7 @@ type BeginOAuthResponse struct {
 
 func (x *BeginOAuthResponse) Reset() {
 	*x = BeginOAuthResponse{}
-	mi := &file_proto_watchfire_proto_msgTypes[85]
+	mi := &file_proto_watchfire_proto_msgTypes[89]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6785,7 +7091,7 @@ func (x *BeginOAuthResponse) String() string {
 func (*BeginOAuthResponse) ProtoMessage() {}
 
 func (x *BeginOAuthResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[85]
+	mi := &file_proto_watchfire_proto_msgTypes[89]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6798,7 +7104,7 @@ func (x *BeginOAuthResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BeginOAuthResponse.ProtoReflect.Descriptor instead.
 func (*BeginOAuthResponse) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{85}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{89}
 }
 
 func (x *BeginOAuthResponse) GetAuthorizeUrl() string {
@@ -6832,7 +7138,7 @@ type GetOAuthStatusRequest struct {
 
 func (x *GetOAuthStatusRequest) Reset() {
 	*x = GetOAuthStatusRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[86]
+	mi := &file_proto_watchfire_proto_msgTypes[90]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6844,7 +7150,7 @@ func (x *GetOAuthStatusRequest) String() string {
 func (*GetOAuthStatusRequest) ProtoMessage() {}
 
 func (x *GetOAuthStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[86]
+	mi := &file_proto_watchfire_proto_msgTypes[90]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6857,7 +7163,7 @@ func (x *GetOAuthStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetOAuthStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetOAuthStatusRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{86}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{90}
 }
 
 func (x *GetOAuthStatusRequest) GetMeta() *RequestMeta {
@@ -6887,7 +7193,7 @@ type OAuthStatus struct {
 
 func (x *OAuthStatus) Reset() {
 	*x = OAuthStatus{}
-	mi := &file_proto_watchfire_proto_msgTypes[87]
+	mi := &file_proto_watchfire_proto_msgTypes[91]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6899,7 +7205,7 @@ func (x *OAuthStatus) String() string {
 func (*OAuthStatus) ProtoMessage() {}
 
 func (x *OAuthStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[87]
+	mi := &file_proto_watchfire_proto_msgTypes[91]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6912,7 +7218,7 @@ func (x *OAuthStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use OAuthStatus.ProtoReflect.Descriptor instead.
 func (*OAuthStatus) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{87}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{91}
 }
 
 func (x *OAuthStatus) GetProvider() OAuthProvider {
@@ -6960,7 +7266,7 @@ type CancelOAuthRequest struct {
 
 func (x *CancelOAuthRequest) Reset() {
 	*x = CancelOAuthRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[88]
+	mi := &file_proto_watchfire_proto_msgTypes[92]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -6972,7 +7278,7 @@ func (x *CancelOAuthRequest) String() string {
 func (*CancelOAuthRequest) ProtoMessage() {}
 
 func (x *CancelOAuthRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[88]
+	mi := &file_proto_watchfire_proto_msgTypes[92]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -6985,7 +7291,7 @@ func (x *CancelOAuthRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CancelOAuthRequest.ProtoReflect.Descriptor instead.
 func (*CancelOAuthRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{88}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{92}
 }
 
 func (x *CancelOAuthRequest) GetMeta() *RequestMeta {
@@ -7014,7 +7320,7 @@ type PostOAuthHelloRequest struct {
 
 func (x *PostOAuthHelloRequest) Reset() {
 	*x = PostOAuthHelloRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[89]
+	mi := &file_proto_watchfire_proto_msgTypes[93]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7026,7 +7332,7 @@ func (x *PostOAuthHelloRequest) String() string {
 func (*PostOAuthHelloRequest) ProtoMessage() {}
 
 func (x *PostOAuthHelloRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[89]
+	mi := &file_proto_watchfire_proto_msgTypes[93]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7039,7 +7345,7 @@ func (x *PostOAuthHelloRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PostOAuthHelloRequest.ProtoReflect.Descriptor instead.
 func (*PostOAuthHelloRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{89}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{93}
 }
 
 func (x *PostOAuthHelloRequest) GetMeta() *RequestMeta {
@@ -7080,7 +7386,7 @@ type PostOAuthHelloResponse struct {
 
 func (x *PostOAuthHelloResponse) Reset() {
 	*x = PostOAuthHelloResponse{}
-	mi := &file_proto_watchfire_proto_msgTypes[90]
+	mi := &file_proto_watchfire_proto_msgTypes[94]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7092,7 +7398,7 @@ func (x *PostOAuthHelloResponse) String() string {
 func (*PostOAuthHelloResponse) ProtoMessage() {}
 
 func (x *PostOAuthHelloResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[90]
+	mi := &file_proto_watchfire_proto_msgTypes[94]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7105,7 +7411,7 @@ func (x *PostOAuthHelloResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use PostOAuthHelloResponse.ProtoReflect.Descriptor instead.
 func (*PostOAuthHelloResponse) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{90}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{94}
 }
 
 func (x *PostOAuthHelloResponse) GetOk() bool {
@@ -7186,7 +7492,7 @@ type InboundConfig struct {
 
 func (x *InboundConfig) Reset() {
 	*x = InboundConfig{}
-	mi := &file_proto_watchfire_proto_msgTypes[91]
+	mi := &file_proto_watchfire_proto_msgTypes[95]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7198,7 +7504,7 @@ func (x *InboundConfig) String() string {
 func (*InboundConfig) ProtoMessage() {}
 
 func (x *InboundConfig) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[91]
+	mi := &file_proto_watchfire_proto_msgTypes[95]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7211,7 +7517,7 @@ func (x *InboundConfig) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InboundConfig.ProtoReflect.Descriptor instead.
 func (*InboundConfig) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{91}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{95}
 }
 
 func (x *InboundConfig) GetListenAddr() string {
@@ -7488,7 +7794,7 @@ type InboundStatus struct {
 
 func (x *InboundStatus) Reset() {
 	*x = InboundStatus{}
-	mi := &file_proto_watchfire_proto_msgTypes[92]
+	mi := &file_proto_watchfire_proto_msgTypes[96]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7500,7 +7806,7 @@ func (x *InboundStatus) String() string {
 func (*InboundStatus) ProtoMessage() {}
 
 func (x *InboundStatus) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[92]
+	mi := &file_proto_watchfire_proto_msgTypes[96]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7513,7 +7819,7 @@ func (x *InboundStatus) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use InboundStatus.ProtoReflect.Descriptor instead.
 func (*InboundStatus) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{92}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{96}
 }
 
 func (x *InboundStatus) GetListening() bool {
@@ -7609,7 +7915,7 @@ type GetInboundStatusRequest struct {
 
 func (x *GetInboundStatusRequest) Reset() {
 	*x = GetInboundStatusRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[93]
+	mi := &file_proto_watchfire_proto_msgTypes[97]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7621,7 +7927,7 @@ func (x *GetInboundStatusRequest) String() string {
 func (*GetInboundStatusRequest) ProtoMessage() {}
 
 func (x *GetInboundStatusRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[93]
+	mi := &file_proto_watchfire_proto_msgTypes[97]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7634,7 +7940,7 @@ func (x *GetInboundStatusRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetInboundStatusRequest.ProtoReflect.Descriptor instead.
 func (*GetInboundStatusRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{93}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{97}
 }
 
 func (x *GetInboundStatusRequest) GetMeta() *RequestMeta {
@@ -7654,7 +7960,7 @@ type SaveInboundConfigRequest struct {
 
 func (x *SaveInboundConfigRequest) Reset() {
 	*x = SaveInboundConfigRequest{}
-	mi := &file_proto_watchfire_proto_msgTypes[94]
+	mi := &file_proto_watchfire_proto_msgTypes[98]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7666,7 +7972,7 @@ func (x *SaveInboundConfigRequest) String() string {
 func (*SaveInboundConfigRequest) ProtoMessage() {}
 
 func (x *SaveInboundConfigRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[94]
+	mi := &file_proto_watchfire_proto_msgTypes[98]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7679,7 +7985,7 @@ func (x *SaveInboundConfigRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SaveInboundConfigRequest.ProtoReflect.Descriptor instead.
 func (*SaveInboundConfigRequest) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{94}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{98}
 }
 
 func (x *SaveInboundConfigRequest) GetMeta() *RequestMeta {
@@ -7714,7 +8020,7 @@ type DiscordGuildRegistration struct {
 
 func (x *DiscordGuildRegistration) Reset() {
 	*x = DiscordGuildRegistration{}
-	mi := &file_proto_watchfire_proto_msgTypes[95]
+	mi := &file_proto_watchfire_proto_msgTypes[99]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -7726,7 +8032,7 @@ func (x *DiscordGuildRegistration) String() string {
 func (*DiscordGuildRegistration) ProtoMessage() {}
 
 func (x *DiscordGuildRegistration) ProtoReflect() protoreflect.Message {
-	mi := &file_proto_watchfire_proto_msgTypes[95]
+	mi := &file_proto_watchfire_proto_msgTypes[99]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -7739,7 +8045,7 @@ func (x *DiscordGuildRegistration) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use DiscordGuildRegistration.ProtoReflect.Descriptor instead.
 func (*DiscordGuildRegistration) Descriptor() ([]byte, []int) {
-	return file_proto_watchfire_proto_rawDescGZIP(), []int{95}
+	return file_proto_watchfire_proto_rawDescGZIP(), []int{99}
 }
 
 func (x *DiscordGuildRegistration) GetGuildId() string {
@@ -7785,7 +8091,7 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\vRequestMeta\x12\x16\n" +
 	"\x06origin\x18\x01 \x01(\tR\x06origin\x12\x1b\n" +
 	"\tclient_id\x18\x02 \x01(\tR\bclientId\x12\x18\n" +
-	"\aversion\x18\x03 \x01(\tR\aversion\"\x90\x05\n" +
+	"\aversion\x18\x03 \x01(\tR\aversion\"\xd4\x05\n" +
 	"\aProject\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
@@ -7810,9 +8116,23 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\x10next_task_number\x18\x0f \x01(\x05R\x0enextTaskNumber\x12\x1a\n" +
 	"\bposition\x18\x10 \x01(\x05R\bposition\x121\n" +
 	"\x14secrets_instructions\x18\x11 \x01(\tR\x13secretsInstructions\x12E\n" +
-	"\rnotifications\x18\x12 \x01(\v2\x1f.watchfire.ProjectNotificationsR\rnotificationsJ\x04\b\x06\x10\a\",\n" +
+	"\rnotifications\x18\x12 \x01(\v2\x1f.watchfire.ProjectNotificationsR\rnotifications\x12B\n" +
+	"\fintegrations\x18\x13 \x01(\v2\x1e.watchfire.ProjectIntegrationsR\fintegrationsJ\x04\b\x06\x10\a\"\x8a\x01\n" +
+	"\x13ProjectIntegrations\x12#\n" +
+	"\rslack_channel\x18\x01 \x01(\tR\fslackChannel\x12(\n" +
+	"\x10discord_guild_id\x18\x02 \x01(\tR\x0ediscordGuildId\x12$\n" +
+	"\x0egithub_auto_pr\x18\x03 \x01(\bR\fgithubAutoPr\"\xc1\x02\n" +
 	"\x14ProjectNotifications\x12\x14\n" +
-	"\x05muted\x18\x01 \x01(\bR\x05muted\"V\n" +
+	"\x05muted\x18\x01 \x01(\bR\x05muted\x12'\n" +
+	"\x0foverride_events\x18\x02 \x01(\bR\x0eoverrideEvents\x12C\n" +
+	"\x06events\x18\x03 \x03(\v2+.watchfire.ProjectNotifications.EventsEntryR\x06events\x12M\n" +
+	"\x14quiet_hours_override\x18\x04 \x01(\v2\x1b.watchfire.QuietHoursConfigR\x12quietHoursOverride\x1aV\n" +
+	"\vEventsEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x121\n" +
+	"\x05value\x18\x02 \x01(\v2\x1b.watchfire.ProjectEventPrefR\x05value:\x028\x01\"B\n" +
+	"\x10ProjectEventPref\x12\x18\n" +
+	"\aenabled\x18\x01 \x01(\bR\aenabled\x12\x14\n" +
+	"\x05sound\x18\x02 \x01(\tR\x05sound\"V\n" +
 	"\tProjectId\x12*\n" +
 	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\x12\x1d\n" +
 	"\n" +
@@ -7829,7 +8149,7 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\n" +
 	"auto_merge\x18\x06 \x01(\bR\tautoMerge\x12,\n" +
 	"\x12auto_delete_branch\x18\a \x01(\bR\x10autoDeleteBranch\x12(\n" +
-	"\x10auto_start_tasks\x18\b \x01(\bR\x0eautoStartTasksJ\x04\b\x05\x10\x06\"\xfe\x04\n" +
+	"\x10auto_start_tasks\x18\b \x01(\bR\x0eautoStartTasksJ\x04\b\x05\x10\x06\"\x98\x06\n" +
 	"\x14UpdateProjectRequest\x12*\n" +
 	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\x12\x1d\n" +
 	"\n" +
@@ -7846,7 +8166,11 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	" \x01(\tH\x06R\n" +
 	"definition\x88\x01\x01\x126\n" +
 	"\x14secrets_instructions\x18\v \x01(\tH\aR\x13secretsInstructions\x88\x01\x01\x124\n" +
-	"\x13notifications_muted\x18\f \x01(\bH\bR\x12notificationsMuted\x88\x01\x01B\a\n" +
+	"\x13notifications_muted\x18\f \x01(\bH\bR\x12notificationsMuted\x88\x01\x01\x12\x1d\n" +
+	"\asandbox\x18\r \x01(\tH\tR\asandbox\x88\x01\x01\x12\x1b\n" +
+	"\x06status\x18\x0e \x01(\tH\n" +
+	"R\x06status\x88\x01\x01\x12E\n" +
+	"\rnotifications\x18\x0f \x01(\v2\x1f.watchfire.ProjectNotificationsR\rnotificationsB\a\n" +
 	"\x05_nameB\b\n" +
 	"\x06_colorB\x10\n" +
 	"\x0e_default_agentB\r\n" +
@@ -7855,7 +8179,10 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\x11_auto_start_tasksB\r\n" +
 	"\v_definitionB\x17\n" +
 	"\x15_secrets_instructionsB\x16\n" +
-	"\x14_notifications_mutedJ\x04\b\x05\x10\x06\"e\n" +
+	"\x14_notifications_mutedB\n" +
+	"\n" +
+	"\b_sandboxB\t\n" +
+	"\a_statusJ\x04\b\x05\x10\x06\"e\n" +
 	"\x16ReorderProjectsRequest\x12*\n" +
 	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\x12\x1f\n" +
 	"\vproject_ids\x18\x02 \x03(\tR\n" +
@@ -8175,7 +8502,18 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\fdisplay_name\x18\x02 \x01(\tR\vdisplayName\x12\x1c\n" +
 	"\tavailable\x18\x03 \x01(\bR\tavailable\"9\n" +
 	"\tAgentList\x12,\n" +
-	"\x06agents\x18\x01 \x03(\v2\x14.watchfire.AgentInfoR\x06agents\"I\n" +
+	"\x06agents\x18\x01 \x03(\v2\x14.watchfire.AgentInfoR\x06agents\"\x82\x01\n" +
+	"\x1bSetGitHubAutoPRScopeRequest\x12*\n" +
+	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x18\n" +
+	"\aenabled\x18\x03 \x01(\bR\aenabled\"\xc0\x01\n" +
+	"$SetProjectIntegrationBindingsRequest\x12*\n" +
+	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\x12\x1d\n" +
+	"\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\x12#\n" +
+	"\rslack_channel\x18\x03 \x01(\tR\fslackChannel\x12(\n" +
+	"\x10discord_guild_id\x18\x04 \x01(\tR\x0ediscordGuildId\"I\n" +
 	"\x1bSubscribeFocusEventsRequest\x12*\n" +
 	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\"\x9d\x01\n" +
 	"\n" +
@@ -8541,7 +8879,7 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\x10OAUTH_STATE_IDLE\x10\x00\x12\x1b\n" +
 	"\x17OAUTH_STATE_IN_PROGRESS\x10\x01\x12\x19\n" +
 	"\x15OAUTH_STATE_CONNECTED\x10\x02\x12\x15\n" +
-	"\x11OAUTH_STATE_ERROR\x10\x032\xd9\x03\n" +
+	"\x11OAUTH_STATE_ERROR\x10\x032\xdb\x06\n" +
 	"\x0eProjectService\x12>\n" +
 	"\fListProjects\x12\x16.google.protobuf.Empty\x1a\x16.watchfire.ProjectList\x126\n" +
 	"\n" +
@@ -8551,7 +8889,12 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\rDeleteProject\x12\x14.watchfire.ProjectId\x1a\x16.google.protobuf.Empty\x126\n" +
 	"\n" +
 	"GetGitInfo\x12\x14.watchfire.ProjectId\x1a\x12.watchfire.GitInfo\x12L\n" +
-	"\x0fReorderProjects\x12!.watchfire.ReorderProjectsRequest\x1a\x16.watchfire.ProjectList2\xee\x05\n" +
+	"\x0fReorderProjects\x12!.watchfire.ReorderProjectsRequest\x1a\x16.watchfire.ProjectList\x12?\n" +
+	"\x13RegenerateProjectId\x12\x14.watchfire.ProjectId\x1a\x12.watchfire.Project\x12>\n" +
+	"\x12ResetTaskNumbering\x12\x14.watchfire.ProjectId\x1a\x12.watchfire.Project\x12A\n" +
+	"\x11UnregisterProject\x12\x14.watchfire.ProjectId\x1a\x16.google.protobuf.Empty\x12V\n" +
+	"\x14SetGitHubAutoPRScope\x12&.watchfire.SetGitHubAutoPRScopeRequest\x1a\x16.google.protobuf.Empty\x12d\n" +
+	"\x1dSetProjectIntegrationBindings\x12/.watchfire.SetProjectIntegrationBindingsRequest\x1a\x12.watchfire.Project2\xee\x05\n" +
 	"\vTaskService\x12=\n" +
 	"\tListTasks\x12\x1b.watchfire.ListTasksRequest\x1a\x13.watchfire.TaskList\x12-\n" +
 	"\aGetTask\x12\x11.watchfire.TaskId\x1a\x0f.watchfire.Task\x12;\n" +
@@ -8639,367 +8982,389 @@ func file_proto_watchfire_proto_rawDescGZIP() []byte {
 }
 
 var file_proto_watchfire_proto_enumTypes = make([]protoimpl.EnumInfo, 8)
-var file_proto_watchfire_proto_msgTypes = make([]protoimpl.MessageInfo, 98)
+var file_proto_watchfire_proto_msgTypes = make([]protoimpl.MessageInfo, 103)
 var file_proto_watchfire_proto_goTypes = []any{
-	(FocusTarget)(0),                      // 0: watchfire.FocusTarget
-	(NotificationKind)(0),                 // 1: watchfire.NotificationKind
-	(ExportFormat)(0),                     // 2: watchfire.ExportFormat
-	(IntegrationKind)(0),                  // 3: watchfire.IntegrationKind
-	(OAuthProvider)(0),                    // 4: watchfire.OAuthProvider
-	(OAuthState)(0),                       // 5: watchfire.OAuthState
-	(FileDiff_Status)(0),                  // 6: watchfire.FileDiff.Status
-	(DiffLine_Kind)(0),                    // 7: watchfire.DiffLine.Kind
-	(*RequestMeta)(nil),                   // 8: watchfire.RequestMeta
-	(*Project)(nil),                       // 9: watchfire.Project
-	(*ProjectNotifications)(nil),          // 10: watchfire.ProjectNotifications
-	(*ProjectId)(nil),                     // 11: watchfire.ProjectId
-	(*ProjectList)(nil),                   // 12: watchfire.ProjectList
-	(*CreateProjectRequest)(nil),          // 13: watchfire.CreateProjectRequest
-	(*UpdateProjectRequest)(nil),          // 14: watchfire.UpdateProjectRequest
-	(*ReorderProjectsRequest)(nil),        // 15: watchfire.ReorderProjectsRequest
-	(*GitInfo)(nil),                       // 16: watchfire.GitInfo
-	(*Task)(nil),                          // 17: watchfire.Task
-	(*TaskId)(nil),                        // 18: watchfire.TaskId
-	(*TaskList)(nil),                      // 19: watchfire.TaskList
-	(*ListTasksRequest)(nil),              // 20: watchfire.ListTasksRequest
-	(*CreateTaskRequest)(nil),             // 21: watchfire.CreateTaskRequest
-	(*UpdateTaskRequest)(nil),             // 22: watchfire.UpdateTaskRequest
-	(*BulkUpdateStatusRequest)(nil),       // 23: watchfire.BulkUpdateStatusRequest
-	(*BulkDeleteRequest)(nil),             // 24: watchfire.BulkDeleteRequest
-	(*BulkRestoreRequest)(nil),            // 25: watchfire.BulkRestoreRequest
-	(*ReorderTasksRequest)(nil),           // 26: watchfire.ReorderTasksRequest
-	(*DaemonStatus)(nil),                  // 27: watchfire.DaemonStatus
-	(*AgentStatus)(nil),                   // 28: watchfire.AgentStatus
-	(*StartAgentRequest)(nil),             // 29: watchfire.StartAgentRequest
-	(*ScreenBuffer)(nil),                  // 30: watchfire.ScreenBuffer
-	(*SubscribeScreenRequest)(nil),        // 31: watchfire.SubscribeScreenRequest
-	(*ScrollbackRequest)(nil),             // 32: watchfire.ScrollbackRequest
-	(*ScrollbackLines)(nil),               // 33: watchfire.ScrollbackLines
-	(*SendInputRequest)(nil),              // 34: watchfire.SendInputRequest
-	(*ResizeRequest)(nil),                 // 35: watchfire.ResizeRequest
-	(*SubscribeRawOutputRequest)(nil),     // 36: watchfire.SubscribeRawOutputRequest
-	(*RawOutputChunk)(nil),                // 37: watchfire.RawOutputChunk
-	(*AgentIssue)(nil),                    // 38: watchfire.AgentIssue
-	(*SubscribeAgentIssuesRequest)(nil),   // 39: watchfire.SubscribeAgentIssuesRequest
-	(*Branch)(nil),                        // 40: watchfire.Branch
-	(*BranchList)(nil),                    // 41: watchfire.BranchList
-	(*BranchId)(nil),                      // 42: watchfire.BranchId
-	(*MergeBranchRequest)(nil),            // 43: watchfire.MergeBranchRequest
-	(*BulkBranchRequest)(nil),             // 44: watchfire.BulkBranchRequest
-	(*AgentConfig)(nil),                   // 45: watchfire.AgentConfig
-	(*DefaultsConfig)(nil),                // 46: watchfire.DefaultsConfig
-	(*NotificationsEvents)(nil),           // 47: watchfire.NotificationsEvents
-	(*NotificationsSounds)(nil),           // 48: watchfire.NotificationsSounds
-	(*QuietHoursConfig)(nil),              // 49: watchfire.QuietHoursConfig
-	(*NotificationsConfig)(nil),           // 50: watchfire.NotificationsConfig
-	(*UpdatesConfig)(nil),                 // 51: watchfire.UpdatesConfig
-	(*AppearanceConfig)(nil),              // 52: watchfire.AppearanceConfig
-	(*Settings)(nil),                      // 53: watchfire.Settings
-	(*UpdateSettingsRequest)(nil),         // 54: watchfire.UpdateSettingsRequest
-	(*AgentInfo)(nil),                     // 55: watchfire.AgentInfo
-	(*AgentList)(nil),                     // 56: watchfire.AgentList
-	(*SubscribeFocusEventsRequest)(nil),   // 57: watchfire.SubscribeFocusEventsRequest
-	(*FocusEvent)(nil),                    // 58: watchfire.FocusEvent
-	(*ListLogsRequest)(nil),               // 59: watchfire.ListLogsRequest
-	(*LogEntry)(nil),                      // 60: watchfire.LogEntry
-	(*LogList)(nil),                       // 61: watchfire.LogList
-	(*GetLogRequest)(nil),                 // 62: watchfire.GetLogRequest
-	(*LogContent)(nil),                    // 63: watchfire.LogContent
-	(*DeleteLogRequest)(nil),              // 64: watchfire.DeleteLogRequest
-	(*Notification)(nil),                  // 65: watchfire.Notification
-	(*SubscribeNotificationsRequest)(nil), // 66: watchfire.SubscribeNotificationsRequest
-	(*ExportReportRequest)(nil),           // 67: watchfire.ExportReportRequest
-	(*ExportReportResponse)(nil),          // 68: watchfire.ExportReportResponse
-	(*GetGlobalInsightsRequest)(nil),      // 69: watchfire.GetGlobalInsightsRequest
-	(*DayBucket)(nil),                     // 70: watchfire.DayBucket
-	(*AgentBreakdown)(nil),                // 71: watchfire.AgentBreakdown
-	(*TopProject)(nil),                    // 72: watchfire.TopProject
-	(*GlobalInsights)(nil),                // 73: watchfire.GlobalInsights
-	(*GetProjectInsightsRequest)(nil),     // 74: watchfire.GetProjectInsightsRequest
-	(*ProjectInsights)(nil),               // 75: watchfire.ProjectInsights
-	(*GetTaskDiffRequest)(nil),            // 76: watchfire.GetTaskDiffRequest
-	(*FileDiffSet)(nil),                   // 77: watchfire.FileDiffSet
-	(*FileDiff)(nil),                      // 78: watchfire.FileDiff
-	(*Hunk)(nil),                          // 79: watchfire.Hunk
-	(*DiffLine)(nil),                      // 80: watchfire.DiffLine
-	(*IntegrationEvents)(nil),             // 81: watchfire.IntegrationEvents
-	(*WebhookIntegration)(nil),            // 82: watchfire.WebhookIntegration
-	(*SlackIntegration)(nil),              // 83: watchfire.SlackIntegration
-	(*DiscordIntegration)(nil),            // 84: watchfire.DiscordIntegration
-	(*GitHubIntegration)(nil),             // 85: watchfire.GitHubIntegration
-	(*IntegrationsConfig)(nil),            // 86: watchfire.IntegrationsConfig
-	(*ListIntegrationsRequest)(nil),       // 87: watchfire.ListIntegrationsRequest
-	(*SaveIntegrationRequest)(nil),        // 88: watchfire.SaveIntegrationRequest
-	(*DeleteIntegrationRequest)(nil),      // 89: watchfire.DeleteIntegrationRequest
-	(*TestIntegrationRequest)(nil),        // 90: watchfire.TestIntegrationRequest
-	(*TestIntegrationResponse)(nil),       // 91: watchfire.TestIntegrationResponse
-	(*BeginOAuthRequest)(nil),             // 92: watchfire.BeginOAuthRequest
-	(*BeginOAuthResponse)(nil),            // 93: watchfire.BeginOAuthResponse
-	(*GetOAuthStatusRequest)(nil),         // 94: watchfire.GetOAuthStatusRequest
-	(*OAuthStatus)(nil),                   // 95: watchfire.OAuthStatus
-	(*CancelOAuthRequest)(nil),            // 96: watchfire.CancelOAuthRequest
-	(*PostOAuthHelloRequest)(nil),         // 97: watchfire.PostOAuthHelloRequest
-	(*PostOAuthHelloResponse)(nil),        // 98: watchfire.PostOAuthHelloResponse
-	(*InboundConfig)(nil),                 // 99: watchfire.InboundConfig
-	(*InboundStatus)(nil),                 // 100: watchfire.InboundStatus
-	(*GetInboundStatusRequest)(nil),       // 101: watchfire.GetInboundStatusRequest
-	(*SaveInboundConfigRequest)(nil),      // 102: watchfire.SaveInboundConfigRequest
-	(*DiscordGuildRegistration)(nil),      // 103: watchfire.DiscordGuildRegistration
-	nil,                                   // 104: watchfire.Settings.AgentsEntry
-	nil,                                   // 105: watchfire.UpdateSettingsRequest.AgentsEntry
-	(*timestamppb.Timestamp)(nil),         // 106: google.protobuf.Timestamp
-	(*emptypb.Empty)(nil),                 // 107: google.protobuf.Empty
+	(FocusTarget)(0),                             // 0: watchfire.FocusTarget
+	(NotificationKind)(0),                        // 1: watchfire.NotificationKind
+	(ExportFormat)(0),                            // 2: watchfire.ExportFormat
+	(IntegrationKind)(0),                         // 3: watchfire.IntegrationKind
+	(OAuthProvider)(0),                           // 4: watchfire.OAuthProvider
+	(OAuthState)(0),                              // 5: watchfire.OAuthState
+	(FileDiff_Status)(0),                         // 6: watchfire.FileDiff.Status
+	(DiffLine_Kind)(0),                           // 7: watchfire.DiffLine.Kind
+	(*RequestMeta)(nil),                          // 8: watchfire.RequestMeta
+	(*Project)(nil),                              // 9: watchfire.Project
+	(*ProjectIntegrations)(nil),                  // 10: watchfire.ProjectIntegrations
+	(*ProjectNotifications)(nil),                 // 11: watchfire.ProjectNotifications
+	(*ProjectEventPref)(nil),                     // 12: watchfire.ProjectEventPref
+	(*ProjectId)(nil),                            // 13: watchfire.ProjectId
+	(*ProjectList)(nil),                          // 14: watchfire.ProjectList
+	(*CreateProjectRequest)(nil),                 // 15: watchfire.CreateProjectRequest
+	(*UpdateProjectRequest)(nil),                 // 16: watchfire.UpdateProjectRequest
+	(*ReorderProjectsRequest)(nil),               // 17: watchfire.ReorderProjectsRequest
+	(*GitInfo)(nil),                              // 18: watchfire.GitInfo
+	(*Task)(nil),                                 // 19: watchfire.Task
+	(*TaskId)(nil),                               // 20: watchfire.TaskId
+	(*TaskList)(nil),                             // 21: watchfire.TaskList
+	(*ListTasksRequest)(nil),                     // 22: watchfire.ListTasksRequest
+	(*CreateTaskRequest)(nil),                    // 23: watchfire.CreateTaskRequest
+	(*UpdateTaskRequest)(nil),                    // 24: watchfire.UpdateTaskRequest
+	(*BulkUpdateStatusRequest)(nil),              // 25: watchfire.BulkUpdateStatusRequest
+	(*BulkDeleteRequest)(nil),                    // 26: watchfire.BulkDeleteRequest
+	(*BulkRestoreRequest)(nil),                   // 27: watchfire.BulkRestoreRequest
+	(*ReorderTasksRequest)(nil),                  // 28: watchfire.ReorderTasksRequest
+	(*DaemonStatus)(nil),                         // 29: watchfire.DaemonStatus
+	(*AgentStatus)(nil),                          // 30: watchfire.AgentStatus
+	(*StartAgentRequest)(nil),                    // 31: watchfire.StartAgentRequest
+	(*ScreenBuffer)(nil),                         // 32: watchfire.ScreenBuffer
+	(*SubscribeScreenRequest)(nil),               // 33: watchfire.SubscribeScreenRequest
+	(*ScrollbackRequest)(nil),                    // 34: watchfire.ScrollbackRequest
+	(*ScrollbackLines)(nil),                      // 35: watchfire.ScrollbackLines
+	(*SendInputRequest)(nil),                     // 36: watchfire.SendInputRequest
+	(*ResizeRequest)(nil),                        // 37: watchfire.ResizeRequest
+	(*SubscribeRawOutputRequest)(nil),            // 38: watchfire.SubscribeRawOutputRequest
+	(*RawOutputChunk)(nil),                       // 39: watchfire.RawOutputChunk
+	(*AgentIssue)(nil),                           // 40: watchfire.AgentIssue
+	(*SubscribeAgentIssuesRequest)(nil),          // 41: watchfire.SubscribeAgentIssuesRequest
+	(*Branch)(nil),                               // 42: watchfire.Branch
+	(*BranchList)(nil),                           // 43: watchfire.BranchList
+	(*BranchId)(nil),                             // 44: watchfire.BranchId
+	(*MergeBranchRequest)(nil),                   // 45: watchfire.MergeBranchRequest
+	(*BulkBranchRequest)(nil),                    // 46: watchfire.BulkBranchRequest
+	(*AgentConfig)(nil),                          // 47: watchfire.AgentConfig
+	(*DefaultsConfig)(nil),                       // 48: watchfire.DefaultsConfig
+	(*NotificationsEvents)(nil),                  // 49: watchfire.NotificationsEvents
+	(*NotificationsSounds)(nil),                  // 50: watchfire.NotificationsSounds
+	(*QuietHoursConfig)(nil),                     // 51: watchfire.QuietHoursConfig
+	(*NotificationsConfig)(nil),                  // 52: watchfire.NotificationsConfig
+	(*UpdatesConfig)(nil),                        // 53: watchfire.UpdatesConfig
+	(*AppearanceConfig)(nil),                     // 54: watchfire.AppearanceConfig
+	(*Settings)(nil),                             // 55: watchfire.Settings
+	(*UpdateSettingsRequest)(nil),                // 56: watchfire.UpdateSettingsRequest
+	(*AgentInfo)(nil),                            // 57: watchfire.AgentInfo
+	(*AgentList)(nil),                            // 58: watchfire.AgentList
+	(*SetGitHubAutoPRScopeRequest)(nil),          // 59: watchfire.SetGitHubAutoPRScopeRequest
+	(*SetProjectIntegrationBindingsRequest)(nil), // 60: watchfire.SetProjectIntegrationBindingsRequest
+	(*SubscribeFocusEventsRequest)(nil),          // 61: watchfire.SubscribeFocusEventsRequest
+	(*FocusEvent)(nil),                           // 62: watchfire.FocusEvent
+	(*ListLogsRequest)(nil),                      // 63: watchfire.ListLogsRequest
+	(*LogEntry)(nil),                             // 64: watchfire.LogEntry
+	(*LogList)(nil),                              // 65: watchfire.LogList
+	(*GetLogRequest)(nil),                        // 66: watchfire.GetLogRequest
+	(*LogContent)(nil),                           // 67: watchfire.LogContent
+	(*DeleteLogRequest)(nil),                     // 68: watchfire.DeleteLogRequest
+	(*Notification)(nil),                         // 69: watchfire.Notification
+	(*SubscribeNotificationsRequest)(nil),        // 70: watchfire.SubscribeNotificationsRequest
+	(*ExportReportRequest)(nil),                  // 71: watchfire.ExportReportRequest
+	(*ExportReportResponse)(nil),                 // 72: watchfire.ExportReportResponse
+	(*GetGlobalInsightsRequest)(nil),             // 73: watchfire.GetGlobalInsightsRequest
+	(*DayBucket)(nil),                            // 74: watchfire.DayBucket
+	(*AgentBreakdown)(nil),                       // 75: watchfire.AgentBreakdown
+	(*TopProject)(nil),                           // 76: watchfire.TopProject
+	(*GlobalInsights)(nil),                       // 77: watchfire.GlobalInsights
+	(*GetProjectInsightsRequest)(nil),            // 78: watchfire.GetProjectInsightsRequest
+	(*ProjectInsights)(nil),                      // 79: watchfire.ProjectInsights
+	(*GetTaskDiffRequest)(nil),                   // 80: watchfire.GetTaskDiffRequest
+	(*FileDiffSet)(nil),                          // 81: watchfire.FileDiffSet
+	(*FileDiff)(nil),                             // 82: watchfire.FileDiff
+	(*Hunk)(nil),                                 // 83: watchfire.Hunk
+	(*DiffLine)(nil),                             // 84: watchfire.DiffLine
+	(*IntegrationEvents)(nil),                    // 85: watchfire.IntegrationEvents
+	(*WebhookIntegration)(nil),                   // 86: watchfire.WebhookIntegration
+	(*SlackIntegration)(nil),                     // 87: watchfire.SlackIntegration
+	(*DiscordIntegration)(nil),                   // 88: watchfire.DiscordIntegration
+	(*GitHubIntegration)(nil),                    // 89: watchfire.GitHubIntegration
+	(*IntegrationsConfig)(nil),                   // 90: watchfire.IntegrationsConfig
+	(*ListIntegrationsRequest)(nil),              // 91: watchfire.ListIntegrationsRequest
+	(*SaveIntegrationRequest)(nil),               // 92: watchfire.SaveIntegrationRequest
+	(*DeleteIntegrationRequest)(nil),             // 93: watchfire.DeleteIntegrationRequest
+	(*TestIntegrationRequest)(nil),               // 94: watchfire.TestIntegrationRequest
+	(*TestIntegrationResponse)(nil),              // 95: watchfire.TestIntegrationResponse
+	(*BeginOAuthRequest)(nil),                    // 96: watchfire.BeginOAuthRequest
+	(*BeginOAuthResponse)(nil),                   // 97: watchfire.BeginOAuthResponse
+	(*GetOAuthStatusRequest)(nil),                // 98: watchfire.GetOAuthStatusRequest
+	(*OAuthStatus)(nil),                          // 99: watchfire.OAuthStatus
+	(*CancelOAuthRequest)(nil),                   // 100: watchfire.CancelOAuthRequest
+	(*PostOAuthHelloRequest)(nil),                // 101: watchfire.PostOAuthHelloRequest
+	(*PostOAuthHelloResponse)(nil),               // 102: watchfire.PostOAuthHelloResponse
+	(*InboundConfig)(nil),                        // 103: watchfire.InboundConfig
+	(*InboundStatus)(nil),                        // 104: watchfire.InboundStatus
+	(*GetInboundStatusRequest)(nil),              // 105: watchfire.GetInboundStatusRequest
+	(*SaveInboundConfigRequest)(nil),             // 106: watchfire.SaveInboundConfigRequest
+	(*DiscordGuildRegistration)(nil),             // 107: watchfire.DiscordGuildRegistration
+	nil,                                          // 108: watchfire.ProjectNotifications.EventsEntry
+	nil,                                          // 109: watchfire.Settings.AgentsEntry
+	nil,                                          // 110: watchfire.UpdateSettingsRequest.AgentsEntry
+	(*timestamppb.Timestamp)(nil),                // 111: google.protobuf.Timestamp
+	(*emptypb.Empty)(nil),                        // 112: google.protobuf.Empty
 }
 var file_proto_watchfire_proto_depIdxs = []int32{
-	106, // 0: watchfire.Project.created_at:type_name -> google.protobuf.Timestamp
-	106, // 1: watchfire.Project.updated_at:type_name -> google.protobuf.Timestamp
-	10,  // 2: watchfire.Project.notifications:type_name -> watchfire.ProjectNotifications
-	8,   // 3: watchfire.ProjectId.meta:type_name -> watchfire.RequestMeta
-	9,   // 4: watchfire.ProjectList.projects:type_name -> watchfire.Project
-	8,   // 5: watchfire.CreateProjectRequest.meta:type_name -> watchfire.RequestMeta
-	8,   // 6: watchfire.UpdateProjectRequest.meta:type_name -> watchfire.RequestMeta
-	8,   // 7: watchfire.ReorderProjectsRequest.meta:type_name -> watchfire.RequestMeta
-	106, // 8: watchfire.Task.created_at:type_name -> google.protobuf.Timestamp
-	106, // 9: watchfire.Task.started_at:type_name -> google.protobuf.Timestamp
-	106, // 10: watchfire.Task.completed_at:type_name -> google.protobuf.Timestamp
-	106, // 11: watchfire.Task.updated_at:type_name -> google.protobuf.Timestamp
-	106, // 12: watchfire.Task.deleted_at:type_name -> google.protobuf.Timestamp
-	8,   // 13: watchfire.TaskId.meta:type_name -> watchfire.RequestMeta
-	17,  // 14: watchfire.TaskList.tasks:type_name -> watchfire.Task
-	8,   // 15: watchfire.ListTasksRequest.meta:type_name -> watchfire.RequestMeta
-	8,   // 16: watchfire.CreateTaskRequest.meta:type_name -> watchfire.RequestMeta
-	8,   // 17: watchfire.UpdateTaskRequest.meta:type_name -> watchfire.RequestMeta
-	8,   // 18: watchfire.BulkUpdateStatusRequest.meta:type_name -> watchfire.RequestMeta
-	8,   // 19: watchfire.BulkDeleteRequest.meta:type_name -> watchfire.RequestMeta
-	8,   // 20: watchfire.BulkRestoreRequest.meta:type_name -> watchfire.RequestMeta
-	8,   // 21: watchfire.ReorderTasksRequest.meta:type_name -> watchfire.RequestMeta
-	106, // 22: watchfire.DaemonStatus.started_at:type_name -> google.protobuf.Timestamp
-	38,  // 23: watchfire.AgentStatus.issue:type_name -> watchfire.AgentIssue
-	106, // 24: watchfire.AgentStatus.started_at:type_name -> google.protobuf.Timestamp
-	8,   // 25: watchfire.StartAgentRequest.meta:type_name -> watchfire.RequestMeta
-	8,   // 26: watchfire.SubscribeScreenRequest.meta:type_name -> watchfire.RequestMeta
-	8,   // 27: watchfire.ScrollbackRequest.meta:type_name -> watchfire.RequestMeta
-	8,   // 28: watchfire.SendInputRequest.meta:type_name -> watchfire.RequestMeta
-	8,   // 29: watchfire.ResizeRequest.meta:type_name -> watchfire.RequestMeta
-	8,   // 30: watchfire.SubscribeRawOutputRequest.meta:type_name -> watchfire.RequestMeta
-	106, // 31: watchfire.AgentIssue.detected_at:type_name -> google.protobuf.Timestamp
-	106, // 32: watchfire.AgentIssue.reset_at:type_name -> google.protobuf.Timestamp
-	106, // 33: watchfire.AgentIssue.cooldown_until:type_name -> google.protobuf.Timestamp
-	8,   // 34: watchfire.SubscribeAgentIssuesRequest.meta:type_name -> watchfire.RequestMeta
-	40,  // 35: watchfire.BranchList.branches:type_name -> watchfire.Branch
-	8,   // 36: watchfire.BranchId.meta:type_name -> watchfire.RequestMeta
-	8,   // 37: watchfire.MergeBranchRequest.meta:type_name -> watchfire.RequestMeta
-	8,   // 38: watchfire.BulkBranchRequest.meta:type_name -> watchfire.RequestMeta
-	50,  // 39: watchfire.DefaultsConfig.notifications:type_name -> watchfire.NotificationsConfig
-	47,  // 40: watchfire.NotificationsConfig.events:type_name -> watchfire.NotificationsEvents
-	48,  // 41: watchfire.NotificationsConfig.sounds:type_name -> watchfire.NotificationsSounds
-	49,  // 42: watchfire.NotificationsConfig.quiet_hours:type_name -> watchfire.QuietHoursConfig
-	104, // 43: watchfire.Settings.agents:type_name -> watchfire.Settings.AgentsEntry
-	46,  // 44: watchfire.Settings.defaults:type_name -> watchfire.DefaultsConfig
-	51,  // 45: watchfire.Settings.updates:type_name -> watchfire.UpdatesConfig
-	52,  // 46: watchfire.Settings.appearance:type_name -> watchfire.AppearanceConfig
-	8,   // 47: watchfire.UpdateSettingsRequest.meta:type_name -> watchfire.RequestMeta
-	46,  // 48: watchfire.UpdateSettingsRequest.defaults:type_name -> watchfire.DefaultsConfig
-	51,  // 49: watchfire.UpdateSettingsRequest.updates:type_name -> watchfire.UpdatesConfig
-	52,  // 50: watchfire.UpdateSettingsRequest.appearance:type_name -> watchfire.AppearanceConfig
-	105, // 51: watchfire.UpdateSettingsRequest.agents:type_name -> watchfire.UpdateSettingsRequest.AgentsEntry
-	55,  // 52: watchfire.AgentList.agents:type_name -> watchfire.AgentInfo
-	8,   // 53: watchfire.SubscribeFocusEventsRequest.meta:type_name -> watchfire.RequestMeta
-	0,   // 54: watchfire.FocusEvent.target:type_name -> watchfire.FocusTarget
-	8,   // 55: watchfire.ListLogsRequest.meta:type_name -> watchfire.RequestMeta
-	60,  // 56: watchfire.LogList.logs:type_name -> watchfire.LogEntry
-	8,   // 57: watchfire.GetLogRequest.meta:type_name -> watchfire.RequestMeta
-	60,  // 58: watchfire.LogContent.entry:type_name -> watchfire.LogEntry
-	8,   // 59: watchfire.DeleteLogRequest.meta:type_name -> watchfire.RequestMeta
-	106, // 60: watchfire.Notification.emitted_at:type_name -> google.protobuf.Timestamp
-	1,   // 61: watchfire.Notification.kind:type_name -> watchfire.NotificationKind
-	8,   // 62: watchfire.SubscribeNotificationsRequest.meta:type_name -> watchfire.RequestMeta
-	8,   // 63: watchfire.ExportReportRequest.meta:type_name -> watchfire.RequestMeta
-	2,   // 64: watchfire.ExportReportRequest.format:type_name -> watchfire.ExportFormat
-	106, // 65: watchfire.ExportReportRequest.window_start:type_name -> google.protobuf.Timestamp
-	106, // 66: watchfire.ExportReportRequest.window_end:type_name -> google.protobuf.Timestamp
-	8,   // 67: watchfire.GetGlobalInsightsRequest.meta:type_name -> watchfire.RequestMeta
-	106, // 68: watchfire.GetGlobalInsightsRequest.window_start:type_name -> google.protobuf.Timestamp
-	106, // 69: watchfire.GetGlobalInsightsRequest.window_end:type_name -> google.protobuf.Timestamp
-	70,  // 70: watchfire.GlobalInsights.tasks_by_day:type_name -> watchfire.DayBucket
-	72,  // 71: watchfire.GlobalInsights.top_projects:type_name -> watchfire.TopProject
-	71,  // 72: watchfire.GlobalInsights.agent_breakdown:type_name -> watchfire.AgentBreakdown
-	106, // 73: watchfire.GlobalInsights.window_start:type_name -> google.protobuf.Timestamp
-	106, // 74: watchfire.GlobalInsights.window_end:type_name -> google.protobuf.Timestamp
-	8,   // 75: watchfire.GetProjectInsightsRequest.meta:type_name -> watchfire.RequestMeta
-	106, // 76: watchfire.GetProjectInsightsRequest.window_start:type_name -> google.protobuf.Timestamp
-	106, // 77: watchfire.GetProjectInsightsRequest.window_end:type_name -> google.protobuf.Timestamp
-	70,  // 78: watchfire.ProjectInsights.tasks_by_day:type_name -> watchfire.DayBucket
-	71,  // 79: watchfire.ProjectInsights.agent_breakdown:type_name -> watchfire.AgentBreakdown
-	106, // 80: watchfire.ProjectInsights.window_start:type_name -> google.protobuf.Timestamp
-	106, // 81: watchfire.ProjectInsights.window_end:type_name -> google.protobuf.Timestamp
-	8,   // 82: watchfire.GetTaskDiffRequest.meta:type_name -> watchfire.RequestMeta
-	78,  // 83: watchfire.FileDiffSet.files:type_name -> watchfire.FileDiff
-	6,   // 84: watchfire.FileDiff.status:type_name -> watchfire.FileDiff.Status
-	79,  // 85: watchfire.FileDiff.hunks:type_name -> watchfire.Hunk
-	80,  // 86: watchfire.Hunk.lines:type_name -> watchfire.DiffLine
-	7,   // 87: watchfire.DiffLine.kind:type_name -> watchfire.DiffLine.Kind
-	81,  // 88: watchfire.WebhookIntegration.enabled_events:type_name -> watchfire.IntegrationEvents
-	81,  // 89: watchfire.SlackIntegration.enabled_events:type_name -> watchfire.IntegrationEvents
-	81,  // 90: watchfire.DiscordIntegration.enabled_events:type_name -> watchfire.IntegrationEvents
-	82,  // 91: watchfire.IntegrationsConfig.webhooks:type_name -> watchfire.WebhookIntegration
-	83,  // 92: watchfire.IntegrationsConfig.slack:type_name -> watchfire.SlackIntegration
-	84,  // 93: watchfire.IntegrationsConfig.discord:type_name -> watchfire.DiscordIntegration
-	85,  // 94: watchfire.IntegrationsConfig.github:type_name -> watchfire.GitHubIntegration
-	8,   // 95: watchfire.ListIntegrationsRequest.meta:type_name -> watchfire.RequestMeta
-	8,   // 96: watchfire.SaveIntegrationRequest.meta:type_name -> watchfire.RequestMeta
-	82,  // 97: watchfire.SaveIntegrationRequest.webhook:type_name -> watchfire.WebhookIntegration
-	83,  // 98: watchfire.SaveIntegrationRequest.slack:type_name -> watchfire.SlackIntegration
-	84,  // 99: watchfire.SaveIntegrationRequest.discord:type_name -> watchfire.DiscordIntegration
-	85,  // 100: watchfire.SaveIntegrationRequest.github:type_name -> watchfire.GitHubIntegration
-	8,   // 101: watchfire.DeleteIntegrationRequest.meta:type_name -> watchfire.RequestMeta
-	3,   // 102: watchfire.DeleteIntegrationRequest.kind:type_name -> watchfire.IntegrationKind
-	8,   // 103: watchfire.TestIntegrationRequest.meta:type_name -> watchfire.RequestMeta
-	3,   // 104: watchfire.TestIntegrationRequest.kind:type_name -> watchfire.IntegrationKind
-	8,   // 105: watchfire.BeginOAuthRequest.meta:type_name -> watchfire.RequestMeta
-	4,   // 106: watchfire.BeginOAuthRequest.provider:type_name -> watchfire.OAuthProvider
-	8,   // 107: watchfire.GetOAuthStatusRequest.meta:type_name -> watchfire.RequestMeta
-	4,   // 108: watchfire.GetOAuthStatusRequest.provider:type_name -> watchfire.OAuthProvider
-	4,   // 109: watchfire.OAuthStatus.provider:type_name -> watchfire.OAuthProvider
-	5,   // 110: watchfire.OAuthStatus.state:type_name -> watchfire.OAuthState
-	8,   // 111: watchfire.CancelOAuthRequest.meta:type_name -> watchfire.RequestMeta
-	4,   // 112: watchfire.CancelOAuthRequest.provider:type_name -> watchfire.OAuthProvider
-	8,   // 113: watchfire.PostOAuthHelloRequest.meta:type_name -> watchfire.RequestMeta
-	4,   // 114: watchfire.PostOAuthHelloRequest.provider:type_name -> watchfire.OAuthProvider
-	99,  // 115: watchfire.InboundStatus.config:type_name -> watchfire.InboundConfig
-	103, // 116: watchfire.InboundStatus.discord_guilds:type_name -> watchfire.DiscordGuildRegistration
-	8,   // 117: watchfire.GetInboundStatusRequest.meta:type_name -> watchfire.RequestMeta
-	8,   // 118: watchfire.SaveInboundConfigRequest.meta:type_name -> watchfire.RequestMeta
-	99,  // 119: watchfire.SaveInboundConfigRequest.config:type_name -> watchfire.InboundConfig
-	45,  // 120: watchfire.Settings.AgentsEntry.value:type_name -> watchfire.AgentConfig
-	45,  // 121: watchfire.UpdateSettingsRequest.AgentsEntry.value:type_name -> watchfire.AgentConfig
-	107, // 122: watchfire.ProjectService.ListProjects:input_type -> google.protobuf.Empty
-	11,  // 123: watchfire.ProjectService.GetProject:input_type -> watchfire.ProjectId
-	13,  // 124: watchfire.ProjectService.CreateProject:input_type -> watchfire.CreateProjectRequest
-	14,  // 125: watchfire.ProjectService.UpdateProject:input_type -> watchfire.UpdateProjectRequest
-	11,  // 126: watchfire.ProjectService.DeleteProject:input_type -> watchfire.ProjectId
-	11,  // 127: watchfire.ProjectService.GetGitInfo:input_type -> watchfire.ProjectId
-	15,  // 128: watchfire.ProjectService.ReorderProjects:input_type -> watchfire.ReorderProjectsRequest
-	20,  // 129: watchfire.TaskService.ListTasks:input_type -> watchfire.ListTasksRequest
-	18,  // 130: watchfire.TaskService.GetTask:input_type -> watchfire.TaskId
-	21,  // 131: watchfire.TaskService.CreateTask:input_type -> watchfire.CreateTaskRequest
-	22,  // 132: watchfire.TaskService.UpdateTask:input_type -> watchfire.UpdateTaskRequest
-	18,  // 133: watchfire.TaskService.DeleteTask:input_type -> watchfire.TaskId
-	18,  // 134: watchfire.TaskService.RestoreTask:input_type -> watchfire.TaskId
-	18,  // 135: watchfire.TaskService.PermanentDeleteTask:input_type -> watchfire.TaskId
-	11,  // 136: watchfire.TaskService.EmptyTrash:input_type -> watchfire.ProjectId
-	23,  // 137: watchfire.TaskService.BulkUpdateStatus:input_type -> watchfire.BulkUpdateStatusRequest
-	24,  // 138: watchfire.TaskService.BulkDelete:input_type -> watchfire.BulkDeleteRequest
-	25,  // 139: watchfire.TaskService.BulkRestore:input_type -> watchfire.BulkRestoreRequest
-	26,  // 140: watchfire.TaskService.ReorderTasks:input_type -> watchfire.ReorderTasksRequest
-	107, // 141: watchfire.DaemonService.GetStatus:input_type -> google.protobuf.Empty
-	107, // 142: watchfire.DaemonService.Shutdown:input_type -> google.protobuf.Empty
-	107, // 143: watchfire.DaemonService.Ping:input_type -> google.protobuf.Empty
-	57,  // 144: watchfire.DaemonService.SubscribeFocusEvents:input_type -> watchfire.SubscribeFocusEventsRequest
-	59,  // 145: watchfire.LogService.ListLogs:input_type -> watchfire.ListLogsRequest
-	62,  // 146: watchfire.LogService.GetLog:input_type -> watchfire.GetLogRequest
-	64,  // 147: watchfire.LogService.DeleteLog:input_type -> watchfire.DeleteLogRequest
-	29,  // 148: watchfire.AgentService.StartAgent:input_type -> watchfire.StartAgentRequest
-	11,  // 149: watchfire.AgentService.StopAgent:input_type -> watchfire.ProjectId
-	11,  // 150: watchfire.AgentService.GetAgentStatus:input_type -> watchfire.ProjectId
-	31,  // 151: watchfire.AgentService.SubscribeScreen:input_type -> watchfire.SubscribeScreenRequest
-	32,  // 152: watchfire.AgentService.GetScrollback:input_type -> watchfire.ScrollbackRequest
-	34,  // 153: watchfire.AgentService.SendInput:input_type -> watchfire.SendInputRequest
-	35,  // 154: watchfire.AgentService.Resize:input_type -> watchfire.ResizeRequest
-	36,  // 155: watchfire.AgentService.SubscribeRawOutput:input_type -> watchfire.SubscribeRawOutputRequest
-	39,  // 156: watchfire.AgentService.SubscribeAgentIssues:input_type -> watchfire.SubscribeAgentIssuesRequest
-	11,  // 157: watchfire.AgentService.ResumeAgent:input_type -> watchfire.ProjectId
-	11,  // 158: watchfire.BranchService.ListBranches:input_type -> watchfire.ProjectId
-	42,  // 159: watchfire.BranchService.GetBranch:input_type -> watchfire.BranchId
-	43,  // 160: watchfire.BranchService.MergeBranch:input_type -> watchfire.MergeBranchRequest
-	42,  // 161: watchfire.BranchService.DeleteBranch:input_type -> watchfire.BranchId
-	11,  // 162: watchfire.BranchService.PruneBranches:input_type -> watchfire.ProjectId
-	44,  // 163: watchfire.BranchService.BulkMerge:input_type -> watchfire.BulkBranchRequest
-	44,  // 164: watchfire.BranchService.BulkDelete:input_type -> watchfire.BulkBranchRequest
-	107, // 165: watchfire.SettingsService.GetSettings:input_type -> google.protobuf.Empty
-	54,  // 166: watchfire.SettingsService.UpdateSettings:input_type -> watchfire.UpdateSettingsRequest
-	107, // 167: watchfire.SettingsService.ListAgents:input_type -> google.protobuf.Empty
-	66,  // 168: watchfire.NotificationService.Subscribe:input_type -> watchfire.SubscribeNotificationsRequest
-	67,  // 169: watchfire.InsightsService.ExportReport:input_type -> watchfire.ExportReportRequest
-	69,  // 170: watchfire.InsightsService.GetGlobalInsights:input_type -> watchfire.GetGlobalInsightsRequest
-	74,  // 171: watchfire.InsightsService.GetProjectInsights:input_type -> watchfire.GetProjectInsightsRequest
-	76,  // 172: watchfire.InsightsService.GetTaskDiff:input_type -> watchfire.GetTaskDiffRequest
-	87,  // 173: watchfire.IntegrationsService.ListIntegrations:input_type -> watchfire.ListIntegrationsRequest
-	88,  // 174: watchfire.IntegrationsService.SaveIntegration:input_type -> watchfire.SaveIntegrationRequest
-	89,  // 175: watchfire.IntegrationsService.DeleteIntegration:input_type -> watchfire.DeleteIntegrationRequest
-	90,  // 176: watchfire.IntegrationsService.TestIntegration:input_type -> watchfire.TestIntegrationRequest
-	101, // 177: watchfire.IntegrationsService.GetInboundStatus:input_type -> watchfire.GetInboundStatusRequest
-	102, // 178: watchfire.IntegrationsService.SaveInboundConfig:input_type -> watchfire.SaveInboundConfigRequest
-	92,  // 179: watchfire.IntegrationsService.BeginOAuth:input_type -> watchfire.BeginOAuthRequest
-	94,  // 180: watchfire.IntegrationsService.GetOAuthStatus:input_type -> watchfire.GetOAuthStatusRequest
-	96,  // 181: watchfire.IntegrationsService.CancelOAuth:input_type -> watchfire.CancelOAuthRequest
-	97,  // 182: watchfire.IntegrationsService.PostOAuthHello:input_type -> watchfire.PostOAuthHelloRequest
-	12,  // 183: watchfire.ProjectService.ListProjects:output_type -> watchfire.ProjectList
-	9,   // 184: watchfire.ProjectService.GetProject:output_type -> watchfire.Project
-	9,   // 185: watchfire.ProjectService.CreateProject:output_type -> watchfire.Project
-	9,   // 186: watchfire.ProjectService.UpdateProject:output_type -> watchfire.Project
-	107, // 187: watchfire.ProjectService.DeleteProject:output_type -> google.protobuf.Empty
-	16,  // 188: watchfire.ProjectService.GetGitInfo:output_type -> watchfire.GitInfo
-	12,  // 189: watchfire.ProjectService.ReorderProjects:output_type -> watchfire.ProjectList
-	19,  // 190: watchfire.TaskService.ListTasks:output_type -> watchfire.TaskList
-	17,  // 191: watchfire.TaskService.GetTask:output_type -> watchfire.Task
-	17,  // 192: watchfire.TaskService.CreateTask:output_type -> watchfire.Task
-	17,  // 193: watchfire.TaskService.UpdateTask:output_type -> watchfire.Task
-	17,  // 194: watchfire.TaskService.DeleteTask:output_type -> watchfire.Task
-	17,  // 195: watchfire.TaskService.RestoreTask:output_type -> watchfire.Task
-	107, // 196: watchfire.TaskService.PermanentDeleteTask:output_type -> google.protobuf.Empty
-	107, // 197: watchfire.TaskService.EmptyTrash:output_type -> google.protobuf.Empty
-	19,  // 198: watchfire.TaskService.BulkUpdateStatus:output_type -> watchfire.TaskList
-	19,  // 199: watchfire.TaskService.BulkDelete:output_type -> watchfire.TaskList
-	19,  // 200: watchfire.TaskService.BulkRestore:output_type -> watchfire.TaskList
-	19,  // 201: watchfire.TaskService.ReorderTasks:output_type -> watchfire.TaskList
-	27,  // 202: watchfire.DaemonService.GetStatus:output_type -> watchfire.DaemonStatus
-	107, // 203: watchfire.DaemonService.Shutdown:output_type -> google.protobuf.Empty
-	107, // 204: watchfire.DaemonService.Ping:output_type -> google.protobuf.Empty
-	58,  // 205: watchfire.DaemonService.SubscribeFocusEvents:output_type -> watchfire.FocusEvent
-	61,  // 206: watchfire.LogService.ListLogs:output_type -> watchfire.LogList
-	63,  // 207: watchfire.LogService.GetLog:output_type -> watchfire.LogContent
-	107, // 208: watchfire.LogService.DeleteLog:output_type -> google.protobuf.Empty
-	28,  // 209: watchfire.AgentService.StartAgent:output_type -> watchfire.AgentStatus
-	107, // 210: watchfire.AgentService.StopAgent:output_type -> google.protobuf.Empty
-	28,  // 211: watchfire.AgentService.GetAgentStatus:output_type -> watchfire.AgentStatus
-	30,  // 212: watchfire.AgentService.SubscribeScreen:output_type -> watchfire.ScreenBuffer
-	33,  // 213: watchfire.AgentService.GetScrollback:output_type -> watchfire.ScrollbackLines
-	107, // 214: watchfire.AgentService.SendInput:output_type -> google.protobuf.Empty
-	107, // 215: watchfire.AgentService.Resize:output_type -> google.protobuf.Empty
-	37,  // 216: watchfire.AgentService.SubscribeRawOutput:output_type -> watchfire.RawOutputChunk
-	38,  // 217: watchfire.AgentService.SubscribeAgentIssues:output_type -> watchfire.AgentIssue
-	28,  // 218: watchfire.AgentService.ResumeAgent:output_type -> watchfire.AgentStatus
-	41,  // 219: watchfire.BranchService.ListBranches:output_type -> watchfire.BranchList
-	40,  // 220: watchfire.BranchService.GetBranch:output_type -> watchfire.Branch
-	40,  // 221: watchfire.BranchService.MergeBranch:output_type -> watchfire.Branch
-	107, // 222: watchfire.BranchService.DeleteBranch:output_type -> google.protobuf.Empty
-	41,  // 223: watchfire.BranchService.PruneBranches:output_type -> watchfire.BranchList
-	41,  // 224: watchfire.BranchService.BulkMerge:output_type -> watchfire.BranchList
-	107, // 225: watchfire.BranchService.BulkDelete:output_type -> google.protobuf.Empty
-	53,  // 226: watchfire.SettingsService.GetSettings:output_type -> watchfire.Settings
-	53,  // 227: watchfire.SettingsService.UpdateSettings:output_type -> watchfire.Settings
-	56,  // 228: watchfire.SettingsService.ListAgents:output_type -> watchfire.AgentList
-	65,  // 229: watchfire.NotificationService.Subscribe:output_type -> watchfire.Notification
-	68,  // 230: watchfire.InsightsService.ExportReport:output_type -> watchfire.ExportReportResponse
-	73,  // 231: watchfire.InsightsService.GetGlobalInsights:output_type -> watchfire.GlobalInsights
-	75,  // 232: watchfire.InsightsService.GetProjectInsights:output_type -> watchfire.ProjectInsights
-	77,  // 233: watchfire.InsightsService.GetTaskDiff:output_type -> watchfire.FileDiffSet
-	86,  // 234: watchfire.IntegrationsService.ListIntegrations:output_type -> watchfire.IntegrationsConfig
-	86,  // 235: watchfire.IntegrationsService.SaveIntegration:output_type -> watchfire.IntegrationsConfig
-	86,  // 236: watchfire.IntegrationsService.DeleteIntegration:output_type -> watchfire.IntegrationsConfig
-	91,  // 237: watchfire.IntegrationsService.TestIntegration:output_type -> watchfire.TestIntegrationResponse
-	100, // 238: watchfire.IntegrationsService.GetInboundStatus:output_type -> watchfire.InboundStatus
-	100, // 239: watchfire.IntegrationsService.SaveInboundConfig:output_type -> watchfire.InboundStatus
-	93,  // 240: watchfire.IntegrationsService.BeginOAuth:output_type -> watchfire.BeginOAuthResponse
-	95,  // 241: watchfire.IntegrationsService.GetOAuthStatus:output_type -> watchfire.OAuthStatus
-	95,  // 242: watchfire.IntegrationsService.CancelOAuth:output_type -> watchfire.OAuthStatus
-	98,  // 243: watchfire.IntegrationsService.PostOAuthHello:output_type -> watchfire.PostOAuthHelloResponse
-	183, // [183:244] is the sub-list for method output_type
-	122, // [122:183] is the sub-list for method input_type
-	122, // [122:122] is the sub-list for extension type_name
-	122, // [122:122] is the sub-list for extension extendee
-	0,   // [0:122] is the sub-list for field type_name
+	111, // 0: watchfire.Project.created_at:type_name -> google.protobuf.Timestamp
+	111, // 1: watchfire.Project.updated_at:type_name -> google.protobuf.Timestamp
+	11,  // 2: watchfire.Project.notifications:type_name -> watchfire.ProjectNotifications
+	10,  // 3: watchfire.Project.integrations:type_name -> watchfire.ProjectIntegrations
+	108, // 4: watchfire.ProjectNotifications.events:type_name -> watchfire.ProjectNotifications.EventsEntry
+	51,  // 5: watchfire.ProjectNotifications.quiet_hours_override:type_name -> watchfire.QuietHoursConfig
+	8,   // 6: watchfire.ProjectId.meta:type_name -> watchfire.RequestMeta
+	9,   // 7: watchfire.ProjectList.projects:type_name -> watchfire.Project
+	8,   // 8: watchfire.CreateProjectRequest.meta:type_name -> watchfire.RequestMeta
+	8,   // 9: watchfire.UpdateProjectRequest.meta:type_name -> watchfire.RequestMeta
+	11,  // 10: watchfire.UpdateProjectRequest.notifications:type_name -> watchfire.ProjectNotifications
+	8,   // 11: watchfire.ReorderProjectsRequest.meta:type_name -> watchfire.RequestMeta
+	111, // 12: watchfire.Task.created_at:type_name -> google.protobuf.Timestamp
+	111, // 13: watchfire.Task.started_at:type_name -> google.protobuf.Timestamp
+	111, // 14: watchfire.Task.completed_at:type_name -> google.protobuf.Timestamp
+	111, // 15: watchfire.Task.updated_at:type_name -> google.protobuf.Timestamp
+	111, // 16: watchfire.Task.deleted_at:type_name -> google.protobuf.Timestamp
+	8,   // 17: watchfire.TaskId.meta:type_name -> watchfire.RequestMeta
+	19,  // 18: watchfire.TaskList.tasks:type_name -> watchfire.Task
+	8,   // 19: watchfire.ListTasksRequest.meta:type_name -> watchfire.RequestMeta
+	8,   // 20: watchfire.CreateTaskRequest.meta:type_name -> watchfire.RequestMeta
+	8,   // 21: watchfire.UpdateTaskRequest.meta:type_name -> watchfire.RequestMeta
+	8,   // 22: watchfire.BulkUpdateStatusRequest.meta:type_name -> watchfire.RequestMeta
+	8,   // 23: watchfire.BulkDeleteRequest.meta:type_name -> watchfire.RequestMeta
+	8,   // 24: watchfire.BulkRestoreRequest.meta:type_name -> watchfire.RequestMeta
+	8,   // 25: watchfire.ReorderTasksRequest.meta:type_name -> watchfire.RequestMeta
+	111, // 26: watchfire.DaemonStatus.started_at:type_name -> google.protobuf.Timestamp
+	40,  // 27: watchfire.AgentStatus.issue:type_name -> watchfire.AgentIssue
+	111, // 28: watchfire.AgentStatus.started_at:type_name -> google.protobuf.Timestamp
+	8,   // 29: watchfire.StartAgentRequest.meta:type_name -> watchfire.RequestMeta
+	8,   // 30: watchfire.SubscribeScreenRequest.meta:type_name -> watchfire.RequestMeta
+	8,   // 31: watchfire.ScrollbackRequest.meta:type_name -> watchfire.RequestMeta
+	8,   // 32: watchfire.SendInputRequest.meta:type_name -> watchfire.RequestMeta
+	8,   // 33: watchfire.ResizeRequest.meta:type_name -> watchfire.RequestMeta
+	8,   // 34: watchfire.SubscribeRawOutputRequest.meta:type_name -> watchfire.RequestMeta
+	111, // 35: watchfire.AgentIssue.detected_at:type_name -> google.protobuf.Timestamp
+	111, // 36: watchfire.AgentIssue.reset_at:type_name -> google.protobuf.Timestamp
+	111, // 37: watchfire.AgentIssue.cooldown_until:type_name -> google.protobuf.Timestamp
+	8,   // 38: watchfire.SubscribeAgentIssuesRequest.meta:type_name -> watchfire.RequestMeta
+	42,  // 39: watchfire.BranchList.branches:type_name -> watchfire.Branch
+	8,   // 40: watchfire.BranchId.meta:type_name -> watchfire.RequestMeta
+	8,   // 41: watchfire.MergeBranchRequest.meta:type_name -> watchfire.RequestMeta
+	8,   // 42: watchfire.BulkBranchRequest.meta:type_name -> watchfire.RequestMeta
+	52,  // 43: watchfire.DefaultsConfig.notifications:type_name -> watchfire.NotificationsConfig
+	49,  // 44: watchfire.NotificationsConfig.events:type_name -> watchfire.NotificationsEvents
+	50,  // 45: watchfire.NotificationsConfig.sounds:type_name -> watchfire.NotificationsSounds
+	51,  // 46: watchfire.NotificationsConfig.quiet_hours:type_name -> watchfire.QuietHoursConfig
+	109, // 47: watchfire.Settings.agents:type_name -> watchfire.Settings.AgentsEntry
+	48,  // 48: watchfire.Settings.defaults:type_name -> watchfire.DefaultsConfig
+	53,  // 49: watchfire.Settings.updates:type_name -> watchfire.UpdatesConfig
+	54,  // 50: watchfire.Settings.appearance:type_name -> watchfire.AppearanceConfig
+	8,   // 51: watchfire.UpdateSettingsRequest.meta:type_name -> watchfire.RequestMeta
+	48,  // 52: watchfire.UpdateSettingsRequest.defaults:type_name -> watchfire.DefaultsConfig
+	53,  // 53: watchfire.UpdateSettingsRequest.updates:type_name -> watchfire.UpdatesConfig
+	54,  // 54: watchfire.UpdateSettingsRequest.appearance:type_name -> watchfire.AppearanceConfig
+	110, // 55: watchfire.UpdateSettingsRequest.agents:type_name -> watchfire.UpdateSettingsRequest.AgentsEntry
+	57,  // 56: watchfire.AgentList.agents:type_name -> watchfire.AgentInfo
+	8,   // 57: watchfire.SetGitHubAutoPRScopeRequest.meta:type_name -> watchfire.RequestMeta
+	8,   // 58: watchfire.SetProjectIntegrationBindingsRequest.meta:type_name -> watchfire.RequestMeta
+	8,   // 59: watchfire.SubscribeFocusEventsRequest.meta:type_name -> watchfire.RequestMeta
+	0,   // 60: watchfire.FocusEvent.target:type_name -> watchfire.FocusTarget
+	8,   // 61: watchfire.ListLogsRequest.meta:type_name -> watchfire.RequestMeta
+	64,  // 62: watchfire.LogList.logs:type_name -> watchfire.LogEntry
+	8,   // 63: watchfire.GetLogRequest.meta:type_name -> watchfire.RequestMeta
+	64,  // 64: watchfire.LogContent.entry:type_name -> watchfire.LogEntry
+	8,   // 65: watchfire.DeleteLogRequest.meta:type_name -> watchfire.RequestMeta
+	111, // 66: watchfire.Notification.emitted_at:type_name -> google.protobuf.Timestamp
+	1,   // 67: watchfire.Notification.kind:type_name -> watchfire.NotificationKind
+	8,   // 68: watchfire.SubscribeNotificationsRequest.meta:type_name -> watchfire.RequestMeta
+	8,   // 69: watchfire.ExportReportRequest.meta:type_name -> watchfire.RequestMeta
+	2,   // 70: watchfire.ExportReportRequest.format:type_name -> watchfire.ExportFormat
+	111, // 71: watchfire.ExportReportRequest.window_start:type_name -> google.protobuf.Timestamp
+	111, // 72: watchfire.ExportReportRequest.window_end:type_name -> google.protobuf.Timestamp
+	8,   // 73: watchfire.GetGlobalInsightsRequest.meta:type_name -> watchfire.RequestMeta
+	111, // 74: watchfire.GetGlobalInsightsRequest.window_start:type_name -> google.protobuf.Timestamp
+	111, // 75: watchfire.GetGlobalInsightsRequest.window_end:type_name -> google.protobuf.Timestamp
+	74,  // 76: watchfire.GlobalInsights.tasks_by_day:type_name -> watchfire.DayBucket
+	76,  // 77: watchfire.GlobalInsights.top_projects:type_name -> watchfire.TopProject
+	75,  // 78: watchfire.GlobalInsights.agent_breakdown:type_name -> watchfire.AgentBreakdown
+	111, // 79: watchfire.GlobalInsights.window_start:type_name -> google.protobuf.Timestamp
+	111, // 80: watchfire.GlobalInsights.window_end:type_name -> google.protobuf.Timestamp
+	8,   // 81: watchfire.GetProjectInsightsRequest.meta:type_name -> watchfire.RequestMeta
+	111, // 82: watchfire.GetProjectInsightsRequest.window_start:type_name -> google.protobuf.Timestamp
+	111, // 83: watchfire.GetProjectInsightsRequest.window_end:type_name -> google.protobuf.Timestamp
+	74,  // 84: watchfire.ProjectInsights.tasks_by_day:type_name -> watchfire.DayBucket
+	75,  // 85: watchfire.ProjectInsights.agent_breakdown:type_name -> watchfire.AgentBreakdown
+	111, // 86: watchfire.ProjectInsights.window_start:type_name -> google.protobuf.Timestamp
+	111, // 87: watchfire.ProjectInsights.window_end:type_name -> google.protobuf.Timestamp
+	8,   // 88: watchfire.GetTaskDiffRequest.meta:type_name -> watchfire.RequestMeta
+	82,  // 89: watchfire.FileDiffSet.files:type_name -> watchfire.FileDiff
+	6,   // 90: watchfire.FileDiff.status:type_name -> watchfire.FileDiff.Status
+	83,  // 91: watchfire.FileDiff.hunks:type_name -> watchfire.Hunk
+	84,  // 92: watchfire.Hunk.lines:type_name -> watchfire.DiffLine
+	7,   // 93: watchfire.DiffLine.kind:type_name -> watchfire.DiffLine.Kind
+	85,  // 94: watchfire.WebhookIntegration.enabled_events:type_name -> watchfire.IntegrationEvents
+	85,  // 95: watchfire.SlackIntegration.enabled_events:type_name -> watchfire.IntegrationEvents
+	85,  // 96: watchfire.DiscordIntegration.enabled_events:type_name -> watchfire.IntegrationEvents
+	86,  // 97: watchfire.IntegrationsConfig.webhooks:type_name -> watchfire.WebhookIntegration
+	87,  // 98: watchfire.IntegrationsConfig.slack:type_name -> watchfire.SlackIntegration
+	88,  // 99: watchfire.IntegrationsConfig.discord:type_name -> watchfire.DiscordIntegration
+	89,  // 100: watchfire.IntegrationsConfig.github:type_name -> watchfire.GitHubIntegration
+	8,   // 101: watchfire.ListIntegrationsRequest.meta:type_name -> watchfire.RequestMeta
+	8,   // 102: watchfire.SaveIntegrationRequest.meta:type_name -> watchfire.RequestMeta
+	86,  // 103: watchfire.SaveIntegrationRequest.webhook:type_name -> watchfire.WebhookIntegration
+	87,  // 104: watchfire.SaveIntegrationRequest.slack:type_name -> watchfire.SlackIntegration
+	88,  // 105: watchfire.SaveIntegrationRequest.discord:type_name -> watchfire.DiscordIntegration
+	89,  // 106: watchfire.SaveIntegrationRequest.github:type_name -> watchfire.GitHubIntegration
+	8,   // 107: watchfire.DeleteIntegrationRequest.meta:type_name -> watchfire.RequestMeta
+	3,   // 108: watchfire.DeleteIntegrationRequest.kind:type_name -> watchfire.IntegrationKind
+	8,   // 109: watchfire.TestIntegrationRequest.meta:type_name -> watchfire.RequestMeta
+	3,   // 110: watchfire.TestIntegrationRequest.kind:type_name -> watchfire.IntegrationKind
+	8,   // 111: watchfire.BeginOAuthRequest.meta:type_name -> watchfire.RequestMeta
+	4,   // 112: watchfire.BeginOAuthRequest.provider:type_name -> watchfire.OAuthProvider
+	8,   // 113: watchfire.GetOAuthStatusRequest.meta:type_name -> watchfire.RequestMeta
+	4,   // 114: watchfire.GetOAuthStatusRequest.provider:type_name -> watchfire.OAuthProvider
+	4,   // 115: watchfire.OAuthStatus.provider:type_name -> watchfire.OAuthProvider
+	5,   // 116: watchfire.OAuthStatus.state:type_name -> watchfire.OAuthState
+	8,   // 117: watchfire.CancelOAuthRequest.meta:type_name -> watchfire.RequestMeta
+	4,   // 118: watchfire.CancelOAuthRequest.provider:type_name -> watchfire.OAuthProvider
+	8,   // 119: watchfire.PostOAuthHelloRequest.meta:type_name -> watchfire.RequestMeta
+	4,   // 120: watchfire.PostOAuthHelloRequest.provider:type_name -> watchfire.OAuthProvider
+	103, // 121: watchfire.InboundStatus.config:type_name -> watchfire.InboundConfig
+	107, // 122: watchfire.InboundStatus.discord_guilds:type_name -> watchfire.DiscordGuildRegistration
+	8,   // 123: watchfire.GetInboundStatusRequest.meta:type_name -> watchfire.RequestMeta
+	8,   // 124: watchfire.SaveInboundConfigRequest.meta:type_name -> watchfire.RequestMeta
+	103, // 125: watchfire.SaveInboundConfigRequest.config:type_name -> watchfire.InboundConfig
+	12,  // 126: watchfire.ProjectNotifications.EventsEntry.value:type_name -> watchfire.ProjectEventPref
+	47,  // 127: watchfire.Settings.AgentsEntry.value:type_name -> watchfire.AgentConfig
+	47,  // 128: watchfire.UpdateSettingsRequest.AgentsEntry.value:type_name -> watchfire.AgentConfig
+	112, // 129: watchfire.ProjectService.ListProjects:input_type -> google.protobuf.Empty
+	13,  // 130: watchfire.ProjectService.GetProject:input_type -> watchfire.ProjectId
+	15,  // 131: watchfire.ProjectService.CreateProject:input_type -> watchfire.CreateProjectRequest
+	16,  // 132: watchfire.ProjectService.UpdateProject:input_type -> watchfire.UpdateProjectRequest
+	13,  // 133: watchfire.ProjectService.DeleteProject:input_type -> watchfire.ProjectId
+	13,  // 134: watchfire.ProjectService.GetGitInfo:input_type -> watchfire.ProjectId
+	17,  // 135: watchfire.ProjectService.ReorderProjects:input_type -> watchfire.ReorderProjectsRequest
+	13,  // 136: watchfire.ProjectService.RegenerateProjectId:input_type -> watchfire.ProjectId
+	13,  // 137: watchfire.ProjectService.ResetTaskNumbering:input_type -> watchfire.ProjectId
+	13,  // 138: watchfire.ProjectService.UnregisterProject:input_type -> watchfire.ProjectId
+	59,  // 139: watchfire.ProjectService.SetGitHubAutoPRScope:input_type -> watchfire.SetGitHubAutoPRScopeRequest
+	60,  // 140: watchfire.ProjectService.SetProjectIntegrationBindings:input_type -> watchfire.SetProjectIntegrationBindingsRequest
+	22,  // 141: watchfire.TaskService.ListTasks:input_type -> watchfire.ListTasksRequest
+	20,  // 142: watchfire.TaskService.GetTask:input_type -> watchfire.TaskId
+	23,  // 143: watchfire.TaskService.CreateTask:input_type -> watchfire.CreateTaskRequest
+	24,  // 144: watchfire.TaskService.UpdateTask:input_type -> watchfire.UpdateTaskRequest
+	20,  // 145: watchfire.TaskService.DeleteTask:input_type -> watchfire.TaskId
+	20,  // 146: watchfire.TaskService.RestoreTask:input_type -> watchfire.TaskId
+	20,  // 147: watchfire.TaskService.PermanentDeleteTask:input_type -> watchfire.TaskId
+	13,  // 148: watchfire.TaskService.EmptyTrash:input_type -> watchfire.ProjectId
+	25,  // 149: watchfire.TaskService.BulkUpdateStatus:input_type -> watchfire.BulkUpdateStatusRequest
+	26,  // 150: watchfire.TaskService.BulkDelete:input_type -> watchfire.BulkDeleteRequest
+	27,  // 151: watchfire.TaskService.BulkRestore:input_type -> watchfire.BulkRestoreRequest
+	28,  // 152: watchfire.TaskService.ReorderTasks:input_type -> watchfire.ReorderTasksRequest
+	112, // 153: watchfire.DaemonService.GetStatus:input_type -> google.protobuf.Empty
+	112, // 154: watchfire.DaemonService.Shutdown:input_type -> google.protobuf.Empty
+	112, // 155: watchfire.DaemonService.Ping:input_type -> google.protobuf.Empty
+	61,  // 156: watchfire.DaemonService.SubscribeFocusEvents:input_type -> watchfire.SubscribeFocusEventsRequest
+	63,  // 157: watchfire.LogService.ListLogs:input_type -> watchfire.ListLogsRequest
+	66,  // 158: watchfire.LogService.GetLog:input_type -> watchfire.GetLogRequest
+	68,  // 159: watchfire.LogService.DeleteLog:input_type -> watchfire.DeleteLogRequest
+	31,  // 160: watchfire.AgentService.StartAgent:input_type -> watchfire.StartAgentRequest
+	13,  // 161: watchfire.AgentService.StopAgent:input_type -> watchfire.ProjectId
+	13,  // 162: watchfire.AgentService.GetAgentStatus:input_type -> watchfire.ProjectId
+	33,  // 163: watchfire.AgentService.SubscribeScreen:input_type -> watchfire.SubscribeScreenRequest
+	34,  // 164: watchfire.AgentService.GetScrollback:input_type -> watchfire.ScrollbackRequest
+	36,  // 165: watchfire.AgentService.SendInput:input_type -> watchfire.SendInputRequest
+	37,  // 166: watchfire.AgentService.Resize:input_type -> watchfire.ResizeRequest
+	38,  // 167: watchfire.AgentService.SubscribeRawOutput:input_type -> watchfire.SubscribeRawOutputRequest
+	41,  // 168: watchfire.AgentService.SubscribeAgentIssues:input_type -> watchfire.SubscribeAgentIssuesRequest
+	13,  // 169: watchfire.AgentService.ResumeAgent:input_type -> watchfire.ProjectId
+	13,  // 170: watchfire.BranchService.ListBranches:input_type -> watchfire.ProjectId
+	44,  // 171: watchfire.BranchService.GetBranch:input_type -> watchfire.BranchId
+	45,  // 172: watchfire.BranchService.MergeBranch:input_type -> watchfire.MergeBranchRequest
+	44,  // 173: watchfire.BranchService.DeleteBranch:input_type -> watchfire.BranchId
+	13,  // 174: watchfire.BranchService.PruneBranches:input_type -> watchfire.ProjectId
+	46,  // 175: watchfire.BranchService.BulkMerge:input_type -> watchfire.BulkBranchRequest
+	46,  // 176: watchfire.BranchService.BulkDelete:input_type -> watchfire.BulkBranchRequest
+	112, // 177: watchfire.SettingsService.GetSettings:input_type -> google.protobuf.Empty
+	56,  // 178: watchfire.SettingsService.UpdateSettings:input_type -> watchfire.UpdateSettingsRequest
+	112, // 179: watchfire.SettingsService.ListAgents:input_type -> google.protobuf.Empty
+	70,  // 180: watchfire.NotificationService.Subscribe:input_type -> watchfire.SubscribeNotificationsRequest
+	71,  // 181: watchfire.InsightsService.ExportReport:input_type -> watchfire.ExportReportRequest
+	73,  // 182: watchfire.InsightsService.GetGlobalInsights:input_type -> watchfire.GetGlobalInsightsRequest
+	78,  // 183: watchfire.InsightsService.GetProjectInsights:input_type -> watchfire.GetProjectInsightsRequest
+	80,  // 184: watchfire.InsightsService.GetTaskDiff:input_type -> watchfire.GetTaskDiffRequest
+	91,  // 185: watchfire.IntegrationsService.ListIntegrations:input_type -> watchfire.ListIntegrationsRequest
+	92,  // 186: watchfire.IntegrationsService.SaveIntegration:input_type -> watchfire.SaveIntegrationRequest
+	93,  // 187: watchfire.IntegrationsService.DeleteIntegration:input_type -> watchfire.DeleteIntegrationRequest
+	94,  // 188: watchfire.IntegrationsService.TestIntegration:input_type -> watchfire.TestIntegrationRequest
+	105, // 189: watchfire.IntegrationsService.GetInboundStatus:input_type -> watchfire.GetInboundStatusRequest
+	106, // 190: watchfire.IntegrationsService.SaveInboundConfig:input_type -> watchfire.SaveInboundConfigRequest
+	96,  // 191: watchfire.IntegrationsService.BeginOAuth:input_type -> watchfire.BeginOAuthRequest
+	98,  // 192: watchfire.IntegrationsService.GetOAuthStatus:input_type -> watchfire.GetOAuthStatusRequest
+	100, // 193: watchfire.IntegrationsService.CancelOAuth:input_type -> watchfire.CancelOAuthRequest
+	101, // 194: watchfire.IntegrationsService.PostOAuthHello:input_type -> watchfire.PostOAuthHelloRequest
+	14,  // 195: watchfire.ProjectService.ListProjects:output_type -> watchfire.ProjectList
+	9,   // 196: watchfire.ProjectService.GetProject:output_type -> watchfire.Project
+	9,   // 197: watchfire.ProjectService.CreateProject:output_type -> watchfire.Project
+	9,   // 198: watchfire.ProjectService.UpdateProject:output_type -> watchfire.Project
+	112, // 199: watchfire.ProjectService.DeleteProject:output_type -> google.protobuf.Empty
+	18,  // 200: watchfire.ProjectService.GetGitInfo:output_type -> watchfire.GitInfo
+	14,  // 201: watchfire.ProjectService.ReorderProjects:output_type -> watchfire.ProjectList
+	9,   // 202: watchfire.ProjectService.RegenerateProjectId:output_type -> watchfire.Project
+	9,   // 203: watchfire.ProjectService.ResetTaskNumbering:output_type -> watchfire.Project
+	112, // 204: watchfire.ProjectService.UnregisterProject:output_type -> google.protobuf.Empty
+	112, // 205: watchfire.ProjectService.SetGitHubAutoPRScope:output_type -> google.protobuf.Empty
+	9,   // 206: watchfire.ProjectService.SetProjectIntegrationBindings:output_type -> watchfire.Project
+	21,  // 207: watchfire.TaskService.ListTasks:output_type -> watchfire.TaskList
+	19,  // 208: watchfire.TaskService.GetTask:output_type -> watchfire.Task
+	19,  // 209: watchfire.TaskService.CreateTask:output_type -> watchfire.Task
+	19,  // 210: watchfire.TaskService.UpdateTask:output_type -> watchfire.Task
+	19,  // 211: watchfire.TaskService.DeleteTask:output_type -> watchfire.Task
+	19,  // 212: watchfire.TaskService.RestoreTask:output_type -> watchfire.Task
+	112, // 213: watchfire.TaskService.PermanentDeleteTask:output_type -> google.protobuf.Empty
+	112, // 214: watchfire.TaskService.EmptyTrash:output_type -> google.protobuf.Empty
+	21,  // 215: watchfire.TaskService.BulkUpdateStatus:output_type -> watchfire.TaskList
+	21,  // 216: watchfire.TaskService.BulkDelete:output_type -> watchfire.TaskList
+	21,  // 217: watchfire.TaskService.BulkRestore:output_type -> watchfire.TaskList
+	21,  // 218: watchfire.TaskService.ReorderTasks:output_type -> watchfire.TaskList
+	29,  // 219: watchfire.DaemonService.GetStatus:output_type -> watchfire.DaemonStatus
+	112, // 220: watchfire.DaemonService.Shutdown:output_type -> google.protobuf.Empty
+	112, // 221: watchfire.DaemonService.Ping:output_type -> google.protobuf.Empty
+	62,  // 222: watchfire.DaemonService.SubscribeFocusEvents:output_type -> watchfire.FocusEvent
+	65,  // 223: watchfire.LogService.ListLogs:output_type -> watchfire.LogList
+	67,  // 224: watchfire.LogService.GetLog:output_type -> watchfire.LogContent
+	112, // 225: watchfire.LogService.DeleteLog:output_type -> google.protobuf.Empty
+	30,  // 226: watchfire.AgentService.StartAgent:output_type -> watchfire.AgentStatus
+	112, // 227: watchfire.AgentService.StopAgent:output_type -> google.protobuf.Empty
+	30,  // 228: watchfire.AgentService.GetAgentStatus:output_type -> watchfire.AgentStatus
+	32,  // 229: watchfire.AgentService.SubscribeScreen:output_type -> watchfire.ScreenBuffer
+	35,  // 230: watchfire.AgentService.GetScrollback:output_type -> watchfire.ScrollbackLines
+	112, // 231: watchfire.AgentService.SendInput:output_type -> google.protobuf.Empty
+	112, // 232: watchfire.AgentService.Resize:output_type -> google.protobuf.Empty
+	39,  // 233: watchfire.AgentService.SubscribeRawOutput:output_type -> watchfire.RawOutputChunk
+	40,  // 234: watchfire.AgentService.SubscribeAgentIssues:output_type -> watchfire.AgentIssue
+	30,  // 235: watchfire.AgentService.ResumeAgent:output_type -> watchfire.AgentStatus
+	43,  // 236: watchfire.BranchService.ListBranches:output_type -> watchfire.BranchList
+	42,  // 237: watchfire.BranchService.GetBranch:output_type -> watchfire.Branch
+	42,  // 238: watchfire.BranchService.MergeBranch:output_type -> watchfire.Branch
+	112, // 239: watchfire.BranchService.DeleteBranch:output_type -> google.protobuf.Empty
+	43,  // 240: watchfire.BranchService.PruneBranches:output_type -> watchfire.BranchList
+	43,  // 241: watchfire.BranchService.BulkMerge:output_type -> watchfire.BranchList
+	112, // 242: watchfire.BranchService.BulkDelete:output_type -> google.protobuf.Empty
+	55,  // 243: watchfire.SettingsService.GetSettings:output_type -> watchfire.Settings
+	55,  // 244: watchfire.SettingsService.UpdateSettings:output_type -> watchfire.Settings
+	58,  // 245: watchfire.SettingsService.ListAgents:output_type -> watchfire.AgentList
+	69,  // 246: watchfire.NotificationService.Subscribe:output_type -> watchfire.Notification
+	72,  // 247: watchfire.InsightsService.ExportReport:output_type -> watchfire.ExportReportResponse
+	77,  // 248: watchfire.InsightsService.GetGlobalInsights:output_type -> watchfire.GlobalInsights
+	79,  // 249: watchfire.InsightsService.GetProjectInsights:output_type -> watchfire.ProjectInsights
+	81,  // 250: watchfire.InsightsService.GetTaskDiff:output_type -> watchfire.FileDiffSet
+	90,  // 251: watchfire.IntegrationsService.ListIntegrations:output_type -> watchfire.IntegrationsConfig
+	90,  // 252: watchfire.IntegrationsService.SaveIntegration:output_type -> watchfire.IntegrationsConfig
+	90,  // 253: watchfire.IntegrationsService.DeleteIntegration:output_type -> watchfire.IntegrationsConfig
+	95,  // 254: watchfire.IntegrationsService.TestIntegration:output_type -> watchfire.TestIntegrationResponse
+	104, // 255: watchfire.IntegrationsService.GetInboundStatus:output_type -> watchfire.InboundStatus
+	104, // 256: watchfire.IntegrationsService.SaveInboundConfig:output_type -> watchfire.InboundStatus
+	97,  // 257: watchfire.IntegrationsService.BeginOAuth:output_type -> watchfire.BeginOAuthResponse
+	99,  // 258: watchfire.IntegrationsService.GetOAuthStatus:output_type -> watchfire.OAuthStatus
+	99,  // 259: watchfire.IntegrationsService.CancelOAuth:output_type -> watchfire.OAuthStatus
+	102, // 260: watchfire.IntegrationsService.PostOAuthHello:output_type -> watchfire.PostOAuthHelloResponse
+	195, // [195:261] is the sub-list for method output_type
+	129, // [129:195] is the sub-list for method input_type
+	129, // [129:129] is the sub-list for extension type_name
+	129, // [129:129] is the sub-list for extension extendee
+	0,   // [0:129] is the sub-list for field type_name
 }
 
 func init() { file_proto_watchfire_proto_init() }
@@ -9007,20 +9372,20 @@ func file_proto_watchfire_proto_init() {
 	if File_proto_watchfire_proto != nil {
 		return
 	}
-	file_proto_watchfire_proto_msgTypes[6].OneofWrappers = []any{}
-	file_proto_watchfire_proto_msgTypes[9].OneofWrappers = []any{}
-	file_proto_watchfire_proto_msgTypes[12].OneofWrappers = []any{}
-	file_proto_watchfire_proto_msgTypes[13].OneofWrappers = []any{}
+	file_proto_watchfire_proto_msgTypes[8].OneofWrappers = []any{}
+	file_proto_watchfire_proto_msgTypes[11].OneofWrappers = []any{}
 	file_proto_watchfire_proto_msgTypes[14].OneofWrappers = []any{}
-	file_proto_watchfire_proto_msgTypes[20].OneofWrappers = []any{}
-	file_proto_watchfire_proto_msgTypes[30].OneofWrappers = []any{}
-	file_proto_watchfire_proto_msgTypes[46].OneofWrappers = []any{}
-	file_proto_watchfire_proto_msgTypes[59].OneofWrappers = []any{
+	file_proto_watchfire_proto_msgTypes[15].OneofWrappers = []any{}
+	file_proto_watchfire_proto_msgTypes[16].OneofWrappers = []any{}
+	file_proto_watchfire_proto_msgTypes[22].OneofWrappers = []any{}
+	file_proto_watchfire_proto_msgTypes[32].OneofWrappers = []any{}
+	file_proto_watchfire_proto_msgTypes[48].OneofWrappers = []any{}
+	file_proto_watchfire_proto_msgTypes[63].OneofWrappers = []any{
 		(*ExportReportRequest_ProjectId)(nil),
 		(*ExportReportRequest_Global)(nil),
 		(*ExportReportRequest_SingleTask)(nil),
 	}
-	file_proto_watchfire_proto_msgTypes[80].OneofWrappers = []any{
+	file_proto_watchfire_proto_msgTypes[84].OneofWrappers = []any{
 		(*SaveIntegrationRequest_Webhook)(nil),
 		(*SaveIntegrationRequest_Slack)(nil),
 		(*SaveIntegrationRequest_Discord)(nil),
@@ -9032,7 +9397,7 @@ func file_proto_watchfire_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_proto_watchfire_proto_rawDesc), len(file_proto_watchfire_proto_rawDesc)),
 			NumEnums:      8,
-			NumMessages:   98,
+			NumMessages:   103,
 			NumExtensions: 0,
 			NumServices:   10,
 		},

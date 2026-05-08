@@ -161,7 +161,7 @@ func (r *digestRunner) fire(now time.Time) {
 		log.Printf("[digest] failed to persist digest %s: %v", dateKey, persistErr)
 	}
 
-	if !models.ShouldNotify(models.NotificationWeeklyDigest, cfg, false, now.Local()) {
+	if !models.ShouldNotify(models.NotificationWeeklyDigest, cfg, models.ProjectNotifications{}, now.Local()) {
 		return
 	}
 

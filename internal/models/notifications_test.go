@@ -81,12 +81,12 @@ func TestShouldNotifyProjectMuteOverridesGlobalEnabled(t *testing.T) {
 	now := atTime(t, "12:00")
 
 	// Sanity: globally enabled, no project mute → we notify.
-	if !ShouldNotify(NotificationTaskFailed, cfg, false, now) {
+	if !ShouldNotify(NotificationTaskFailed, cfg, ProjectNotifications{}, now) {
 		t.Fatalf("baseline: expected notification to fire")
 	}
 
 	// Project mute overrides global enabled (true mute).
-	if ShouldNotify(NotificationTaskFailed, cfg, true, now) {
+	if ShouldNotify(NotificationTaskFailed, cfg, ProjectNotifications{Muted: true}, now) {
 		t.Errorf("per-project mute MUST override global enabled (true mute)")
 	}
 }
@@ -97,7 +97,7 @@ func TestShouldNotifyProjectUnmutedDoesNotOverrideGlobalDisabled(t *testing.T) {
 	now := atTime(t, "12:00")
 
 	// Project unmuted should NOT override global disabled.
-	if ShouldNotify(NotificationTaskFailed, cfg, false, now) {
+	if ShouldNotify(NotificationTaskFailed, cfg, ProjectNotifications{}, now) {
 		t.Errorf("project unmuted MUST NOT override global disabled")
 	}
 }
@@ -107,10 +107,10 @@ func TestShouldNotifyPerEventToggle(t *testing.T) {
 	cfg.Events.RunComplete = false
 	now := atTime(t, "12:00")
 
-	if !ShouldNotify(NotificationTaskFailed, cfg, false, now) {
+	if !ShouldNotify(NotificationTaskFailed, cfg, ProjectNotifications{}, now) {
 		t.Errorf("task_failed enabled should still fire")
 	}
-	if ShouldNotify(NotificationRunComplete, cfg, false, now) {
+	if ShouldNotify(NotificationRunComplete, cfg, ProjectNotifications{}, now) {
 		t.Errorf("run_complete disabled should not fire")
 	}
 }
@@ -121,11 +121,124 @@ func TestShouldNotifyDuringQuietHours(t *testing.T) {
 	cfg.QuietHours.Start = "22:00"
 	cfg.QuietHours.End = "08:00"
 
-	if ShouldNotify(NotificationTaskFailed, cfg, false, atTime(t, "23:00")) {
+	if ShouldNotify(NotificationTaskFailed, cfg, ProjectNotifications{}, atTime(t, "23:00")) {
 		t.Errorf("inside quiet hours should not fire")
 	}
-	if !ShouldNotify(NotificationTaskFailed, cfg, false, atTime(t, "12:00")) {
+	if !ShouldNotify(NotificationTaskFailed, cfg, ProjectNotifications{}, atTime(t, "12:00")) {
 		t.Errorf("outside quiet hours should fire")
+	}
+}
+
+// TestShouldNotifyProjectEventOverrideEnables exercises the v6 #0091 override
+// path: a project that flips a globally-disabled event to enabled.
+func TestShouldNotifyProjectEventOverrideEnables(t *testing.T) {
+	cfg := DefaultNotifications()
+	cfg.Events.RunComplete = false
+	now := atTime(t, "12:00")
+
+	// Without override: global disabled wins.
+	if ShouldNotify(NotificationRunComplete, cfg, ProjectNotifications{}, now) {
+		t.Fatalf("baseline: global-disabled run_complete should not fire")
+	}
+
+	// With override: per-project Enabled=true wins.
+	pn := ProjectNotifications{
+		OverrideEvents: true,
+		Events: map[string]ProjectEventPref{
+			"run_complete": {Enabled: true},
+		},
+	}
+	if !ShouldNotify(NotificationRunComplete, cfg, pn, now) {
+		t.Errorf("project override Enabled=true must override global disabled")
+	}
+}
+
+// TestShouldNotifyProjectEventOverrideDisables verifies the inverse: a
+// project that mutes a globally-enabled event.
+func TestShouldNotifyProjectEventOverrideDisables(t *testing.T) {
+	cfg := DefaultNotifications()
+	now := atTime(t, "12:00")
+
+	pn := ProjectNotifications{
+		OverrideEvents: true,
+		Events: map[string]ProjectEventPref{
+			"task_failed": {Enabled: false},
+		},
+	}
+	if ShouldNotify(NotificationTaskFailed, cfg, pn, now) {
+		t.Errorf("project override Enabled=false must override global enabled")
+	}
+	// Other events without an override row inherit globally — run_complete
+	// is globally true, so it still fires.
+	if !ShouldNotify(NotificationRunComplete, cfg, pn, now) {
+		t.Errorf("event without override row must inherit global")
+	}
+}
+
+// TestShouldNotifyOverrideWithoutMapInherits guards against the
+// OverrideEvents=true / Events=nil partial-config case silently muting
+// every event.
+func TestShouldNotifyOverrideWithoutMapInherits(t *testing.T) {
+	cfg := DefaultNotifications()
+	now := atTime(t, "12:00")
+
+	pn := ProjectNotifications{OverrideEvents: true, Events: nil}
+	if !ShouldNotify(NotificationTaskFailed, cfg, pn, now) {
+		t.Errorf("OverrideEvents=true with nil map must inherit global, not mute")
+	}
+}
+
+// TestShouldNotifyQuietHoursOverride covers the per-project quiet-hours
+// override path: project window mutes despite globals being off, and vice
+// versa.
+func TestShouldNotifyQuietHoursOverride(t *testing.T) {
+	cfg := DefaultNotifications() // globals: quiet hours off
+
+	// Project window 22:00 → 08:00 mutes despite globals being off.
+	pn := ProjectNotifications{
+		QuietHoursOverride: &QuietHoursConfig{Enabled: true, Start: "22:00", End: "08:00"},
+	}
+	if ShouldNotify(NotificationTaskFailed, cfg, pn, atTime(t, "23:00")) {
+		t.Errorf("project quiet-hours override must mute when globals are off")
+	}
+
+	// Globally muting window — but project override flips the window to a
+	// non-overlapping one, so the notification fires.
+	cfg.QuietHours = QuietHoursConfig{Enabled: true, Start: "22:00", End: "08:00"}
+	pn = ProjectNotifications{
+		QuietHoursOverride: &QuietHoursConfig{Enabled: true, Start: "12:00", End: "13:00"},
+	}
+	if !ShouldNotify(NotificationTaskFailed, cfg, pn, atTime(t, "23:00")) {
+		t.Errorf("project quiet-hours override must replace global window, not union it")
+	}
+}
+
+// TestResolveSoundOverridePath round-trips per-event sound overrides.
+func TestResolveSoundOverridePath(t *testing.T) {
+	cfg := DefaultNotifications()
+	defaults := map[NotificationKind]string{
+		NotificationTaskFailed:  "default-failed.wav",
+		NotificationRunComplete: "default-complete.wav",
+	}
+
+	// No override: fall back to default.
+	if got := ResolveSound(NotificationTaskFailed, cfg, ProjectNotifications{}, defaults); got != "default-failed.wav" {
+		t.Errorf("expected default sound, got %q", got)
+	}
+
+	// Override with empty Sound: fall back to default (inherit).
+	pn := ProjectNotifications{
+		OverrideEvents: true,
+		Events:         map[string]ProjectEventPref{"task_failed": {Enabled: true, Sound: ""}},
+	}
+	if got := ResolveSound(NotificationTaskFailed, cfg, pn, defaults); got != "default-failed.wav" {
+		t.Errorf("empty Sound should inherit default; got %q", got)
+	}
+
+	// Override with explicit Sound: use override.
+	pn.Events["task_failed"] = ProjectEventPref{Enabled: true, Sound: "custom.wav"}
+	if got := ResolveSound(NotificationTaskFailed, cfg, pn, defaults); got != "custom.wav" {
+		t.Errorf("expected custom override sound, got %q", got)
 	}
 }
 

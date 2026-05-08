@@ -26,8 +26,42 @@ func RandomColor() string {
 }
 
 // ProjectNotifications holds per-project notification preferences.
+//
+// `Muted` is the master per-project mute (shipped in v4.0 Beacon). When true,
+// the project never emits notifications regardless of any other field.
+//
+// The remaining fields, added in v6.0 (#0091), let a project override the
+// global per-event toggles, per-event sounds, and quiet-hours window. They
+// only take effect when `OverrideEvents` (events) or
+// `QuietHoursOverride != nil` (quiet hours) is set, so a project.yaml that
+// pre-dates v6 and only carries `muted` continues to inherit globals as
+// before. All new fields are `omitempty` so the on-disk shape stays compact.
 type ProjectNotifications struct {
-	Muted bool `yaml:"muted"`
+	Muted              bool                        `yaml:"muted"`
+	OverrideEvents     bool                        `yaml:"override_events,omitempty"`
+	Events             map[string]ProjectEventPref `yaml:"events,omitempty"`
+	QuietHoursOverride *QuietHoursConfig           `yaml:"quiet_hours_override,omitempty"`
+}
+
+// ProjectEventPref is a single per-event override row. Sound is the empty
+// string when the project wants to inherit the global sound choice.
+type ProjectEventPref struct {
+	Enabled bool   `yaml:"enabled"`
+	Sound   string `yaml:"sound,omitempty"`
+}
+
+// ProjectIntegrations holds per-project bindings that override the global
+// integrations defaults. Each field is the empty string / false when the
+// project inherits.
+//
+// `SlackChannel` and `DiscordGuildID` are persisted under the project's
+// `integrations:` block in `project.yaml`. The GitHub auto-PR projection
+// lives in the global `integrations.yaml` (`github.project_scopes`); the
+// model here does not store it — the server fans the projection into the
+// proto Project at marshal time so the UI sees a single coherent picture.
+type ProjectIntegrations struct {
+	SlackChannel   string `yaml:"slack_channel,omitempty"`
+	DiscordGuildID string `yaml:"discord_guild_id,omitempty"`
 }
 
 // Project represents a Watchfire project configuration.
@@ -44,6 +78,7 @@ type Project struct {
 	AutoDeleteBranch    bool                 `yaml:"auto_delete_branch"`
 	AutoStartTasks      bool                 `yaml:"auto_start_tasks"`
 	Notifications       ProjectNotifications `yaml:"notifications"`
+	Integrations        ProjectIntegrations  `yaml:"integrations,omitempty"`
 	Definition          string               `yaml:"definition"`
 	SecretsInstructions string               `yaml:"-"` // Loaded from secrets/instructions.md, not stored in project.yaml
 	CreatedAt           time.Time            `yaml:"created_at"`

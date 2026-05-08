@@ -82,10 +82,13 @@ var helpSections = []helpSection{
 		title: "Settings",
 		keys: []helpKey{
 			{"j/k", "Navigate fields"},
-			{"Tab", "Switch pane (categories ↔ fields)"},
+			{"Tab", "Switch pane (sidebar ↔ fields)"},
 			{"/", "Search settings"},
-			{"Enter", "Edit text field / drill into category"},
-			{"Space", "Toggle boolean"},
+			{"Enter", "Edit text field / drill into section / run action"},
+			{"Space", "Toggle boolean / cycle"},
+			{"y", "Copy value (Metadata section)"},
+			{"e", "Open in $EDITOR (Secrets section)"},
+			{"y/N", "Confirm danger-zone actions"},
 		},
 	},
 	{

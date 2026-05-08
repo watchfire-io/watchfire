@@ -189,3 +189,37 @@ func SyncNextTaskNumber(projectPath string) error {
 func WatchTasksDir(projectPath string) string {
 	return filepath.Join(ProjectDir(projectPath), TasksDirName)
 }
+
+// HighestTaskNumber scans the tasks directory and returns the largest
+// integer-named YAML file's number, or 0 when no task files exist. Used by
+// the v6 (#0091) "reset task numbering" danger-zone action — unlike
+// SyncNextTaskNumber it does NOT mutate state, just reports the count.
+func HighestTaskNumber(projectPath string) (int, error) {
+	tasksDir := ProjectTasksDir(projectPath)
+	if !FileExists(tasksDir) {
+		return 0, nil
+	}
+	entries, err := os.ReadDir(tasksDir)
+	if err != nil {
+		return 0, err
+	}
+	highest := 0
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".yaml") {
+			continue
+		}
+		numStr := strings.TrimSuffix(name, ".yaml")
+		num, err := strconv.Atoi(numStr)
+		if err != nil {
+			continue
+		}
+		if num > highest {
+			highest = num
+		}
+	}
+	return highest, nil
+}

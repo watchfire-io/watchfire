@@ -46,11 +46,11 @@ func emitTaskFailed(bus *notify.Bus, projectID, projectPath, projectName string,
 	if settings != nil {
 		cfg = settings.Defaults.Notifications
 	}
-	muted := false
+	var projectNotif models.ProjectNotifications
 	if proj, _ := config.LoadProject(projectPath); proj != nil {
-		muted = proj.Notifications.Muted
+		projectNotif = proj.Notifications
 	}
-	if !models.ShouldNotify(models.NotificationTaskFailed, cfg, muted, time.Now().Local()) {
+	if !models.ShouldNotify(models.NotificationTaskFailed, cfg, projectNotif, time.Now().Local()) {
 		return
 	}
 
