@@ -6,6 +6,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 
 	"google.golang.org/protobuf/types/known/emptypb"
@@ -85,7 +87,9 @@ func (s *branchService) DeleteBranch(_ context.Context, req *pb.BranchId) (*empt
 	}
 
 	taskNum := taskNumberFromBranch(req.BranchName)
-	if err := agent.RemoveWorktree(projectPath, taskNum, false); err != nil {
+	// `force=true` maps to `git branch -D` so unmerged branches still get
+	// removed; default is the safe `-d` which preserves work.
+	if err := agent.RemoveWorktree(projectPath, taskNum, req.Force); err != nil {
 		return nil, fmt.Errorf("failed to delete branch: %w", err)
 	}
 	return &emptypb.Empty{}, nil
@@ -147,9 +151,15 @@ func (s *branchService) BulkDelete(_ context.Context, req *pb.BulkBranchRequest)
 	return &emptypb.Empty{}, nil
 }
 
-// listGitBranches lists all watchfire/* branches for a project.
+// listGitBranches lists all watchfire/* branches for a project. Branches
+// are returned sorted by branch-tip commit timestamp descending — newest
+// first — so the TUI overlay's "most recent at top" requirement is met
+// without having to re-sort downstream.
 func listGitBranches(projectPath, projectID string) ([]*pb.Branch, error) {
-	cmd := exec.Command("git", "branch", "--list", "watchfire/*", "--format=%(refname:short)")
+	// `%(committerdate:unix)` is the portable git for-each-ref token for
+	// the commit timestamp at the branch tip (seconds since epoch).
+	cmd := exec.Command("git", "branch", "--list", "watchfire/*",
+		"--format=%(refname:short)|%(committerdate:unix)")
 	cmd.Dir = projectPath
 	output, err := cmd.Output()
 	if err != nil {
@@ -172,8 +182,17 @@ func listGitBranches(projectPath, projectID string) ([]*pb.Branch, error) {
 			continue
 		}
 
-		taskNum := taskNumberFromBranch(line)
-		status := branchMergeStatus(projectPath, line, currentBranch)
+		name := line
+		var ts int64
+		if pipe := strings.IndexByte(line, '|'); pipe >= 0 {
+			name = strings.TrimSpace(line[:pipe])
+			if v, perr := strconv.ParseInt(strings.TrimSpace(line[pipe+1:]), 10, 64); perr == nil {
+				ts = v
+			}
+		}
+
+		taskNum := taskNumberFromBranch(name)
+		status := branchMergeStatus(projectPath, name, currentBranch)
 		worktreePath := ""
 		padded := fmt.Sprintf("%04d", taskNum)
 		wtPath := filepath.Join(projectPath, ".watchfire", "worktrees", padded)
@@ -182,13 +201,18 @@ func listGitBranches(projectPath, projectID string) ([]*pb.Branch, error) {
 		}
 
 		branches = append(branches, &pb.Branch{
-			Name:         line,
-			ProjectId:    projectID,
-			TaskNumber:   int32(taskNum),
-			Status:       status,
-			WorktreePath: worktreePath,
+			Name:            name,
+			ProjectId:       projectID,
+			TaskNumber:      int32(taskNum),
+			Status:          status,
+			WorktreePath:    worktreePath,
+			CommitTimestamp: ts,
 		})
 	}
+
+	sort.SliceStable(branches, func(i, j int) bool {
+		return branches[i].CommitTimestamp > branches[j].CommitTimestamp
+	})
 	return branches, nil
 }
 

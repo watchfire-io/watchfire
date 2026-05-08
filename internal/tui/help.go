@@ -25,6 +25,8 @@ var helpSections = []helpSection{
 			{"Ctrl+g", "Global settings"},
 			{"Ctrl+e", "Export report"},
 			{"Ctrl+f", "Fleet insights"},
+			{"Ctrl+i", "Integrations"},
+			{"Ctrl+b", "Branches"},
 			{"Ctrl+t", "Toggle text-select mode (drops mouse capture for drag-select)"},
 			{"Tab", "Switch panel focus"},
 			{"1/2/3", "Switch left panel tab"},

@@ -111,6 +111,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			return tea.Batch(listIntegrationsCmd(m.conn), getInboundStatusCmd(m.conn))
 		}
 		return nil
+
+	case key.Matches(msg, globalKeys.Branches):
+		return m.openBranchesOverlay()
 	}
 
 	// Tab switching (only when left panel focused and not in terminal)
@@ -508,6 +511,131 @@ func (m *Model) handleOverlayKey(msg tea.KeyMsg) tea.Cmd {
 
 	case overlayIntegrations:
 		return m.handleIntegrationsKey(msg)
+
+	case overlayBranches:
+		return m.handleBranchesKey(msg)
+	}
+	return nil
+}
+
+// openBranchesOverlay flips the overlay on, marks the list as loading,
+// and dispatches the gRPC fetch.
+func (m *Model) openBranchesOverlay() tea.Cmd {
+	m.activeOverlay = overlayBranches
+	m.branches = BranchesState{Loading: true}
+	if m.conn == nil || m.projectID == "" {
+		return nil
+	}
+	return listBranchesCmd(m.conn, m.projectID)
+}
+
+// handleBranchesKey routes input while the Branches overlay is open.
+// When a confirm is pending, only y/N/Esc are honoured. Otherwise the
+// key map is: ↑↓ navigate, m merge, x delete, X force-delete, P prune
+// merged-orphans, r refresh, Esc / Ctrl+B close.
+func (m *Model) handleBranchesKey(msg tea.KeyMsg) tea.Cmd {
+	if m.branches.ConfirmPrompt != "" {
+		return m.handleBranchesConfirmKey(msg)
+	}
+
+	switch msg.String() {
+	case "esc", "ctrl+b":
+		m.activeOverlay = overlayNone
+		m.branches = BranchesState{}
+		return nil
+	case "up", "k":
+		m.branches.MoveUp()
+		return nil
+	case "down", "j":
+		m.branches.MoveDown()
+		return nil
+	case "r":
+		m.branches.Loading = true
+		m.branches.Err = nil
+		if m.conn == nil {
+			return nil
+		}
+		return listBranchesCmd(m.conn, m.projectID)
+	case "m":
+		br := m.branches.SelectedBranch()
+		if br == nil {
+			return nil
+		}
+		m.branches.ConfirmKind = branchConfirmMerge
+		m.branches.ConfirmTarget = br.GetName()
+		m.branches.ConfirmPrompt = fmt.Sprintf("Merge %s into default branch? y/N", br.GetName())
+		return nil
+	case "x":
+		br := m.branches.SelectedBranch()
+		if br == nil {
+			return nil
+		}
+		if br.GetStatus() != "merged" {
+			m.branches.ConfirmPrompt = fmt.Sprintf("Refuses unmerged delete — use X to force-delete %s. y/N", br.GetName())
+			m.branches.ConfirmKind = branchConfirmNone
+			return nil
+		}
+		m.branches.ConfirmKind = branchConfirmDelete
+		m.branches.ConfirmTarget = br.GetName()
+		m.branches.ConfirmPrompt = fmt.Sprintf("Delete merged branch %s? y/N", br.GetName())
+		return nil
+	case "X":
+		br := m.branches.SelectedBranch()
+		if br == nil {
+			return nil
+		}
+		m.branches.ConfirmKind = branchConfirmForceDelete
+		m.branches.ConfirmTarget = br.GetName()
+		m.branches.ConfirmPrompt = fmt.Sprintf("Force-delete %s? Unmerged work is lost. y/N", br.GetName())
+		return nil
+	case "P":
+		count := m.branches.CountMergedOrphans()
+		if count == 0 {
+			m.branches.ConfirmPrompt = "No merged-orphan branches to prune."
+			m.branches.ConfirmKind = branchConfirmNone
+			return nil
+		}
+		m.branches.ConfirmKind = branchConfirmPrune
+		m.branches.ConfirmPrompt = fmt.Sprintf("Prune %d merged-orphan branches? y/N", count)
+		return nil
+	}
+	return nil
+}
+
+func (m *Model) handleBranchesConfirmKey(msg tea.KeyMsg) tea.Cmd {
+	switch msg.String() {
+	case "y", "Y":
+		kind := m.branches.ConfirmKind
+		target := m.branches.ConfirmTarget
+		m.branches.ConfirmPrompt = ""
+		m.branches.ConfirmKind = branchConfirmNone
+		m.branches.ConfirmTarget = ""
+		if m.conn == nil {
+			return nil
+		}
+		switch kind {
+		case branchConfirmMerge:
+			m.branches.PendingBranch = target
+			m.branches.PendingAction = "merging"
+			return mergeBranchCmd(m.conn, m.projectID, target)
+		case branchConfirmDelete:
+			m.branches.PendingBranch = target
+			m.branches.PendingAction = "deleting"
+			return deleteBranchCmd(m.conn, m.projectID, target, false)
+		case branchConfirmForceDelete:
+			m.branches.PendingBranch = target
+			m.branches.PendingAction = "deleting"
+			return deleteBranchCmd(m.conn, m.projectID, target, true)
+		case branchConfirmPrune:
+			m.branches.Loading = true
+			return pruneBranchesCmd(m.conn, m.projectID)
+		}
+		return nil
+	case "n", "N", "esc":
+		m.branches.ConfirmPrompt = ""
+		m.branches.ConfirmKind = branchConfirmNone
+		m.branches.ConfirmTarget = ""
+		return nil
 	}
 	return nil
 }
