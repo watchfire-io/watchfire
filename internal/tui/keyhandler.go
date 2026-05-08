@@ -23,6 +23,14 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	}
 
+	// Text-select toggle is dispatched ahead of every other handler —
+	// confirm prompts, overlays, panel routing, terminal stdin forwarding —
+	// so it works no matter what surface owns the keystroke and never
+	// leaks into the agent's input stream.
+	if key.Matches(msg, globalKeys.TextSelect) {
+		return m.toggleTextSelectMode()
+	}
+
 	// Confirm mode captures everything
 	if m.confirmMode != confirmNone {
 		return m.handleConfirmKey(msg)
@@ -125,6 +133,19 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 		return m.handleLeftPanelKey(msg)
 	}
 	return m.handleRightPanelKey(msg)
+}
+
+// toggleTextSelectMode flips the textSelectMode flag and returns the
+// corresponding Bubble Tea command — DisableMouse releases the terminal
+// so click-drag text selection works natively, EnableMouseCellMotion
+// restores click/wheel/drag dispatch into the program. Exposed as a
+// method so handleKey + tests share a single code path.
+func (m *Model) toggleTextSelectMode() tea.Cmd {
+	m.textSelectMode = !m.textSelectMode
+	if m.textSelectMode {
+		return tea.DisableMouse
+	}
+	return tea.EnableMouseCellMotion
 }
 
 func (m *Model) handleLeftPanelKey(msg tea.KeyMsg) tea.Cmd {

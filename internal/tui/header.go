@@ -9,7 +9,7 @@ import (
 	pb "github.com/watchfire-io/watchfire/proto"
 )
 
-func renderHeader(project *pb.Project, leftTab, rightTab int, agentStatus *pb.AgentStatus, gitInfo *pb.GitInfo, width int) string {
+func renderHeader(project *pb.Project, leftTab, rightTab int, agentStatus *pb.AgentStatus, gitInfo *pb.GitInfo, width int, textSelectMode bool) string {
 	// Project dot and name
 	projectName := "Watchfire"
 	projectColor := "#888888"
@@ -22,6 +22,17 @@ func renderHeader(project *pb.Project, leftTab, rightTab int, agentStatus *pb.Ag
 
 	dot := lipgloss.NewStyle().Foreground(lipgloss.Color(projectColor)).Render("●")
 	name := lipgloss.NewStyle().Bold(true).Render(projectName)
+
+	// Text-select chip — appended right after the project name so it
+	// rides alongside the title regardless of git/tab state.
+	chip := ""
+	if textSelectMode {
+		chip = " " + lipgloss.NewStyle().
+			Foreground(lipgloss.AdaptiveColor{Light: "0", Dark: "0"}).
+			Background(colorCyan).
+			Bold(true).
+			Render(" text-select ")
+	}
 
 	// Git info
 	gitStr := ""
@@ -42,8 +53,8 @@ func renderHeader(project *pb.Project, leftTab, rightTab int, agentStatus *pb.Ag
 	// Agent badge
 	badge := renderAgentBadge(agentStatus)
 
-	// Layout: dot name  leftTabs    rightTabs  badge
-	left := fmt.Sprintf(" %s %s%s  %s", dot, name, gitStr, leftTabs)
+	// Layout: dot name [chip] gitStr  leftTabs    rightTabs  badge
+	left := fmt.Sprintf(" %s %s%s%s  %s", dot, name, chip, gitStr, leftTabs)
 	right := fmt.Sprintf("%s  %s ", rightTabs, badge)
 
 	gap := width - lipgloss.Width(left) - lipgloss.Width(right)
