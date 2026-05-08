@@ -115,6 +115,31 @@ func (m *Model) confirmDeleteTask() tea.Cmd {
 	return nil
 }
 
+// restoreSelectedTask fires the RestoreTask RPC for the currently-selected
+// soft-deleted task. The watcher's debounced file event triggers the
+// follow-up ListTasks reload; in the meantime the TUI optimistically
+// schedules its own load so the user sees the row return without waiting
+// for the watcher tick.
+func (m *Model) restoreSelectedTask() tea.Cmd {
+	t := m.taskList.SelectedTask()
+	if t == nil || m.conn == nil {
+		return nil
+	}
+	return restoreTaskCmd(m.conn, m.projectID, t.TaskNumber)
+}
+
+// confirmPermanentDeleteTask arms the y/N prompt for hard-deleting the
+// selected trash row. The actual RPC fires from handleConfirmKey.
+func (m *Model) confirmPermanentDeleteTask() tea.Cmd {
+	t := m.taskList.SelectedTask()
+	if t == nil {
+		return nil
+	}
+	m.confirmMode = confirmPermanentDelete
+	m.confirmTaskNum = t.TaskNumber
+	return nil
+}
+
 // confirmDeleteLog arms the confirmation prompt for deleting the selected log.
 // Returns nil if no log is selected or if a delete is already in flight.
 func (m *Model) confirmDeleteLog() tea.Cmd {

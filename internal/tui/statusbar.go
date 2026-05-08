@@ -9,11 +9,12 @@ import (
 
 // confirmMode values.
 const (
-	confirmNone      = 0
-	confirmDelete    = 1
-	confirmQuit      = 2
-	confirmStop      = 3
-	confirmDeleteLog = 4
+	confirmNone             = 0
+	confirmDelete           = 1
+	confirmQuit             = 2
+	confirmStop             = 3
+	confirmDeleteLog        = 4
+	confirmPermanentDelete  = 5
 )
 
 func renderStatusBar(m *Model, width int) string {
@@ -46,6 +47,24 @@ func renderStatusBar(m *Model, width int) string {
 	if m.confirmMode == confirmDeleteLog {
 		return renderConfirmBar(
 			"Delete this session log? (y/n)",
+			width,
+		)
+	}
+	if m.confirmMode == confirmPermanentDelete {
+		return renderConfirmBar(
+			fmt.Sprintf("Permanently delete task #%04d? (y/N)", m.confirmTaskNum),
+			width,
+		)
+	}
+
+	// Trash mode banner — supersedes the normal hint line so the user
+	// always sees they're operating on the deleted set, not the active
+	// list. Count is the deleted population (the rendered list may be
+	// shorter under a stale snapshot).
+	if m.focusedPanel == 0 && m.leftTab == 0 && m.taskList != nil && m.taskList.TrashMode() {
+		n := m.taskList.DeletedCount()
+		return renderTrashBar(
+			fmt.Sprintf("Trash mode — %d deleted task(s) · u restore · x delete · D back", n),
 			width,
 		)
 	}
@@ -259,6 +278,18 @@ func renderStatusMessageBar(msg string, width int) string {
 	return statusBarStyle.
 		Width(width).
 		Render(" " + lipgloss.NewStyle().Foreground(colorGreen).Render("✓ "+msg))
+}
+
+// renderTrashBar paints the trash-mode banner across the status bar so the
+// user always sees they're operating on the deleted set rather than the
+// live task list.
+func renderTrashBar(msg string, width int) string {
+	return statusBarStyle.
+		Background(colorRed).
+		Foreground(lipgloss.AdaptiveColor{Light: "0", Dark: "0"}).
+		Bold(true).
+		Width(width).
+		Render(" " + msg)
 }
 
 // renderTextSelectBar paints a high-contrast banner across the full

@@ -3,6 +3,10 @@ package tui
 import (
 	"strings"
 	"testing"
+	"time"
+
+	tea "github.com/charmbracelet/bubbletea"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	pb "github.com/watchfire-io/watchfire/proto"
 )
@@ -223,6 +227,152 @@ func TestFailedRowSkipsPreviewWhenWidthTooNarrow(t *testing.T) {
 	if strings.Contains(rendered, "first line") {
 		t.Fatalf("preview should be omitted at narrow width; got %q", rendered)
 	}
+}
+
+// trashTaskMix returns a small mix of active and soft-deleted tasks for
+// trash-mode tests. The deleted tasks carry distinct titles so the
+// rendered list can be asserted on substring.
+func trashTaskMix() []*pb.Task {
+	deleted := timestamppb.New(time.Now().UTC())
+	return []*pb.Task{
+		{TaskNumber: 1, Title: "Live one", Status: "ready"},
+		{TaskNumber: 2, Title: "Live two", Status: "draft"},
+		{TaskNumber: 3, Title: "Trashed alpha", Status: "ready", DeletedAt: deleted},
+		{TaskNumber: 4, Title: "Trashed beta", Status: "done", DeletedAt: deleted},
+	}
+}
+
+func TestTaskListActiveModeHidesDeletedTasks(t *testing.T) {
+	tl := NewTaskList()
+	tl.SetTasks(trashTaskMix())
+
+	rendered := renderRow(t, tl, 80)
+	if strings.Contains(rendered, "Trashed alpha") || strings.Contains(rendered, "Trashed beta") {
+		t.Fatalf("active view should not render deleted tasks; got %q", rendered)
+	}
+	if !strings.Contains(rendered, "Live one") {
+		t.Fatalf("active view should render live tasks; got %q", rendered)
+	}
+}
+
+func TestTaskListTrashModeRendersOnlyDeleted(t *testing.T) {
+	tl := NewTaskList()
+	tl.SetTasks(trashTaskMix())
+	tl.SetTrashMode(true)
+
+	if !tl.TrashMode() {
+		t.Fatalf("TrashMode = false after SetTrashMode(true)")
+	}
+	if got := tl.DeletedCount(); got != 2 {
+		t.Fatalf("DeletedCount = %d, want 2", got)
+	}
+
+	rendered := renderRow(t, tl, 80)
+	if strings.Contains(rendered, "Live one") || strings.Contains(rendered, "Live two") {
+		t.Fatalf("trash view should not render live tasks; got %q", rendered)
+	}
+	if !strings.Contains(rendered, "Trashed alpha") || !strings.Contains(rendered, "Trashed beta") {
+		t.Fatalf("trash view should render deleted tasks; got %q", rendered)
+	}
+	if !strings.Contains(rendered, "Deleted (2)") {
+		t.Fatalf("trash view should label section with count; got %q", rendered)
+	}
+}
+
+func TestTaskListTrashModeEmptyState(t *testing.T) {
+	tl := NewTaskList()
+	tl.SetTasks([]*pb.Task{
+		{TaskNumber: 1, Title: "Live", Status: "ready"},
+	})
+	tl.SetTrashMode(true)
+
+	rendered := renderRow(t, tl, 60)
+	if !strings.Contains(rendered, "No deleted tasks. Press D to return.") {
+		t.Fatalf("expected empty-trash hint, got %q", rendered)
+	}
+}
+
+func TestTaskListSetTrashModeFlipsBack(t *testing.T) {
+	tl := NewTaskList()
+	tl.SetTasks(trashTaskMix())
+	tl.SetTrashMode(true)
+	tl.SetTrashMode(false)
+	if tl.TrashMode() {
+		t.Fatalf("TrashMode should be false after second flip")
+	}
+	rendered := renderRow(t, tl, 80)
+	if strings.Contains(rendered, "Trashed alpha") {
+		t.Fatalf("after flip back, deleted task should not render: %q", rendered)
+	}
+}
+
+func TestTaskListSetTrashModeClearsSearchFilter(t *testing.T) {
+	tl := NewTaskList()
+	tl.SetTasks(trashTaskMix())
+	tl.StartSearch()
+	tl.UpdateSearch("Live")
+	tl.SetTrashMode(true)
+	if tl.searchMode || tl.searchQuery != "" || tl.filteredItems != nil {
+		t.Fatalf("entering trash mode should clear search state; mode=%v query=%q filtered=%d",
+			tl.searchMode, tl.searchQuery, len(tl.filteredItems))
+	}
+}
+
+// TestTrashKeyHandlerRoutesRestoreAndDelete exercises the key handler for
+// trash mode without a daemon connection — the goal is to verify that `u`
+// triggers the restore flow and `x` arms the permanent-delete confirm
+// (rather than the soft-delete one used in active mode), and that `D`
+// flips the mode back. RPC dispatch is gated on m.conn so the model stays
+// in a no-network test surface.
+func TestTrashKeyHandlerRoutesRestoreAndDelete(t *testing.T) {
+	m := &Model{
+		taskList: NewTaskList(),
+	}
+	m.taskList.SetTasks(trashTaskMix())
+	m.taskList.SetTrashMode(true)
+
+	// Cursor must be on a deleted row for SelectedTask() to return one.
+	sel := m.taskList.SelectedTask()
+	if sel == nil || sel.GetDeletedAt() == nil {
+		t.Fatalf("expected selected task to be a deleted row, got %+v", sel)
+	}
+
+	// `x` arms permanent-delete confirm (not the soft-delete variant).
+	cmd := m.handleTaskListKey(runeKey('x'))
+	if cmd != nil {
+		t.Fatalf("expected nil cmd from arming confirm; got %T", cmd)
+	}
+	if m.confirmMode != confirmPermanentDelete {
+		t.Fatalf("confirmMode = %d, want confirmPermanentDelete (%d)", m.confirmMode, confirmPermanentDelete)
+	}
+
+	// Cancel the confirm — we don't have a daemon connection so the y
+	// branch would no-op anyway, but we want a clean state.
+	m.confirmMode = confirmNone
+
+	// `u` calls restoreSelectedTask. Without a conn it returns nil, but
+	// the call shouldn't panic and shouldn't arm any confirm.
+	if cmd := m.handleTaskListKey(runeKey('u')); cmd != nil {
+		t.Fatalf("expected nil cmd for `u` without conn; got %T", cmd)
+	}
+	if m.confirmMode != confirmNone {
+		t.Fatalf("`u` should not arm a confirm; got mode=%d", m.confirmMode)
+	}
+
+	// `D` flips back to active mode.
+	if cmd := m.handleTaskListKey(runeKey('D')); cmd != nil {
+		t.Fatalf("expected nil cmd from D toggle; got %T", cmd)
+	}
+	if m.taskList.TrashMode() {
+		t.Fatalf("D should have flipped trash mode off")
+	}
+}
+
+// runeKey synthesises a tea.KeyMsg for a single printable rune so tests
+// can drive the key handler the same way Bubble Tea does. Mirrors the
+// shape of msg.Type==tea.KeyRunes with msg.Runes set.
+func runeKey(r rune) tea.KeyMsg {
+	return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
 }
 
 func TestSuccessfulRowHasNoFailurePreview(t *testing.T) {

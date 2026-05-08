@@ -51,20 +51,22 @@ var globalKeys = GlobalKeys{
 
 // TaskListKeys are active when task list is focused.
 type TaskListKeys struct {
-	Up       key.Binding
-	Down     key.Binding
-	Add      key.Binding
-	Edit     key.Binding
-	Start    key.Binding
-	Stop     key.Binding
-	Wildfire key.Binding
-	StartAll key.Binding
-	Ready    key.Binding
-	Draft    key.Binding
-	Done     key.Binding
-	Delete   key.Binding
-	Enter    key.Binding
-	Insights key.Binding // v6.0 Ember per-project insights overlay
+	Up           key.Binding
+	Down         key.Binding
+	Add          key.Binding
+	Edit         key.Binding
+	Start        key.Binding
+	Stop         key.Binding
+	Wildfire     key.Binding
+	StartAll     key.Binding
+	Ready        key.Binding
+	Draft        key.Binding
+	Done         key.Binding
+	Delete       key.Binding
+	Enter        key.Binding
+	Insights     key.Binding // v6.0 Ember per-project insights overlay
+	TrashToggle  key.Binding // v6 — flip Tasks tab between active and trash
+	Restore      key.Binding // v6 — restore (`u`) in trash mode
 }
 
 var taskListKeys = TaskListKeys{
@@ -123,6 +125,14 @@ var taskListKeys = TaskListKeys{
 	Insights: key.NewBinding(
 		key.WithKeys("i"),
 		key.WithHelp("i", "project insights"),
+	),
+	TrashToggle: key.NewBinding(
+		key.WithKeys("D"),
+		key.WithHelp("D", "toggle trash view"),
+	),
+	Restore: key.NewBinding(
+		key.WithKeys("u"),
+		key.WithHelp("u", "restore"),
 	),
 }
 

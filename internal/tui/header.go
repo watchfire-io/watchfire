@@ -9,7 +9,7 @@ import (
 	pb "github.com/watchfire-io/watchfire/proto"
 )
 
-func renderHeader(project *pb.Project, leftTab, rightTab int, agentStatus *pb.AgentStatus, gitInfo *pb.GitInfo, width int, textSelectMode bool) string {
+func renderHeader(project *pb.Project, leftTab, rightTab int, agentStatus *pb.AgentStatus, gitInfo *pb.GitInfo, width int, textSelectMode bool, trashMode bool) string {
 	// Project dot and name
 	projectName := "Watchfire"
 	projectColor := "#888888"
@@ -44,8 +44,14 @@ func renderHeader(project *pb.Project, leftTab, rightTab int, agentStatus *pb.Ag
 		gitStr = "  " + branch
 	}
 
-	// Left tabs
-	leftTabs := renderTabs([]string{"Tasks", "Definition", "Settings"}, leftTab)
+	// Left tabs — trash mode appends a "· Trash" suffix to the Tasks tab
+	// so the active filter is visible in the tab bar even before the
+	// status-bar banner is read.
+	tasksLabel := "Tasks"
+	if trashMode {
+		tasksLabel = "Tasks · Trash"
+	}
+	leftTabs := renderTabs([]string{tasksLabel, "Definition", "Settings"}, leftTab)
 
 	// Right tabs
 	rightTabs := renderTabs([]string{"Chat", "Logs"}, rightTab)

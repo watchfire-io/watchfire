@@ -46,6 +46,8 @@ var helpSections = []helpSection{
 			{"i", "Project insights"},
 			{"/", "Search tasks"},
 			{"x", "Delete task (soft)"},
+			{"D", "toggle trash view"},
+			{"u", "Restore (trash mode)"},
 		},
 	},
 	{

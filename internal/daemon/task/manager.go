@@ -3,6 +3,7 @@ package task
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"time"
 
@@ -273,6 +274,46 @@ func (m *Manager) BulkUpdateStatus(projectPath string, taskNumbers []int, newSta
 		return updated[i].TaskNumber > updated[j].TaskNumber
 	})
 	return updated, nil
+}
+
+// PermanentDelete hard-deletes a soft-deleted task: removes the task YAML and
+// any sibling `<n>.metrics.yaml`. Refuses if the task isn't soft-deleted, or
+// if branchMerged returns false for the task's `watchfire/<n>` branch — the
+// caller wires branchMerged so the manager package stays free of git deps.
+// branchMerged may be nil when the caller has already verified the branch is
+// merged (or doesn't care, e.g. tests).
+func (m *Manager) PermanentDelete(projectPath string, taskNumber int, branchMerged func(int) (bool, error)) error {
+	t, err := config.LoadTask(projectPath, taskNumber)
+	if err != nil {
+		return err
+	}
+	if t == nil {
+		return fmt.Errorf("task not found: %d", taskNumber)
+	}
+	if !t.IsDeleted() {
+		return fmt.Errorf("task %d is not soft-deleted; use DeleteTask first", taskNumber)
+	}
+	if branchMerged != nil {
+		merged, err := branchMerged(taskNumber)
+		if err != nil {
+			return fmt.Errorf("branch check: %w", err)
+		}
+		if !merged {
+			return fmt.Errorf("task %d branch is unmerged; merge or delete it first", taskNumber)
+		}
+	}
+
+	if err := config.DeleteTaskFile(projectPath, taskNumber); err != nil {
+		return err
+	}
+	// Best-effort sibling cleanup — a missing metrics file is fine.
+	metricsPath := config.MetricsFile(projectPath, taskNumber)
+	if config.FileExists(metricsPath) {
+		if err := os.Remove(metricsPath); err != nil {
+			return fmt.Errorf("remove metrics: %w", err)
+		}
+	}
+	return nil
 }
 
 // EmptyTrash permanently deletes all soft-deleted tasks.

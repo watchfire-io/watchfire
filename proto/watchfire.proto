@@ -434,6 +434,7 @@ service TaskService {
   rpc UpdateTask(UpdateTaskRequest) returns (Task);
   rpc DeleteTask(TaskId) returns (Task);
   rpc RestoreTask(TaskId) returns (Task);
+  rpc PermanentDeleteTask(TaskId) returns (google.protobuf.Empty);
   rpc EmptyTrash(ProjectId) returns (google.protobuf.Empty);
   rpc BulkUpdateStatus(BulkUpdateStatusRequest) returns (TaskList);
   rpc BulkDelete(BulkDeleteRequest) returns (TaskList);

@@ -286,7 +286,7 @@ func (m Model) View() string {
 	layout := computeLayout(m.width, m.height, m.splitRatio)
 
 	// Header
-	header := renderHeader(m.project, m.leftTab, m.rightTab, m.agentStatus, m.gitInfo, m.width, m.textSelectMode)
+	header := renderHeader(m.project, m.leftTab, m.rightTab, m.agentStatus, m.gitInfo, m.width, m.textSelectMode, m.taskList != nil && m.taskList.TrashMode())
 
 	// Left panel content
 	leftContent := m.renderLeftPanel(layout.leftWidth - 2)

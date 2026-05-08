@@ -93,6 +93,14 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 		cmds = append(cmds, loadTasksCmd(m.conn, m.projectID))
 		return true, tea.Batch(cmds...)
 
+	case TaskRestoredMsg:
+		cmds = append(cmds, loadTasksCmd(m.conn, m.projectID))
+		return true, tea.Batch(cmds...)
+
+	case TaskPermanentDeletedMsg:
+		cmds = append(cmds, loadTasksCmd(m.conn, m.projectID))
+		return true, tea.Batch(cmds...)
+
 	// ── Agent status ───────────────────────────────────────────────
 	case AgentStatusMsg:
 		return true, m.handleAgentStatus(msg)
