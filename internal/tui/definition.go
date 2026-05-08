@@ -1,13 +1,15 @@
 package tui
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+
+	"github.com/watchfire-io/watchfire/internal/editor"
 )
 
 // DefinitionView displays the project definition in a read-only viewport.
@@ -67,50 +69,45 @@ func (d *DefinitionView) View() string {
 	return d.viewport.View()
 }
 
-// launchEditorCmd returns a tea.Cmd that suspends bubbletea,
-// opens the definition in $EDITOR, and returns the edited content.
+// launchEditorCmd suspends the Bubble Tea render loop, opens the
+// project definition in the user's external editor (precedence
+// $VISUAL → $EDITOR → vim → vi via editor.Find), and returns an
+// EditorFinishedMsg on exit. The editor inherits the controlling
+// terminal via tea.ExecProcess; Bubble Tea reattaches stdin/stdout
+// when the child exits and dispatches the message into Update so
+// msghandler.go can decide whether to fire UpdateProject.
+//
+// Concurrent-edit handling: last-write-wins. If the daemon updates
+// project.yaml from another client (e.g. `watchfire define` or a
+// second TUI) while the editor is open, the in-flight save here
+// will clobber that edit. v6.x ships this limitation explicitly;
+// preconditioned UpdateProject (UpdatedAt-based) is deferred until
+// the proto schema gains a precondition field.
 func launchEditorCmd(content string) tea.Cmd {
-	editor := findEditorPath()
-	if editor == "" {
+	bin := editor.Find()
+	if bin == "" {
 		return func() tea.Msg {
-			return EditorFinishedMsg{Err: os.ErrNotExist}
+			return EditorFinishedMsg{Err: fmt.Errorf("no editor found — set $VISUAL or $EDITOR")}
 		}
 	}
 
-	// Create temp file
-	tmpFile := filepath.Join(os.TempDir(), "watchfire-definition.md")
-	if err := os.WriteFile(tmpFile, []byte(content), 0o600); err != nil {
+	tmpFile, err := editor.WriteTempFile("definition.md", content)
+	if err != nil {
 		return func() tea.Msg {
 			return EditorFinishedMsg{Err: err}
 		}
 	}
 
-	c := exec.Command(editor, tmpFile) //nolint:noctx // tea.ExecProcess requires *exec.Cmd, not CommandContext
-	return tea.ExecProcess(c, func(err error) tea.Msg {
-		if err != nil {
-			return EditorFinishedMsg{Err: err}
+	c := exec.Command(bin, tmpFile) //nolint:noctx // tea.ExecProcess requires *exec.Cmd, not CommandContext
+	return tea.ExecProcess(c, func(execErr error) tea.Msg {
+		if execErr != nil {
+			_ = os.Remove(tmpFile)
+			return EditorFinishedMsg{Err: execErr}
 		}
-		edited, readErr := os.ReadFile(tmpFile)
-		_ = os.Remove(tmpFile)
+		edited, readErr := editor.ReadTempFile(tmpFile)
 		if readErr != nil {
 			return EditorFinishedMsg{Err: readErr}
 		}
-		return EditorFinishedMsg{Content: string(edited)}
+		return EditorFinishedMsg{Content: edited}
 	})
-}
-
-// findEditorPath locates the user's preferred editor.
-func findEditorPath() string {
-	if editor := os.Getenv("EDITOR"); editor != "" {
-		return editor
-	}
-	if editor := os.Getenv("VISUAL"); editor != "" {
-		return editor
-	}
-	for _, name := range []string{"vim", "vi", "nano"} {
-		if p, err := exec.LookPath(name); err == nil {
-			return p
-		}
-	}
-	return ""
 }
