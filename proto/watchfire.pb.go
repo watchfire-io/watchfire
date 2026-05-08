@@ -2931,14 +2931,15 @@ func (x *SubscribeAgentIssuesRequest) GetProjectId() string {
 }
 
 type Branch struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Name          string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"` // e.g. "watchfire/0001"
-	ProjectId     string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	TaskNumber    int32                  `protobuf:"varint,3,opt,name=task_number,json=taskNumber,proto3" json:"task_number,omitempty"`      // 0 if not associated with a task
-	Status        string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`                                 // "merged" | "unmerged" | "orphaned"
-	WorktreePath  string                 `protobuf:"bytes,5,opt,name=worktree_path,json=worktreePath,proto3" json:"worktree_path,omitempty"` // Empty if worktree removed
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState `protogen:"open.v1"`
+	Name            string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"` // e.g. "watchfire/0001"
+	ProjectId       string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	TaskNumber      int32                  `protobuf:"varint,3,opt,name=task_number,json=taskNumber,proto3" json:"task_number,omitempty"`                // 0 if not associated with a task
+	Status          string                 `protobuf:"bytes,4,opt,name=status,proto3" json:"status,omitempty"`                                           // "merged" | "unmerged" | "orphaned"
+	WorktreePath    string                 `protobuf:"bytes,5,opt,name=worktree_path,json=worktreePath,proto3" json:"worktree_path,omitempty"`           // Empty if worktree removed
+	CommitTimestamp int64                  `protobuf:"varint,6,opt,name=commit_timestamp,json=commitTimestamp,proto3" json:"commit_timestamp,omitempty"` // Unix seconds — branch tip commit time (0 if unknown)
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *Branch) Reset() {
@@ -3006,6 +3007,13 @@ func (x *Branch) GetWorktreePath() string {
 	return ""
 }
 
+func (x *Branch) GetCommitTimestamp() int64 {
+	if x != nil {
+		return x.CommitTimestamp
+	}
+	return 0
+}
+
 type BranchList struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Branches      []*Branch              `protobuf:"bytes,1,rep,name=branches,proto3" json:"branches,omitempty"`
@@ -3055,6 +3063,7 @@ type BranchId struct {
 	Meta          *RequestMeta           `protobuf:"bytes,1,opt,name=meta,proto3" json:"meta,omitempty"`
 	ProjectId     string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
 	BranchName    string                 `protobuf:"bytes,3,opt,name=branch_name,json=branchName,proto3" json:"branch_name,omitempty"`
+	Force         bool                   `protobuf:"varint,4,opt,name=force,proto3" json:"force,omitempty"` // DeleteBranch only: -D vs -d
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3108,6 +3117,13 @@ func (x *BranchId) GetBranchName() string {
 		return x.BranchName
 	}
 	return ""
+}
+
+func (x *BranchId) GetForce() bool {
+	if x != nil {
+		return x.Force
+	}
+	return false
 }
 
 type MergeBranchRequest struct {
@@ -8056,7 +8072,7 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\x1bSubscribeAgentIssuesRequest\x12*\n" +
 	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x02 \x01(\tR\tprojectId\"\x99\x01\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\"\xc4\x01\n" +
 	"\x06Branch\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x1d\n" +
 	"\n" +
@@ -8064,16 +8080,18 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\vtask_number\x18\x03 \x01(\x05R\n" +
 	"taskNumber\x12\x16\n" +
 	"\x06status\x18\x04 \x01(\tR\x06status\x12#\n" +
-	"\rworktree_path\x18\x05 \x01(\tR\fworktreePath\";\n" +
+	"\rworktree_path\x18\x05 \x01(\tR\fworktreePath\x12)\n" +
+	"\x10commit_timestamp\x18\x06 \x01(\x03R\x0fcommitTimestamp\";\n" +
 	"\n" +
 	"BranchList\x12-\n" +
-	"\bbranches\x18\x01 \x03(\v2\x11.watchfire.BranchR\bbranches\"v\n" +
+	"\bbranches\x18\x01 \x03(\v2\x11.watchfire.BranchR\bbranches\"\x8c\x01\n" +
 	"\bBranchId\x12*\n" +
 	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x1f\n" +
 	"\vbranch_name\x18\x03 \x01(\tR\n" +
-	"branchName\"\xae\x01\n" +
+	"branchName\x12\x14\n" +
+	"\x05force\x18\x04 \x01(\bR\x05force\"\xae\x01\n" +
 	"\x12MergeBranchRequest\x12*\n" +
 	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\x12\x1d\n" +
 	"\n" +

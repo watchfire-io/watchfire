@@ -83,6 +83,10 @@ type Model struct {
 	// completed task; the gRPC fetch populates Data on completion.
 	taskDiff taskDiffState
 
+	// v6 Branches overlay state. Opened with `Ctrl+B` — fetches
+	// `BranchService.ListBranches` and renders a row per branch.
+	branches BranchesState
+
 	// Program reference for goroutine Send()
 	program *programRef
 
@@ -355,6 +359,13 @@ func (m Model) View() string {
 				m.integrationsForm.SetWidth(width)
 				overlayContent = overlayStyle.Width(width).Render(m.integrationsForm.View())
 			}
+		case overlayBranches:
+			width := m.width - 6
+			projectName := ""
+			if m.project != nil {
+				projectName = m.project.Name
+			}
+			overlayContent = renderBranchesOverlay(m.branches, projectName, width, time.Now())
 		}
 		if overlayContent != "" {
 			view = renderOverlay(view, overlayContent, m.width, m.height)

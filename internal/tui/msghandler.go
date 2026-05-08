@@ -273,6 +273,29 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 		}
 		return true, nil
 
+	// ── v6 Branches overlay ────────────────────────────────────────
+	case BranchesLoadedMsg:
+		if msg.Err != nil {
+			m.branches.Loading = false
+			m.branches.Err = msg.Err
+			return true, nil
+		}
+		m.branches.SetBranches(msg.Branches)
+		return true, nil
+
+	case BranchActionDoneMsg:
+		m.branches.PendingBranch = ""
+		m.branches.PendingAction = ""
+		if msg.Err != nil {
+			m.branches.Err = fmt.Errorf("%s %s: %w", msg.Action, msg.Branch, msg.Err)
+		}
+		// Refetch the list so the row reflects post-action state
+		// (status flip / row removed) regardless of success.
+		if m.conn != nil {
+			cmds = append(cmds, listBranchesCmd(m.conn, m.projectID))
+		}
+		return true, tea.Batch(cmds...)
+
 	// ── v8.0 Echo inbound status ────────────────────────────────────
 	case InboundStatusLoadedMsg:
 		if m.integrationsForm != nil {

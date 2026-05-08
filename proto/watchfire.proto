@@ -303,6 +303,7 @@ message Branch {
   int32 task_number = 3;                          // 0 if not associated with a task
   string status = 4;                              // "merged" | "unmerged" | "orphaned"
   string worktree_path = 5;                       // Empty if worktree removed
+  int64 commit_timestamp = 6;                     // Unix seconds — branch tip commit time (0 if unknown)
 }
 
 message BranchList {
@@ -313,6 +314,7 @@ message BranchId {
   RequestMeta meta = 1;
   string project_id = 2;
   string branch_name = 3;
+  bool force = 4;                                 // DeleteBranch only: -D vs -d
 }
 
 message MergeBranchRequest {

@@ -11,6 +11,7 @@ type GlobalKeys struct {
 	Export         key.Binding
 	FleetInsights  key.Binding
 	Integrations   key.Binding
+	Branches       key.Binding
 	TextSelect     key.Binding
 }
 
@@ -42,6 +43,10 @@ var globalKeys = GlobalKeys{
 	Integrations: key.NewBinding(
 		key.WithKeys("ctrl+i"),
 		key.WithHelp("Ctrl+i", "integrations"),
+	),
+	Branches: key.NewBinding(
+		key.WithKeys("ctrl+b"),
+		key.WithHelp("Ctrl+b", "branches"),
 	),
 	TextSelect: key.NewBinding(
 		key.WithKeys("ctrl+t"),
