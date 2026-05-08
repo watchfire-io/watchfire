@@ -25,9 +25,9 @@ var helpSections = []helpSection{
 			{"Ctrl+g", "Global settings"},
 			{"Ctrl+e", "Export report"},
 			{"Ctrl+f", "Fleet insights"},
+			{"Ctrl+t", "Toggle text-select mode (drops mouse capture for drag-select)"},
 			{"Tab", "Switch panel focus"},
 			{"1/2/3", "Switch left panel tab"},
-			{"Shift+drag", "Select text (copy)"},
 		},
 	},
 	{
@@ -134,6 +134,13 @@ func renderHelp(width int) string {
 			sections = append(sections, "  "+keyCol+descCol)
 		}
 	}
+
+	siblingNote := lipgloss.NewStyle().Foreground(colorDim).Italic(true).Render(
+		"Tip: hold Option (macOS) / Shift (Linux) while dragging — most\n" +
+			"terminals bypass mouse capture for that chord, so you can\n" +
+			"drag-select without leaving interactive mode.",
+	)
+	sections = append(sections, "", siblingNote)
 
 	sections = append(sections, "", lipgloss.NewStyle().Foreground(colorDim).Render("Press Esc to close"))
 

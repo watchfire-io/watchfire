@@ -17,6 +17,13 @@ const (
 )
 
 func renderStatusBar(m *Model, width int) string {
+	// Text-select mode supersedes every other status-bar surface — when
+	// the program has dropped mouse capture, the loud banner is the
+	// user's only reminder of how to get back into interactive mode.
+	if m.textSelectMode {
+		return renderTextSelectBar(width)
+	}
+
 	// Handle confirm mode
 	if m.confirmMode == confirmDelete {
 		return renderConfirmBar(
@@ -252,4 +259,17 @@ func renderStatusMessageBar(msg string, width int) string {
 	return statusBarStyle.
 		Width(width).
 		Render(" " + lipgloss.NewStyle().Foreground(colorGreen).Render("✓ "+msg))
+}
+
+// renderTextSelectBar paints a high-contrast banner across the full
+// status bar while the program is in text-select mode. The cyan
+// background flips the bar's normal palette so the banner reads at a
+// glance — the user needs to know how to get mouse capture back.
+func renderTextSelectBar(width int) string {
+	return lipgloss.NewStyle().
+		Background(colorCyan).
+		Foreground(lipgloss.AdaptiveColor{Light: "0", Dark: "0"}).
+		Bold(true).
+		Width(width).
+		Render(" ▎TEXT SELECT — drag to select · Ctrl+T to resume mouse")
 }

@@ -108,6 +108,12 @@ type Model struct {
 
 	// Reconnection state
 	reconnectAttempts int
+
+	// textSelectMode indicates whether the program has surrendered mouse
+	// capture so the host terminal can handle native click-and-drag text
+	// selection. Toggled with Ctrl+T at the global key dispatch level so
+	// it works regardless of focused panel or active overlay.
+	textSelectMode bool
 }
 
 // NewModel creates the initial TUI model.
@@ -280,7 +286,7 @@ func (m Model) View() string {
 	layout := computeLayout(m.width, m.height, m.splitRatio)
 
 	// Header
-	header := renderHeader(m.project, m.leftTab, m.rightTab, m.agentStatus, m.gitInfo, m.width)
+	header := renderHeader(m.project, m.leftTab, m.rightTab, m.agentStatus, m.gitInfo, m.width, m.textSelectMode)
 
 	// Left panel content
 	leftContent := m.renderLeftPanel(layout.leftWidth - 2)

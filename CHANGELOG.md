@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **TUI text-select mode — `Ctrl+T` toggles mouse capture (#0095).** New global keybinding registered as `globalKeys.TextSelect` in `internal/tui/keys.go`, dispatched at the top of `handleKey` in `internal/tui/keyhandler.go` ahead of confirm-mode, overlay, and panel routing — so the toggle works inside the Help / Branches / Insights / Integrations overlays and never leaks into `handleTerminalKey`'s stdin forwarding to the agent. New `Model.textSelectMode bool` flag drives a single `toggleTextSelectMode` method that returns `tea.DisableMouse` on entry (terminal reclaims the mouse, host-native click-and-drag selection works) and `tea.EnableMouseCellMotion` on exit (panel-clicks, scroll wheel, divider drag resume). Round-trips cleanly — clicking a panel after re-enable routes focus correctly. Surfaced in two places so the mode is impossible to miss: `renderStatusBar` swaps the normal hint row for a high-contrast `▎TEXT SELECT — drag to select · Ctrl+T to resume mouse` banner, and `renderHeader` appends a `text-select` chip right after the project name. Help overlay (`Ctrl+H`) gains a `Ctrl+t` row plus a sibling note documenting the macOS Option-drag / Linux Shift-drag terminal fallback for users who don't want to leave interactive mode. Unit tests in `internal/tui/textselect_test.go` cover the flag flip + command output for both directions and the full round trip.
+
 ## [6.0.0] Phoenix
 
 Phoenix lands the `project.yaml` data-loss fix, the flock-based singleton-daemon hardening, and Cursor Agent CLI as a sixth first-class backend. The data-loss fix closes a non-atomic-write race in `config.SaveYAML` that let `SyncNextTaskNumber` overwrite `project.yaml` (and the global `~/.watchfire/projects.yaml`) with a zero-valued struct. The singleton fix closes a TOCTOU race in `runDaemon` that let two `watchfired` processes bind separate dynamic ports and spawn two menu-bar tray icons. The Cursor backend plugs into the existing `Backend` registry with no framework changes.
