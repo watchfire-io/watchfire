@@ -56,7 +56,9 @@ var helpSections = []helpSection{
 		title: "Terminal",
 		keys: []helpKey{
 			{"(type)", "Input goes to agent"},
-			{"PgUp/PgDn", "Scroll terminal"},
+			{"PgUp/PgDn", "Scroll terminal (page)"},
+			{"Shift+↑/↓", "Scroll terminal (line)"},
+			{"Shift+PgUp/PgDn", "Scroll terminal (page)"},
 			{"R", "Resume agent (on issue)"},
 		},
 	},
