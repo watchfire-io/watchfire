@@ -501,6 +501,26 @@ func (m *Model) handleTerminalKey(msg tea.KeyMsg) tea.Cmd {
 		}
 	}
 
+	// Shift-modified scroll keys are not standard agent input, so the
+	// terminal swallows them. MacBooks without a numpad need fn+↑/↓
+	// for PgUp/PgDn, which most users don't reach for — Shift+arrows
+	// give a cheap line-scroll fallback. Caught before forward-to-agent
+	// so the agent never sees them.
+	switch msg.String() {
+	case "shift+up":
+		m.terminal.ScrollUp(1)
+		return nil
+	case "shift+down":
+		m.terminal.ScrollDown(1)
+		return nil
+	case "shift+pgup":
+		m.terminal.PageUp()
+		return nil
+	case "shift+pgdown":
+		m.terminal.PageDown()
+		return nil
+	}
+
 	// Special keys
 	switch msg.Type {
 	case tea.KeyPgUp:
