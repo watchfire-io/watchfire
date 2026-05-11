@@ -2877,9 +2877,16 @@ func (x *ResizeRequest) GetCols() int32 {
 }
 
 type SubscribeRawOutputRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Meta          *RequestMeta           `protobuf:"bytes,1,opt,name=meta,proto3" json:"meta,omitempty"`
-	ProjectId     string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Meta      *RequestMeta           `protobuf:"bytes,1,opt,name=meta,proto3" json:"meta,omitempty"`
+	ProjectId string                 `protobuf:"bytes,2,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	// bytes_received (#0100) — count of raw PTY bytes the client has already
+	// written to its local terminal. The daemon slices the catch-up snapshot
+	// so only bytes beyond this offset are sent. 0 = send full buffer (initial
+	// subscribe). Used to preserve scroll position on reconnect: without it,
+	// every re-subscribe replays the full session from byte 0 and the
+	// viewport snaps to the start.
+	BytesReceived int64 `protobuf:"varint,3,opt,name=bytes_received,json=bytesReceived,proto3" json:"bytes_received,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2926,6 +2933,13 @@ func (x *SubscribeRawOutputRequest) GetProjectId() string {
 		return x.ProjectId
 	}
 	return ""
+}
+
+func (x *SubscribeRawOutputRequest) GetBytesReceived() int64 {
+	if x != nil {
+		return x.BytesReceived
+	}
+	return 0
 }
 
 type RawOutputChunk struct {
@@ -8376,11 +8390,12 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\n" +
 	"project_id\x18\x02 \x01(\tR\tprojectId\x12\x12\n" +
 	"\x04rows\x18\x03 \x01(\x05R\x04rows\x12\x12\n" +
-	"\x04cols\x18\x04 \x01(\x05R\x04cols\"f\n" +
+	"\x04cols\x18\x04 \x01(\x05R\x04cols\"\x8d\x01\n" +
 	"\x19SubscribeRawOutputRequest\x12*\n" +
 	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\x12\x1d\n" +
 	"\n" +
-	"project_id\x18\x02 \x01(\tR\tprojectId\"C\n" +
+	"project_id\x18\x02 \x01(\tR\tprojectId\x12%\n" +
+	"\x0ebytes_received\x18\x03 \x01(\x03R\rbytesReceived\"C\n" +
 	"\x0eRawOutputChunk\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +

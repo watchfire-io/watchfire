@@ -308,7 +308,10 @@ func (s *agentService) SubscribeRawOutput(req *pb.SubscribeRawOutputRequest, str
 	// GetRawBuffer" pattern raced broadcastRaw — bytes broadcast in
 	// between would arrive on both the snapshot and the live channel,
 	// leaving a client-side vt10x replaying double-applied state.
-	snapshot, ch := running.Process.SubscribeRawWithSnapshot(subID)
+	//
+	// bytes_received (#0100) is the cursor — only bytes past this offset
+	// are sent in the catch-up snapshot. 0 = send full buffer.
+	snapshot, ch := running.Process.SubscribeRawFrom(subID, req.BytesReceived)
 	defer running.Process.UnsubscribeRaw(subID)
 
 	if len(snapshot) > 0 {

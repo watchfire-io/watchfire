@@ -301,6 +301,13 @@ message ResizeRequest {
 message SubscribeRawOutputRequest {
   RequestMeta meta = 1;
   string project_id = 2;
+  // bytes_received (#0100) — count of raw PTY bytes the client has already
+  // written to its local terminal. The daemon slices the catch-up snapshot
+  // so only bytes beyond this offset are sent. 0 = send full buffer (initial
+  // subscribe). Used to preserve scroll position on reconnect: without it,
+  // every re-subscribe replays the full session from byte 0 and the
+  // viewport snaps to the start.
+  int64 bytes_received = 3;
 }
 
 message RawOutputChunk {
