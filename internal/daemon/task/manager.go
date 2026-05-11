@@ -73,11 +73,16 @@ func (m *Manager) ListTasks(projectPath string, opts ListOptions) ([]*models.Tas
 		tasks = filtered
 	}
 
-	// Canonical order: newest first (descending by task_number). Applied here
-	// at the task manager so every caller — TUI, GUI, any gRPC consumer — sees
-	// the same ordering without re-sorting.
+	// Canonical order: oldest first by (position ASC, task_number ASC).
+	// Position is the manual-override knob; task_number is the implicit
+	// creation-order tiebreaker. Applied here at the task manager so every
+	// caller — TUI, GUI, any gRPC consumer, plus the start-all and wildfire
+	// next-task pickers that take tasks[0] — sees the same ordering.
 	sort.Slice(tasks, func(i, j int) bool {
-		return tasks[i].TaskNumber > tasks[j].TaskNumber
+		if tasks[i].Position != tasks[j].Position {
+			return tasks[i].Position < tasks[j].Position
+		}
+		return tasks[i].TaskNumber < tasks[j].TaskNumber
 	})
 
 	return tasks, nil
@@ -123,11 +128,25 @@ func (m *Manager) CreateTask(projectPath string, opts CreateOptions) (*models.Ta
 		task.Status = models.TaskStatus(opts.Status)
 	}
 
-	// Set position
+	// Set position. Default: append to the bottom of the work queue
+	// (max(active.position)+1, or 1 if there are no active tasks). Using
+	// taskNumber as the default broke manual reorders — a new task could
+	// jump ahead of tasks the user just dragged down. An explicit caller-
+	// provided opts.Position still wins.
 	if opts.Position != nil {
 		task.Position = *opts.Position
 	} else {
-		task.Position = taskNumber
+		active, err := config.LoadActiveTasks(projectPath)
+		if err != nil {
+			return nil, err
+		}
+		maxPos := 0
+		for _, t := range active {
+			if t.Position > maxPos {
+				maxPos = t.Position
+			}
+		}
+		task.Position = maxPos + 1
 	}
 
 	// Save task

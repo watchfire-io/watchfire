@@ -35,7 +35,8 @@ type Task struct {
 	DeletedAt          *time.Time `yaml:"deleted_at,omitempty"` // Soft delete timestamp
 }
 
-// NewTask creates a new task with default values.
+// NewTask creates a new task with default values. Position is left at the
+// zero value — the task manager owns work-queue ordering and fills it in.
 func NewTask(id string, taskNumber int, title, prompt string) *Task {
 	now := time.Now().UTC()
 	return &Task{
@@ -45,7 +46,6 @@ func NewTask(id string, taskNumber int, title, prompt string) *Task {
 		Title:         title,
 		Prompt:        prompt,
 		Status:        TaskStatusDraft,
-		Position:      taskNumber, // Default position matches task number
 		AgentSessions: 0,
 		CreatedAt:     now,
 		UpdatedAt:     now,

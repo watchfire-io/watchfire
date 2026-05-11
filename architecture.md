@@ -787,7 +787,6 @@ Step-by-step sequence when `watchfire` is invoked with no arguments:
 
 **Excluded (future):**
 - Inline definition editor (always uses `$EDITOR` in v1)
-- Task drag-to-reorder
 - Trash tab (soft-deleted tasks managed via CLI commands)
 - Branch management tab
 - Log deletion from TUI
@@ -803,6 +802,8 @@ When multiple tasks are in `ready` status, agent picks next by:
 1. Sort by `position` (ascending)
 2. If equal, sort by `task_number` (ascending)
 3. Pick first
+
+New tasks are appended to the bottom of the queue (`position = max(position)+1`). Manual reorder via `ReorderTasks` rewrites positions densely 1..N.
 
 ### Wildfire Mode
 
