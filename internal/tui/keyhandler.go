@@ -252,6 +252,10 @@ func (m *Model) handleTaskListKey(msg tea.KeyMsg) tea.Cmd {
 	}
 
 	switch {
+	case key.Matches(msg, taskListKeys.MoveUp):
+		return m.moveTaskUp()
+	case key.Matches(msg, taskListKeys.MoveDown):
+		return m.moveTaskDown()
 	case key.Matches(msg, taskListKeys.Up):
 		m.taskList.MoveUp()
 	case key.Matches(msg, taskListKeys.Down):
