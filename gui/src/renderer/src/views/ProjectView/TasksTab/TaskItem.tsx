@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
-import { Play, MoreHorizontal, ArrowUp, ArrowDown, Trash2, CheckCircle } from 'lucide-react'
+import { Play, MoreHorizontal, ArrowUp, ArrowDown, Trash2, CheckCircle, GripVertical } from 'lucide-react'
+import { useSortable } from '@dnd-kit/sortable'
+import { CSS } from '@dnd-kit/utilities'
 import type { Task } from '../../../generated/watchfire_pb'
 import { useTasksStore } from '../../../stores/tasks-store'
 import { useAgentStore } from '../../../stores/agent-store'
@@ -14,9 +16,10 @@ import { TaskModal } from './TaskModal'
 interface Props {
   task: Task
   projectId: string
+  sortable?: boolean
 }
 
-export function TaskItem({ task, projectId }: Props) {
+export function TaskItem({ task, projectId, sortable }: Props) {
   const updateTask = useTasksStore((s) => s.updateTask)
   const deleteTask = useTasksStore((s) => s.deleteTask)
   const startAgent = useAgentStore((s) => s.startAgent)
@@ -42,6 +45,26 @@ export function TaskItem({ task, projectId }: Props) {
     agents.find((a) => a.name === override)?.displayName || override
 
   const isAgentOnTask = agentStatus?.isRunning && agentStatus?.taskNumber === task.taskNumber
+
+  // `useSortable` is hooked unconditionally to keep the hook order stable.
+  // When `sortable` is false (e.g. Done/Failed groups) we ignore its outputs
+  // and render the row without any drag affordance.
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging
+  } = useSortable({ id: String(task.taskNumber), disabled: !sortable })
+
+  const sortableStyle = sortable
+    ? {
+        transform: CSS.Transform.toString(transform),
+        transition,
+        opacity: isDragging ? 0.5 : 1
+      }
+    : undefined
 
   const handleStatusChange = async (status: string) => {
     try {
@@ -72,13 +95,27 @@ export function TaskItem({ task, projectId }: Props) {
   return (
     <>
       <div
+        ref={sortable ? setNodeRef : undefined}
+        style={sortableStyle}
         className={cn(
-          'group flex items-center gap-3 px-3 py-2 rounded-[var(--wf-radius-md)] transition-colors cursor-pointer',
+          'group flex items-center gap-2 px-3 py-2 rounded-[var(--wf-radius-md)] transition-colors cursor-pointer',
           'hover:bg-[var(--wf-bg-elevated)]',
           isAgentOnTask && 'bg-fire-500/5 border border-fire-500/20'
         )}
         onClick={() => setEditOpen(true)}
       >
+        {sortable && (
+          <button
+            {...attributes}
+            {...listeners}
+            onClick={(e) => e.stopPropagation()}
+            title="Drag to reorder"
+            aria-label="Drag to reorder"
+            className="shrink-0 p-0.5 -ml-1 text-[var(--wf-text-muted)] hover:text-[var(--wf-text-primary)] opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing touch-none"
+          >
+            <GripVertical size={14} />
+          </button>
+        )}
         <span className="text-xs font-mono text-[var(--wf-text-muted)] w-12 shrink-0">
           {formatTaskNumber(task.taskNumber)}
         </span>

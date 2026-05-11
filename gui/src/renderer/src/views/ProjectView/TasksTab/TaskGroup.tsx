@@ -1,5 +1,18 @@
 import { useState } from 'react'
 import { ChevronDown, ChevronRight, ArrowRightCircle } from 'lucide-react'
+import {
+  DndContext,
+  closestCenter,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  arrayMove,
+  verticalListSortingStrategy
+} from '@dnd-kit/sortable'
 import type { Task } from '../../../generated/watchfire_pb'
 import { useTasksStore } from '../../../stores/tasks-store'
 import { useToast } from '../../../components/ui/Toast'
@@ -18,13 +31,62 @@ interface Props {
   collapsible?: boolean
   defaultCollapsed?: boolean
   moveTargets?: MoveTarget[]
+  sortable?: boolean
+  // Called with the new flat order of all task numbers across the project
+  // (this group's new order followed by everything else in current order).
+  // Built locally so the store stays oblivious to grouping.
+  onReorder?: (taskNumbers: number[]) => Promise<void>
+  // All active+inactive tasks in the project. Used only when `sortable` is on
+  // to construct the flat reorder payload — the dragged group goes first,
+  // everything else preserves its current relative order.
+  allTasks?: Task[]
 }
 
-export function TaskGroup({ title, tasks, projectId, color, collapsible, defaultCollapsed, moveTargets }: Props) {
+export function TaskGroup({
+  title,
+  tasks,
+  projectId,
+  color,
+  collapsible,
+  defaultCollapsed,
+  moveTargets,
+  sortable,
+  onReorder,
+  allTasks
+}: Props) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed ?? false)
   const [menuOpen, setMenuOpen] = useState(false)
   const bulkUpdateStatus = useTasksStore((s) => s.bulkUpdateStatus)
   const { toast } = useToast()
+
+  // Activation distance keeps a single click on a row from triggering a drag —
+  // only an actual pointer movement past the threshold starts sorting.
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } })
+  )
+
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+    const ids = tasks.map((t) => String(t.taskNumber))
+    const oldIndex = ids.indexOf(String(active.id))
+    const newIndex = ids.indexOf(String(over.id))
+    // Cross-group drags (or vanished rows mid-drag) fall through this guard.
+    if (oldIndex === -1 || newIndex === -1) return
+    const newGroupOrder = arrayMove(tasks, oldIndex, newIndex).map(
+      (t) => t.taskNumber
+    )
+    const groupSet = new Set(newGroupOrder)
+    const everythingElse = (allTasks ?? tasks)
+      .filter((t) => !groupSet.has(t.taskNumber))
+      .map((t) => t.taskNumber)
+    const flat = [...newGroupOrder, ...everythingElse]
+    try {
+      await onReorder?.(flat)
+    } catch (err) {
+      toast(`Reorder failed: ${err}`, 'error')
+    }
+  }
 
   const handleMoveAll = async (status: string, label: string) => {
     setMenuOpen(false)
@@ -84,9 +146,31 @@ export function TaskGroup({ title, tasks, projectId, color, collapsible, default
       </div>
       {!collapsed && (
         <div className="space-y-1">
-          {tasks.map((task) => (
-            <TaskItem key={task.taskNumber} task={task} projectId={projectId} />
-          ))}
+          {sortable ? (
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <SortableContext
+                items={tasks.map((t) => String(t.taskNumber))}
+                strategy={verticalListSortingStrategy}
+              >
+                {tasks.map((task) => (
+                  <TaskItem
+                    key={task.taskNumber}
+                    task={task}
+                    projectId={projectId}
+                    sortable
+                  />
+                ))}
+              </SortableContext>
+            </DndContext>
+          ) : (
+            tasks.map((task) => (
+              <TaskItem key={task.taskNumber} task={task} projectId={projectId} />
+            ))
+          )}
         </div>
       )}
     </div>

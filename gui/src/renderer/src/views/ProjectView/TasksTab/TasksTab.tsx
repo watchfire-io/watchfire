@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { Plus, Search } from 'lucide-react'
 import { useTasksStore } from '../../../stores/tasks-store'
 import { Button } from '../../../components/ui/Button'
@@ -13,8 +13,14 @@ interface Props {
 
 export function TasksTab({ projectId }: Props) {
   const tasks = useTasksStore((s) => s.tasks[projectId] ?? EMPTY)
+  const reorderTasks = useTasksStore((s) => s.reorderTasks)
   const [modalOpen, setModalOpen] = useState(false)
   const [search, setSearch] = useState('')
+
+  const handleReorder = useCallback(
+    (taskNumbers: number[]) => reorderTasks(projectId, taskNumbers),
+    [reorderTasks, projectId]
+  )
 
   const activeTasks = tasks.filter((t) => !t.deletedAt)
   const filtered = search
@@ -58,6 +64,9 @@ export function TasksTab({ projectId }: Props) {
             tasks={ready}
             projectId={projectId}
             color="var(--wf-warning)"
+            sortable
+            onReorder={handleReorder}
+            allTasks={activeTasks}
             moveTargets={[
               { status: 'draft', label: 'Todo' },
               { status: 'done', label: 'Done' }
@@ -70,6 +79,9 @@ export function TasksTab({ projectId }: Props) {
             tasks={draft}
             projectId={projectId}
             color="var(--wf-text-muted)"
+            sortable
+            onReorder={handleReorder}
+            allTasks={activeTasks}
             moveTargets={[
               { status: 'ready', label: 'In Development' },
               { status: 'done', label: 'Done' }

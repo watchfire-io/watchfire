@@ -92,9 +92,25 @@ export const useTasksStore = create<TasksState>((set, get) => ({
   },
 
   reorderTasks: async (projectId, taskNumbers) => {
-    const client = getTaskClient()
-    await client.reorderTasks({ projectId, taskNumbers })
-    get().fetchTasks(projectId)
+    const previous = get().tasks[projectId] ?? []
+    // Optimistic local reorder: tasks named in taskNumbers come first in that
+    // order; any task not in the list (e.g. deleted, racing status change)
+    // keeps its current relative position at the tail.
+    const byNumber = new Map(previous.map((t) => [t.taskNumber, t]))
+    const optimistic = [
+      ...taskNumbers.map((n) => byNumber.get(n)).filter((t): t is Task => !!t),
+      ...previous.filter((t) => !taskNumbers.includes(t.taskNumber))
+    ]
+    set((s) => ({ tasks: { ...s.tasks, [projectId]: optimistic } }))
+
+    try {
+      const client = getTaskClient()
+      const resp = await client.reorderTasks({ projectId, taskNumbers })
+      set((s) => ({ tasks: { ...s.tasks, [projectId]: resp.tasks } }))
+    } catch (err) {
+      set((s) => ({ tasks: { ...s.tasks, [projectId]: previous } }))
+      throw err
+    }
   },
 
   bulkUpdateStatus: async (projectId, taskNumbers, newStatus) => {
