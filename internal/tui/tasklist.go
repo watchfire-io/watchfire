@@ -154,6 +154,22 @@ func (tl *TaskList) UpdateSearch(query string) {
 	tl.scrollOffset = 0
 }
 
+// SelectTaskByNumber moves the cursor onto the task with the given number,
+// if it exists in the currently-visible item list. Used by the optimistic
+// reorder path so the highlight follows a task across a Shift+↑/↓ swap —
+// without it, SetTasks would clamp the cursor to a fixed index and the
+// user would visually lose track of the row they were dragging.
+func (tl *TaskList) SelectTaskByNumber(num int32) {
+	items := tl.activeItems()
+	for i, item := range items {
+		if !item.isHeader && item.task != nil && item.task.TaskNumber == num {
+			tl.cursor = i
+			tl.ensureVisible()
+			return
+		}
+	}
+}
+
 // MoveUp moves the cursor up, skipping headers.
 func (tl *TaskList) MoveUp() {
 	items := tl.activeItems()

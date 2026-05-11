@@ -181,6 +181,22 @@ type OAuthStatusLoadedMsg struct {
 	Status *pb.OAuthStatus
 }
 
+// ReorderCompletedMsg carries the refreshed task list from a successful
+// ReorderTasks RPC. The dispatcher uses the response to lock in the
+// optimistic local swap and clears the in-flight flag.
+type ReorderCompletedMsg struct {
+	Tasks   []*pb.Task
+	Focused int32
+}
+
+// ReorderFailedMsg signals that the ReorderTasks RPC errored. The
+// dispatcher reverts to the pre-swap snapshot and surfaces a one-shot
+// toast via the existing error bar.
+type ReorderFailedMsg struct {
+	Err     error
+	Focused int32
+}
+
 // OAuthHelloPostedMsg carries the result of a PostOAuthHello call.
 // The TUI surfaces this as a one-shot status banner.
 type OAuthHelloPostedMsg struct {

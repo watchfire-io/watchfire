@@ -6,7 +6,37 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	pb "github.com/watchfire-io/watchfire/proto"
 )
+
+// sameActiveTaskSet reports whether the two task slices contain the same
+// active (non-deleted) task numbers, ignoring order. Used by the
+// TasksLoadedMsg handler to decide whether to honour the in-flight
+// reorder's optimistic ordering or accept the incoming list — when a
+// concurrent create/delete shifted the set, the optimistic order is
+// already stale and the server wins.
+func sameActiveTaskSet(a, b []*pb.Task) bool {
+	count := func(tasks []*pb.Task) map[int32]struct{} {
+		m := make(map[int32]struct{}, len(tasks))
+		for _, t := range tasks {
+			if t != nil && t.GetDeletedAt() == nil {
+				m[t.TaskNumber] = struct{}{}
+			}
+		}
+		return m
+	}
+	ca, cb := count(a), count(b)
+	if len(ca) != len(cb) {
+		return false
+	}
+	for n := range ca {
+		if _, ok := cb[n]; !ok {
+			return false
+		}
+	}
+	return true
+}
 
 // handleMessages processes non-key, non-mouse messages in the Update loop.
 // Returns the updated model and commands, and a bool indicating if the message was handled.
@@ -86,6 +116,15 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 
 	// ── Task data ──────────────────────────────────────────────────
 	case TasksLoadedMsg:
+		// While a Shift+↑/↓ reorder is in flight, a poll-driven refresh
+		// whose task-number set matches the optimistic order is dropped:
+		// accepting it would snap the moved row back to the server's
+		// pre-RPC slot before the RPC response lands. If the sets
+		// diverge (a task was created / deleted concurrently) the
+		// server view wins — the optimistic order is already invalid.
+		if m.inFlightReorder && sameActiveTaskSet(m.tasks, msg.Tasks) {
+			return true, nil
+		}
 		m.tasks = msg.Tasks
 		m.taskList.SetTasks(msg.Tasks)
 		m.taskList.SetAgentStatus(m.agentStatus)
@@ -318,6 +357,33 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 			m.integrationsForm.SetStatus("")
 		}
 		return true, nil
+
+	// ── Reorder (v7 Shift+↑/↓) ────────────────────────────────────
+	case ReorderCompletedMsg:
+		m.inFlightReorder = false
+		m.preReorderTasks = nil
+		m.tasks = msg.Tasks
+		m.taskList.SetTasks(msg.Tasks)
+		m.taskList.SetAgentStatus(m.agentStatus)
+		if msg.Focused != 0 {
+			m.taskList.SelectTaskByNumber(msg.Focused)
+		}
+		return true, nil
+
+	case ReorderFailedMsg:
+		m.inFlightReorder = false
+		if m.preReorderTasks != nil {
+			m.tasks = m.preReorderTasks
+			m.taskList.SetTasks(m.preReorderTasks)
+			m.taskList.SetAgentStatus(m.agentStatus)
+			if msg.Focused != 0 {
+				m.taskList.SelectTaskByNumber(msg.Focused)
+			}
+			m.preReorderTasks = nil
+		}
+		m.err = fmt.Errorf("Reorder failed — reverted")
+		cmds = append(cmds, clearErrorAfter(3*time.Second))
+		return true, tea.Batch(cmds...)
 
 	// ── Editor finished ────────────────────────────────────────────
 	case EditorFinishedMsg:

@@ -36,6 +36,8 @@ var helpSections = []helpSection{
 		title: "Task List",
 		keys: []helpKey{
 			{"j/k ↑/↓", "Navigate tasks"},
+			{"Shift+↑", "Move selected task up"},
+			{"Shift+↓", "Move selected task down"},
 			{"a", "Add new task"},
 			{"e / Enter", "Edit task"},
 			{"s", "Start agent on task"},

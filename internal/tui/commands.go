@@ -368,6 +368,26 @@ func deleteTaskCmd(conn *grpc.ClientConn, projectID string, taskNumber int32) te
 	}
 }
 
+// reorderTasksCmd dispatches TaskService.ReorderTasks with the full new
+// ordered list of active task numbers. On success the dispatcher accepts
+// the response as authoritative; on failure the dispatcher reverts the
+// optimistic local swap and surfaces a toast.
+func reorderTasksCmd(conn *grpc.ClientConn, projectID string, taskNumbers []int32, focused int32) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewTaskServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		resp, err := client.ReorderTasks(ctx, &pb.ReorderTasksRequest{
+			ProjectId:   projectID,
+			TaskNumbers: taskNumbers,
+		})
+		if err != nil {
+			return ReorderFailedMsg{Err: err, Focused: focused}
+		}
+		return ReorderCompletedMsg{Tasks: resp.Tasks, Focused: focused}
+	}
+}
+
 func updateProjectCmd(conn *grpc.ClientConn, projectID string, updates map[string]interface{}) tea.Cmd {
 	return func() tea.Msg {
 		client := pb.NewProjectServiceClient(conn)

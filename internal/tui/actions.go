@@ -4,6 +4,8 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	pb "github.com/watchfire-io/watchfire/proto"
 )
 
 // ── Task actions ─────────────────────────────────────────────────
@@ -153,6 +155,131 @@ func (m *Model) confirmDeleteLog() tea.Cmd {
 	m.confirmMode = confirmDeleteLog
 	m.confirmLogID = entry.LogId
 	return nil
+}
+
+// moveTaskUp / moveTaskDown swap the focused active task with its
+// in-bounds same-status neighbour and dispatch a TaskService.ReorderTasks
+// RPC with the full new ordering. Local state mutates optimistically so
+// the cursor stays glued to the moved row across repeated presses; on
+// RPC failure the previous order is restored from preReorderTasks and
+// the error bar shows a one-shot toast.
+func (m *Model) moveTaskUp() tea.Cmd   { return m.moveSelectedTask(-1) }
+func (m *Model) moveTaskDown() tea.Cmd { return m.moveSelectedTask(+1) }
+
+func (m *Model) moveSelectedTask(direction int) tea.Cmd {
+	if m.taskList == nil || m.taskList.TrashMode() {
+		return nil
+	}
+	t := m.taskList.SelectedTask()
+	if t == nil || t.GetDeletedAt() != nil {
+		return nil
+	}
+	if m.conn == nil {
+		return nil
+	}
+
+	active := activeTasksInDisplayOrder(m.tasks)
+	idx := indexOfTaskNumber(active, t.TaskNumber)
+	if idx < 0 {
+		return nil
+	}
+	newOrder, ok := reorderActiveTasks(active, idx, direction)
+	if !ok {
+		return nil
+	}
+
+	nums := make([]int32, len(newOrder))
+	for i, task := range newOrder {
+		nums[i] = task.TaskNumber
+	}
+
+	// Snapshot pre-swap state once per gesture so a chain of moves
+	// followed by a single failure still reverts to the user's
+	// pre-gesture view rather than the last optimistic intermediate.
+	if !m.inFlightReorder {
+		m.preReorderTasks = append([]*pb.Task(nil), m.tasks...)
+	}
+
+	m.tasks = mergeActiveWithDeleted(newOrder, m.tasks)
+	m.taskList.SetTasks(m.tasks)
+	m.taskList.SelectTaskByNumber(t.TaskNumber)
+	m.inFlightReorder = true
+
+	return reorderTasksCmd(m.conn, m.projectID, nums, t.TaskNumber)
+}
+
+// activeTasksInDisplayOrder filters out soft-deleted tasks and groups
+// the remaining set into the same Draft → Ready → Done shape the
+// TaskList renders. Within each status group the input slice's order is
+// preserved — m.tasks comes from the server sorted by canonical
+// (position ASC, task_number ASC), which is what the user sees on
+// screen.
+func activeTasksInDisplayOrder(tasks []*pb.Task) []*pb.Task {
+	var draft, ready, done []*pb.Task
+	for _, t := range tasks {
+		if t == nil || t.GetDeletedAt() != nil {
+			continue
+		}
+		switch t.Status {
+		case "draft":
+			draft = append(draft, t)
+		case "ready":
+			ready = append(ready, t)
+		case "done":
+			done = append(done, t)
+		}
+	}
+	out := make([]*pb.Task, 0, len(draft)+len(ready)+len(done))
+	out = append(out, draft...)
+	out = append(out, ready...)
+	out = append(out, done...)
+	return out
+}
+
+// reorderActiveTasks returns the active list with `idx` swapped against
+// its same-status neighbour in `direction`. Returns (nil, false) when
+// the swap is out of bounds or would cross a status section — both
+// shapes need to be silent no-ops at the call site (no toast, no flash)
+// so the caller can hold Shift+↑/↓ at a boundary without churn.
+func reorderActiveTasks(active []*pb.Task, idx, direction int) ([]*pb.Task, bool) {
+	if idx < 0 || idx >= len(active) {
+		return nil, false
+	}
+	neighbour := idx + direction
+	if neighbour < 0 || neighbour >= len(active) {
+		return nil, false
+	}
+	if active[idx].Status != active[neighbour].Status {
+		return nil, false
+	}
+	out := make([]*pb.Task, len(active))
+	copy(out, active)
+	out[idx], out[neighbour] = out[neighbour], out[idx]
+	return out, true
+}
+
+// mergeActiveWithDeleted produces an m.tasks-shaped slice: the new
+// active ordering followed by every soft-deleted entry from the
+// original list in its original order. The deleted tail is irrelevant
+// to active-mode rendering but keeps trash-mode round-trips lossless.
+func mergeActiveWithDeleted(active []*pb.Task, original []*pb.Task) []*pb.Task {
+	out := make([]*pb.Task, 0, len(original))
+	out = append(out, active...)
+	for _, t := range original {
+		if t != nil && t.GetDeletedAt() != nil {
+			out = append(out, t)
+		}
+	}
+	return out
+}
+
+func indexOfTaskNumber(tasks []*pb.Task, num int32) int {
+	for i, t := range tasks {
+		if t != nil && t.TaskNumber == num {
+			return i
+		}
+	}
+	return -1
 }
 
 // doQuit performs clean shutdown: cancel streams, clear program ref, close connection, quit.

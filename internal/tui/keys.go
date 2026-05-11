@@ -58,6 +58,8 @@ var globalKeys = GlobalKeys{
 type TaskListKeys struct {
 	Up           key.Binding
 	Down         key.Binding
+	MoveUp       key.Binding // v7 — Shift+↑ reorder focused task up
+	MoveDown     key.Binding // v7 — Shift+↓ reorder focused task down
 	Add          key.Binding
 	Edit         key.Binding
 	Start        key.Binding
@@ -82,6 +84,19 @@ var taskListKeys = TaskListKeys{
 	Down: key.NewBinding(
 		key.WithKeys("down", "j"),
 		key.WithHelp("j/k", "navigate"),
+	),
+	// Shift+arrow lands here on left-panel focus only — the terminal handler
+	// only sees the same chord when the right panel is focused, so there's
+	// no cross-handler collision. Letter chords (K/J) are intentionally not
+	// added: capitals would also fire while a vim user repeated j/k, and
+	// the explicit modifier keeps the gesture unambiguous.
+	MoveUp: key.NewBinding(
+		key.WithKeys("shift+up"),
+		key.WithHelp("Shift+↑", "move task up"),
+	),
+	MoveDown: key.NewBinding(
+		key.WithKeys("shift+down"),
+		key.WithHelp("Shift+↓", "move task down"),
 	),
 	Add: key.NewBinding(
 		key.WithKeys("a"),

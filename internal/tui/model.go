@@ -118,6 +118,19 @@ type Model struct {
 	// selection. Toggled with Ctrl+T at the global key dispatch level so
 	// it works regardless of focused panel or active overlay.
 	textSelectMode bool
+
+	// inFlightReorder gates the optimistic ordering held by the model
+	// against late TasksLoadedMsg responses from the watcher/poller. While
+	// true, an incoming list whose task-number set matches m.tasks is
+	// dropped in favour of the local order — accepting it would race the
+	// in-flight ReorderTasks RPC and snap the moved row back to its
+	// pre-swap slot. Set true on Shift+↑/↓ optimistic swap, cleared by
+	// ReorderCompletedMsg / ReorderFailedMsg.
+	inFlightReorder bool
+
+	// preReorderTasks captures m.tasks as it stood before the optimistic
+	// swap fired, so ReorderFailedMsg can restore the user's view exactly.
+	preReorderTasks []*pb.Task
 }
 
 // NewModel creates the initial TUI model.
