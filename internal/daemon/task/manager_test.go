@@ -136,42 +136,43 @@ func TestUpdateTaskClearsAgentWithExplicitEmptyString(t *testing.T) {
 	}
 }
 
-// TestListTasksDescendingByTaskNumber is a regression test for #28. When a
-// project has many tasks with mixed statuses, the task list must come back in
-// a single canonical order — descending by task_number — regardless of the
-// order files are read from disk or the legacy `position` field. Before the
-// fix, sorting by `position` first caused status-grouped consumers (TUI,
-// GUI) to render a rotated list like 0017→0047 followed by 0001→0016.
-func TestListTasksDescendingByTaskNumber(t *testing.T) {
+// TestListTasksAscendingByPositionThenTaskNumber locks in the v7 canonical
+// work order: agents pick the oldest ready task first (`start-all` and
+// `wildfire` both consume `tasks[0]`). The sort is compound — position
+// ASC primary, task_number ASC tiebreaker — so both legs need a fixture
+// that exercises them. Before v7 the manager sorted strictly descending
+// by task_number and `Position` was dead data, which made the wildfire
+// next-task picker walk the queue backwards (4 → 3 → 2 → 1).
+func TestListTasksAscendingByPositionThenTaskNumber(t *testing.T) {
 	projectPath := setupTempProject(t)
 	now := time.Now().UTC()
 
-	// Write 25 task YAMLs directly to disk in a non-sequential order so the
-	// test exercises the manager's sort rather than filesystem iteration
-	// order. Alternate statuses so a status-grouped consumer would scramble
-	// the list if the manager ever stopped returning a canonical order.
-	order := []int{13, 1, 25, 7, 20, 2, 19, 8, 14, 3, 24, 9, 15, 4, 23, 10, 16, 5, 22, 11, 17, 6, 21, 12, 18}
-	for _, n := range order {
-		status := models.TaskStatusReady
-		switch n % 3 {
-		case 0:
-			status = models.TaskStatusDone
-		case 1:
-			status = models.TaskStatusDraft
-		}
+	// Three tasks chosen so both legs of the compound sort matter:
+	//   (position=2, task_number=1)  → would be first under pure task_number ASC
+	//   (position=1, task_number=2)
+	//   (position=1, task_number=3)
+	// Expected order: (1,2), (1,3), (2,1).
+	fixtures := []struct {
+		num, pos int
+	}{
+		{1, 2},
+		{2, 1},
+		{3, 1},
+	}
+	for _, f := range fixtures {
 		task := &models.Task{
 			Version:    1,
 			TaskID:     "id",
-			TaskNumber: n,
+			TaskNumber: f.num,
 			Title:      "t",
 			Prompt:     "p",
-			Status:     status,
-			Position:   n, // Legacy field; must not influence ordering.
+			Status:     models.TaskStatusReady,
+			Position:   f.pos,
 			CreatedAt:  now,
 			UpdatedAt:  now,
 		}
 		if err := config.SaveTask(projectPath, task); err != nil {
-			t.Fatalf("SaveTask %d: %v", n, err)
+			t.Fatalf("SaveTask %d: %v", f.num, err)
 		}
 	}
 
@@ -179,32 +180,141 @@ func TestListTasksDescendingByTaskNumber(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListTasks: %v", err)
 	}
-	if len(listed) != 25 {
-		t.Fatalf("expected 25 tasks, got %d", len(listed))
+	if len(listed) != 3 {
+		t.Fatalf("expected 3 tasks, got %d", len(listed))
 	}
 
-	for i, got := range listed {
-		want := 25 - i
-		if got.TaskNumber != want {
-			t.Errorf("listed[%d].TaskNumber = %d, want %d (expected strictly descending)", i, got.TaskNumber, want)
+	want := []struct {
+		num, pos int
+	}{
+		{2, 1},
+		{3, 1},
+		{1, 2},
+	}
+	for i, w := range want {
+		got := listed[i]
+		if got.TaskNumber != w.num || got.Position != w.pos {
+			t.Errorf("listed[%d] = (num=%d, pos=%d), want (num=%d, pos=%d)",
+				i, got.TaskNumber, got.Position, w.num, w.pos)
+		}
+	}
+}
+
+// TestCreateTaskDefaultsToBottomOfQueue covers the v7 CreateTask change:
+// without an explicit Position, new tasks land at `max(active.position)+1`
+// so a brand-new task never jumps ahead of tasks the user just reordered.
+// Three legs:
+//   - empty project → first task at Position=1
+//   - dense 1,2,3   → next task at Position=4
+//   - sparse max 10 → next task at Position=11
+func TestCreateTaskDefaultsToBottomOfQueue(t *testing.T) {
+	projectPath := setupTempProject(t)
+	m := NewManager()
+
+	first, err := m.CreateTask(projectPath, CreateOptions{
+		Title:  "first",
+		Prompt: "p",
+		Status: string(models.TaskStatusReady),
+	})
+	if err != nil {
+		t.Fatalf("CreateTask first: %v", err)
+	}
+	if first.Position != 1 {
+		t.Errorf("first task Position = %d, want 1 (empty project)", first.Position)
+	}
+
+	// Dense queue: positions 1, 2, 3 already in place — next at 4.
+	for i := 0; i < 2; i++ {
+		if _, err := m.CreateTask(projectPath, CreateOptions{
+			Title:  "filler",
+			Prompt: "p",
+			Status: string(models.TaskStatusReady),
+		}); err != nil {
+			t.Fatalf("CreateTask filler: %v", err)
+		}
+	}
+	dense, err := m.CreateTask(projectPath, CreateOptions{
+		Title:  "dense",
+		Prompt: "p",
+		Status: string(models.TaskStatusReady),
+	})
+	if err != nil {
+		t.Fatalf("CreateTask dense: %v", err)
+	}
+	if dense.Position != 4 {
+		t.Errorf("dense Position = %d, want 4 (positions 1,2,3 occupied)", dense.Position)
+	}
+
+	// Sparse queue: bump one task's position to 10 — next new task at 11.
+	pos10 := 10
+	if _, err := m.UpdateTask(projectPath, UpdateOptions{
+		TaskNumber: dense.TaskNumber,
+		Position:   &pos10,
+	}); err != nil {
+		t.Fatalf("UpdateTask Position=10: %v", err)
+	}
+	sparse, err := m.CreateTask(projectPath, CreateOptions{
+		Title:  "sparse",
+		Prompt: "p",
+		Status: string(models.TaskStatusReady),
+	})
+	if err != nil {
+		t.Fatalf("CreateTask sparse: %v", err)
+	}
+	if sparse.Position != 11 {
+		t.Errorf("sparse Position = %d, want 11 (max active position = 10)", sparse.Position)
+	}
+
+	// Explicit opts.Position still wins.
+	explicit := 99
+	override, err := m.CreateTask(projectPath, CreateOptions{
+		Title:    "override",
+		Prompt:   "p",
+		Status:   string(models.TaskStatusReady),
+		Position: &explicit,
+	})
+	if err != nil {
+		t.Fatalf("CreateTask override: %v", err)
+	}
+	if override.Position != 99 {
+		t.Errorf("override Position = %d, want 99 (explicit caller value)", override.Position)
+	}
+}
+
+// TestStartAllPicksOldestReadyFirst is the v7 smoke test against the
+// `start-all` / `wildfire` next-task picker contract: every consumer in
+// `internal/daemon/server/server.go` (lines 154 / 178 / 202) takes
+// `tasks[0]` from a ready-filtered ListTasks. Before v7 that was the
+// newest task; after v7 it must be the oldest. Create four tasks in
+// order, mark them ready, list with status filter, assert task 1 is
+// first and task 4 is last.
+func TestStartAllPicksOldestReadyFirst(t *testing.T) {
+	projectPath := setupTempProject(t)
+	m := NewManager()
+
+	for i := 1; i <= 4; i++ {
+		if _, err := m.CreateTask(projectPath, CreateOptions{
+			Title:  "t",
+			Prompt: "p",
+			Status: string(models.TaskStatusReady),
+		}); err != nil {
+			t.Fatalf("CreateTask %d: %v", i, err)
 		}
 	}
 
-	// Confirm position values don't sneak back in as a tiebreaker: bump the
-	// Position of the highest-numbered task to the lowest value and re-list.
-	// With a canonical task_number-descending sort the order must be
-	// unchanged.
-	highest := listed[0]
-	highest.Position = -1
-	if err := config.SaveTask(projectPath, highest); err != nil {
-		t.Fatalf("SaveTask highest: %v", err)
-	}
-	relisted, err := NewManager().ListTasks(projectPath, ListOptions{})
+	ready := string(models.TaskStatusReady)
+	listed, err := m.ListTasks(projectPath, ListOptions{Status: &ready})
 	if err != nil {
-		t.Fatalf("ListTasks (relisted): %v", err)
+		t.Fatalf("ListTasks: %v", err)
 	}
-	if relisted[0].TaskNumber != 25 {
-		t.Errorf("after reshuffling position, first task = %d, want 25 (position must not affect order)", relisted[0].TaskNumber)
+	if len(listed) != 4 {
+		t.Fatalf("expected 4 ready tasks, got %d", len(listed))
+	}
+	for i, got := range listed {
+		want := i + 1
+		if got.TaskNumber != want {
+			t.Errorf("listed[%d].TaskNumber = %d, want %d (start-all picks oldest first)", i, got.TaskNumber, want)
+		}
 	}
 }
 
