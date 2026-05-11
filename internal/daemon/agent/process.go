@@ -67,8 +67,9 @@ type Process struct {
 	scrollback []string
 	startedAt  time.Time
 
-	rawBufMu sync.RWMutex
-	rawBuf   []byte // Accumulated raw PTY output for late-join catch-up
+	rawBufMu      sync.RWMutex
+	rawBuf        []byte // Accumulated raw PTY output for late-join catch-up
+	rawTotalBytes int64  // Total bytes ever broadcast (monotonic). bufStart = rawTotalBytes - len(rawBuf)
 
 	// Issue detection
 	issueMu        sync.RWMutex
@@ -272,14 +273,39 @@ func (p *Process) SubscribeRaw(id string) chan []byte {
 // channel). The TUI's vt10x replays bytes in order and double-
 // delivery leaves it in a state that disagrees with the daemon's.
 func (p *Process) SubscribeRawWithSnapshot(id string) (snapshot []byte, ch chan []byte) {
+	return p.SubscribeRawFrom(id, 0)
+}
+
+// SubscribeRawFrom is the cursor-aware variant of SubscribeRawWithSnapshot.
+// bytesReceived is the count of raw bytes the client claims to already
+// hold locally; the returned snapshot is sliced so only bytes past that
+// offset are sent. Used by the GUI chat terminal (#0100) so a reconnect
+// no longer replays the full session from byte 0 and snaps the viewport
+// to the start.
+//
+// Clamping rules: bytesReceived <= 0 returns the full buffer (initial
+// subscribe). bytesReceived >= rawTotalBytes returns an empty snapshot
+// (client is fully caught up). When bytesReceived falls before bufStart
+// (= rawTotalBytes - len(rawBuf), i.e. the client missed bytes that
+// have aged out of the 1 MiB rolling buffer), the full buffer is sent —
+// the gap is genuinely lost data and the client gets whatever the daemon
+// can still produce.
+func (p *Process) SubscribeRawFrom(id string, bytesReceived int64) (snapshot []byte, ch chan []byte) {
 	p.rawBufMu.Lock()
 	p.subMu.Lock()
 	defer p.subMu.Unlock()
 	defer p.rawBufMu.Unlock()
 
-	if len(p.rawBuf) > 0 {
-		snapshot = make([]byte, len(p.rawBuf))
-		copy(snapshot, p.rawBuf)
+	if len(p.rawBuf) > 0 && bytesReceived < p.rawTotalBytes {
+		bufStart := p.rawTotalBytes - int64(len(p.rawBuf))
+		skip := bytesReceived - bufStart
+		if skip < 0 {
+			skip = 0
+		}
+		if skip < int64(len(p.rawBuf)) {
+			snapshot = make([]byte, int64(len(p.rawBuf))-skip)
+			copy(snapshot, p.rawBuf[skip:])
+		}
 	}
 	ch = make(chan []byte, rawSubsChannelSize)
 	p.rawSubs[id] = ch
@@ -330,6 +356,7 @@ func (p *Process) broadcastRaw(data []byte) {
 	defer p.rawBufMu.Unlock()
 
 	p.rawBuf = append(p.rawBuf, data...)
+	p.rawTotalBytes += int64(len(data))
 	if len(p.rawBuf) > maxRawBufferSize {
 		p.rawBuf = p.rawBuf[len(p.rawBuf)-maxRawBufferSize:]
 	}

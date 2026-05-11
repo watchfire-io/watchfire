@@ -29,7 +29,8 @@ interface AgentState {
   subscribeRawOutput: (
     projectId: string,
     onData: (data: Uint8Array) => void,
-    onEnd?: () => void
+    onEnd?: () => void,
+    bytesReceived?: number
   ) => AbortController
   subscribeIssues: (
     projectId: string,
@@ -136,7 +137,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     return abort
   },
 
-  subscribeRawOutput: (projectId, onData, onEnd) => {
+  subscribeRawOutput: (projectId, onData, onEnd, bytesReceived) => {
     // Cancel existing subscription (use rawAborts, not screenAborts)
     get().rawAborts[projectId]?.abort()
 
@@ -144,10 +145,15 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     set((s) => ({ rawAborts: { ...s.rawAborts, [projectId]: abort } }))
 
     const client = getAgentClient()
+    // bytes_received (#0100) is the resume cursor — the daemon slices its
+    // catch-up snapshot so only bytes past this offset arrive. Passing the
+    // count the client has already written preserves scroll position on
+    // reconnect (otherwise the GUI chat terminal snaps to byte 0).
+    const cursor = BigInt(bytesReceived ?? 0)
     ;(async () => {
       try {
         for await (const chunk of client.subscribeRawOutput(
-          { projectId },
+          { projectId, bytesReceived: cursor },
           { signal: abort.signal }
         )) {
           onData(chunk.data)
