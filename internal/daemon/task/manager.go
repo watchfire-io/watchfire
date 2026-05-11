@@ -295,6 +295,67 @@ func (m *Manager) BulkUpdateStatus(projectPath string, taskNumbers []int, newSta
 	return updated, nil
 }
 
+// ReorderTasks rewrites positions densely (1..N) in the order given by
+// taskNumbers. Tasks not in the request preserve their current relative order
+// (canonical Position ASC, TaskNumber ASC) and get appended after. Mirrors the
+// shape of project.Manager.ReorderProjects.
+func (m *Manager) ReorderTasks(projectPath string, taskNumbers []int) ([]*models.Task, error) {
+	active, err := config.LoadActiveTasks(projectPath)
+	if err != nil {
+		return nil, err
+	}
+
+	byNumber := make(map[int]*models.Task, len(active))
+	for _, t := range active {
+		byNumber[t.TaskNumber] = t
+	}
+
+	seen := make(map[int]bool, len(taskNumbers))
+	ordered := make([]*models.Task, 0, len(active))
+	for _, n := range taskNumbers {
+		if seen[n] {
+			return nil, fmt.Errorf("duplicate task in reorder request: %d", n)
+		}
+		t, ok := byNumber[n]
+		if !ok {
+			return nil, fmt.Errorf("task not found: %d", n)
+		}
+		seen[n] = true
+		ordered = append(ordered, t)
+	}
+
+	// Append any active tasks not mentioned in the request, in canonical order
+	// (Position ASC, TaskNumber ASC). A buggy client could send a partial list;
+	// silently parking the leftovers at the end of the queue is the conservative
+	// fix — they keep their relative order and the next reorder normalises.
+	leftovers := make([]*models.Task, 0, len(active)-len(ordered))
+	for _, t := range active {
+		if !seen[t.TaskNumber] {
+			leftovers = append(leftovers, t)
+		}
+	}
+	sort.Slice(leftovers, func(i, j int) bool {
+		if leftovers[i].Position != leftovers[j].Position {
+			return leftovers[i].Position < leftovers[j].Position
+		}
+		return leftovers[i].TaskNumber < leftovers[j].TaskNumber
+	})
+	ordered = append(ordered, leftovers...)
+
+	now := time.Now().UTC()
+	for i, t := range ordered {
+		t.Position = i + 1
+		t.UpdatedAt = now
+		if err := config.SaveTask(projectPath, t); err != nil {
+			return nil, err
+		}
+	}
+
+	// Re-list so the response reflects the persisted state through the
+	// canonical sort — keeps callers honest about what's on disk.
+	return m.ListTasks(projectPath, ListOptions{})
+}
+
 // PermanentDelete hard-deletes a soft-deleted task: removes the task YAML and
 // any sibling `<n>.metrics.yaml`. Refuses if the task isn't soft-deleted, or
 // if branchMerged returns false for the task's `watchfire/<n>` branch — the

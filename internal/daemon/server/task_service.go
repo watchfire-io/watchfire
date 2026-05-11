@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"strings"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/watchfire-io/watchfire/internal/daemon/task"
@@ -215,6 +217,36 @@ func (s *taskService) BulkUpdateStatus(_ context.Context, req *pb.BulkUpdateStat
 	tasks, err := s.manager.BulkUpdateStatus(projectPath, nums, req.NewStatus)
 	if err != nil {
 		return nil, err
+	}
+
+	list := &pb.TaskList{Tasks: make([]*pb.Task, 0, len(tasks))}
+	for _, t := range tasks {
+		list.Tasks = append(list.Tasks, modelToProtoTask(t, req.ProjectId))
+	}
+	return list, nil
+}
+
+// ReorderTasks rewrites task positions densely (1..N) in the order given by
+// req.TaskNumbers. Mirrors ProjectService.ReorderProjects on the task plane —
+// the v7 drag-to-reorder UI in #0098/#0099 depends on this RPC.
+func (s *taskService) ReorderTasks(_ context.Context, req *pb.ReorderTasksRequest) (*pb.TaskList, error) {
+	projectPath, err := getProjectPath(req.ProjectId)
+	if err != nil {
+		return nil, err
+	}
+
+	nums := make([]int, 0, len(req.TaskNumbers))
+	for _, n := range req.TaskNumbers {
+		nums = append(nums, int(n))
+	}
+
+	tasks, err := s.manager.ReorderTasks(projectPath, nums)
+	if err != nil {
+		msg := err.Error()
+		if strings.Contains(msg, "task not found") || strings.Contains(msg, "duplicate task in reorder request") {
+			return nil, status.Error(codes.InvalidArgument, msg)
+		}
+		return nil, status.Error(codes.Internal, msg)
 	}
 
 	list := &pb.TaskList{Tasks: make([]*pb.Task, 0, len(tasks))}

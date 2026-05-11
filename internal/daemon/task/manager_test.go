@@ -1,6 +1,7 @@
 package task
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -559,6 +560,178 @@ func TestPermanentDeleteRemovesYAMLAndMetrics(t *testing.T) {
 	}
 	if config.MetricsExists(projectPath, created.TaskNumber) {
 		t.Fatalf("expected metrics sibling to be removed alongside the task YAML")
+	}
+}
+
+// reorderFixtureTasks creates n active tasks via CreateTask, leaving their
+// default positions (1..n). Returns the task numbers in creation order.
+func reorderFixtureTasks(t *testing.T, m *Manager, projectPath string, n int) []int {
+	t.Helper()
+	nums := make([]int, 0, n)
+	for i := 0; i < n; i++ {
+		created, err := m.CreateTask(projectPath, CreateOptions{
+			Title:  "t",
+			Prompt: "p",
+			Status: string(models.TaskStatusReady),
+		})
+		if err != nil {
+			t.Fatalf("CreateTask %d: %v", i, err)
+		}
+		nums = append(nums, created.TaskNumber)
+	}
+	return nums
+}
+
+// TestReorderTasksHappyPath rewrites positions densely in the requested
+// order. Four tasks at positions 1..4 reordered to [3,1,4,2] should end up
+// with task3=1, task1=2, task4=3, task2=4 and ListTasks must return them
+// in that order through the canonical Position-then-TaskNumber sort.
+func TestReorderTasksHappyPath(t *testing.T) {
+	projectPath := setupTempProject(t)
+	m := NewManager()
+	reorderFixtureTasks(t, m, projectPath, 4)
+
+	result, err := m.ReorderTasks(projectPath, []int{3, 1, 4, 2})
+	if err != nil {
+		t.Fatalf("ReorderTasks: %v", err)
+	}
+	if len(result) != 4 {
+		t.Fatalf("expected 4 tasks, got %d", len(result))
+	}
+
+	want := []struct{ num, pos int }{
+		{3, 1},
+		{1, 2},
+		{4, 3},
+		{2, 4},
+	}
+	for i, w := range want {
+		got := result[i]
+		if got.TaskNumber != w.num || got.Position != w.pos {
+			t.Errorf("result[%d] = (num=%d, pos=%d), want (num=%d, pos=%d)",
+				i, got.TaskNumber, got.Position, w.num, w.pos)
+		}
+	}
+
+	// Verify persistence: positions are dense 1..N on disk.
+	for _, w := range want {
+		loaded, err := config.LoadTask(projectPath, w.num)
+		if err != nil {
+			t.Fatalf("LoadTask %d: %v", w.num, err)
+		}
+		if loaded.Position != w.pos {
+			t.Errorf("persisted task %d Position = %d, want %d", w.num, loaded.Position, w.pos)
+		}
+	}
+}
+
+// TestReorderTasksPartialList exercises the "leftover" branch: a partial
+// request must keep unmentioned tasks at the tail of the queue in canonical
+// order. Four tasks, ReorderTasks([3,1]) → 3=1, 1=2, 2=3, 4=4.
+func TestReorderTasksPartialList(t *testing.T) {
+	projectPath := setupTempProject(t)
+	m := NewManager()
+	reorderFixtureTasks(t, m, projectPath, 4)
+
+	result, err := m.ReorderTasks(projectPath, []int{3, 1})
+	if err != nil {
+		t.Fatalf("ReorderTasks: %v", err)
+	}
+	want := []struct{ num, pos int }{
+		{3, 1},
+		{1, 2},
+		{2, 3},
+		{4, 4},
+	}
+	if len(result) != len(want) {
+		t.Fatalf("expected %d tasks, got %d", len(want), len(result))
+	}
+	for i, w := range want {
+		got := result[i]
+		if got.TaskNumber != w.num || got.Position != w.pos {
+			t.Errorf("result[%d] = (num=%d, pos=%d), want (num=%d, pos=%d)",
+				i, got.TaskNumber, got.Position, w.num, w.pos)
+		}
+	}
+}
+
+// TestReorderTasksUnknownNumber rejects task numbers not in the active set.
+func TestReorderTasksUnknownNumber(t *testing.T) {
+	projectPath := setupTempProject(t)
+	m := NewManager()
+	reorderFixtureTasks(t, m, projectPath, 2)
+
+	_, err := m.ReorderTasks(projectPath, []int{1, 99})
+	if err == nil {
+		t.Fatalf("expected error for unknown task number, got nil")
+	}
+	if !strings.Contains(err.Error(), "task not found") {
+		t.Errorf("error should mention 'task not found', got %q", err.Error())
+	}
+}
+
+// TestReorderTasksDuplicateInRequest rejects duplicate entries.
+func TestReorderTasksDuplicateInRequest(t *testing.T) {
+	projectPath := setupTempProject(t)
+	m := NewManager()
+	reorderFixtureTasks(t, m, projectPath, 3)
+
+	_, err := m.ReorderTasks(projectPath, []int{1, 2, 1})
+	if err == nil {
+		t.Fatalf("expected error for duplicate task number, got nil")
+	}
+	if !strings.Contains(err.Error(), "duplicate") {
+		t.Errorf("error should mention 'duplicate', got %q", err.Error())
+	}
+}
+
+// TestReorderTasksDeletedTaskRejected confirms that soft-deleted tasks are
+// excluded from the active set and a request referencing them errors out as
+// "task not found" — deleted tasks are not in the active set by definition.
+func TestReorderTasksDeletedTaskRejected(t *testing.T) {
+	projectPath := setupTempProject(t)
+	m := NewManager()
+	reorderFixtureTasks(t, m, projectPath, 3)
+
+	if _, err := m.DeleteTask(projectPath, 3); err != nil {
+		t.Fatalf("DeleteTask: %v", err)
+	}
+
+	_, err := m.ReorderTasks(projectPath, []int{3, 1})
+	if err == nil {
+		t.Fatalf("expected error referencing deleted task, got nil")
+	}
+	if !strings.Contains(err.Error(), "task not found") {
+		t.Errorf("error should mention 'task not found', got %q", err.Error())
+	}
+}
+
+// TestReorderTasksIdempotent confirms that calling ReorderTasks twice with
+// the same input is a no-op for ordering and positions remain dense 1..N.
+func TestReorderTasksIdempotent(t *testing.T) {
+	projectPath := setupTempProject(t)
+	m := NewManager()
+	reorderFixtureTasks(t, m, projectPath, 4)
+	order := []int{2, 4, 1, 3}
+
+	first, err := m.ReorderTasks(projectPath, order)
+	if err != nil {
+		t.Fatalf("ReorderTasks first: %v", err)
+	}
+	second, err := m.ReorderTasks(projectPath, order)
+	if err != nil {
+		t.Fatalf("ReorderTasks second: %v", err)
+	}
+	if len(first) != len(second) {
+		t.Fatalf("len mismatch: first=%d second=%d", len(first), len(second))
+	}
+	for i := range first {
+		if first[i].TaskNumber != second[i].TaskNumber {
+			t.Errorf("order drift at index %d: first=%d second=%d", i, first[i].TaskNumber, second[i].TaskNumber)
+		}
+		if second[i].Position != i+1 {
+			t.Errorf("positions not dense after second call: result[%d].Position = %d, want %d", i, second[i].Position, i+1)
+		}
 	}
 }
 
