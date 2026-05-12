@@ -1,6 +1,6 @@
 import { ipcMain, dialog, shell, BrowserWindow, Notification } from 'electron'
 import { existsSync, readFileSync, readdirSync, statSync } from 'fs'
-import { join } from 'path'
+import { join, delimiter } from 'path'
 import { homedir } from 'os'
 import { spawn } from 'child_process'
 import { getDaemonInfo, ensureDaemon } from './daemon'
@@ -25,6 +25,33 @@ const IDE_COMMANDS: Record<string, IDESpec> = {
   fleet: { kind: 'cli', cmd: 'fleet' },
   xcode: { kind: 'open-with-app', app: 'Xcode' },
   finder: { kind: 'reveal' }
+}
+
+// macOS GUI launches inherit a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin)
+// because path_helper only runs from login shells. spawn(..., {shell: true})
+// uses /bin/sh -c, which is non-login, so the user's profile PATH is never
+// loaded. That hides common IDE CLIs (`code` at /usr/local/bin/code, Homebrew
+// shims at /opt/homebrew/bin, etc.). Prepend the well-known locations so
+// IDE launches don't depend on how the GUI was started.
+function spawnEnv(): NodeJS.ProcessEnv {
+  const extras: string[] =
+    process.platform === 'darwin'
+      ? [
+          '/usr/local/bin',
+          '/usr/local/sbin',
+          '/opt/homebrew/bin',
+          '/opt/homebrew/sbin',
+          join(homedir(), '.local', 'bin'),
+          join(homedir(), 'bin')
+        ]
+      : process.platform === 'linux'
+        ? [join(homedir(), '.local', 'bin'), join(homedir(), 'bin')]
+        : []
+  const current = process.env.PATH ?? ''
+  const seen = new Set(current.split(delimiter).filter(Boolean))
+  const additions = extras.filter((p) => !seen.has(p))
+  const merged = [...additions, current].filter(Boolean).join(delimiter)
+  return { ...process.env, PATH: merged }
 }
 
 async function openInIDE(ide: string, projectPath: string): Promise<{ ok: boolean; error?: string }> {
@@ -52,14 +79,15 @@ async function openInIDE(ide: string, projectPath: string): Promise<{ ok: boolea
       return { ok: true }
     }
 
-    // CLI mode: rely on the IDE's shell helper being on PATH.
-    // shell: true is required because Electron's inherited PATH on macOS GUI launches
-    // is minimal — the shell will load the user's login PATH via their profile.
+    // CLI mode: rely on the IDE's shell helper being on PATH. shell: true uses
+    // /bin/sh -c on macOS, which doesn't source the user's login profile, so
+    // we pass an env with /usr/local/bin and the Homebrew prefixes prepended.
     const args = [...(spec.extraArgs ?? []), projectPath]
     const child = spawn(spec.cmd, args, {
       detached: true,
       stdio: 'ignore',
-      shell: true
+      shell: true,
+      env: spawnEnv()
     })
     return await new Promise((resolve) => {
       let settled = false
