@@ -19,7 +19,7 @@ jobs:
       codename: ${{ steps.read.outputs.codename }}
       should_build: ${{ steps.check.outputs.should_build }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - name: Read version.json
         id: read
         run: |
@@ -68,8 +68,8 @@ jobs:
       APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
@@ -117,7 +117,7 @@ jobs:
           cp build/watchfire-${{ matrix.arch }} build/watchfire-darwin-${{ matrix.arch }}
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: go-binaries-${{ matrix.arch }}
           path: |
@@ -135,8 +135,8 @@ jobs:
         arch: [amd64, arm64]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
@@ -147,7 +147,7 @@ jobs:
           make build-linux-${{ matrix.arch }}
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: go-binaries-linux-${{ matrix.arch }}
           path: |
@@ -163,8 +163,8 @@ jobs:
         arch: [amd64, arm64]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
 
@@ -175,7 +175,7 @@ jobs:
           make build-windows-${{ matrix.arch }}
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: go-binaries-windows-${{ matrix.arch }}
           path: |
@@ -198,9 +198,9 @@ jobs:
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
@@ -221,13 +221,13 @@ jobs:
           rm $RUNNER_TEMP/certificate.p12
 
       - name: Download arm64 binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: go-binaries-arm64
           path: build/
 
       - name: Download amd64 binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: go-binaries-amd64
           path: build/
@@ -342,19 +342,19 @@ jobs:
           fi
 
       - name: Upload DMG
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: gui-dmg
           path: gui/dist/*.dmg
 
       - name: Upload zip
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: gui-zip
           path: gui/dist/*.zip
 
       - name: Upload latest-mac.yml
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: gui-latest-mac
           path: gui/dist/latest-mac.yml
@@ -369,16 +369,16 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: gui/package-lock.json
 
       - name: Download Linux amd64 binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: go-binaries-linux-amd64
           path: build/
@@ -404,19 +404,19 @@ jobs:
           npx electron-builder --config electron-builder.yml --publish never --linux AppImage deb --x64
 
       - name: Upload AppImage
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: gui-appimage
           path: gui/dist/*.AppImage
 
       - name: Upload deb
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: gui-deb
           path: gui/dist/*.deb
 
       - name: Upload latest-linux.yml
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: gui-latest-linux
           path: gui/dist/latest-linux.yml
@@ -431,16 +431,16 @@ jobs:
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 20
           cache: npm
           cache-dependency-path: gui/package-lock.json
 
       - name: Download Windows amd64 binaries
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           name: go-binaries-windows-amd64
           path: build/
@@ -469,13 +469,13 @@ jobs:
           npx electron-builder --config electron-builder.yml --publish never --win nsis --x64
 
       - name: Upload NSIS installer
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: gui-nsis
           path: gui/dist/*.exe
 
       - name: Upload latest.yml
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: gui-latest-windows
           path: gui/dist/latest.yml
@@ -488,10 +488,10 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Download all artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v7
         with:
           path: artifacts/
 
