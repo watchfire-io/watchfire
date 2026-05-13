@@ -48,23 +48,47 @@ class AgentTerminalHarness {
     this.bytesReceived = 0
     this.subscribeCalls = []
     this.abortCalls = 0
-    this.clearCalls = 0 // term.clear() — must stay 0 for the lifetime of the harness
+    this.clearCalls = 0 // legacy: term.clear() — must stay 0 (#0100 invariant)
+    this.resetCalls = 0 // #0102: term.reset() — fires on generation change / project switch
+    this.prevStartedAtKey = '' // #0101: tracks AgentStatus.startedAt for generation-change detection
+    this.agentStoppedWrites = 0 // #0101: [Agent stopped] writes — must stay 0 (banner removed)
   }
 
   // Mirrors the effect body in useAgentTerminal.ts at the
   // "Manage the raw-output subscription" block.
-  update({ projectId, active, reconnectKey }) {
+  update({ projectId, active, reconnectKey, startedAtKey = '' }) {
     const projChanged = this.projectId !== projectId && this.projectId !== null
     const reconnectKeyChanged = this.reconnectKey !== reconnectKey
     this.projectId = projectId
     this.reconnectKey = reconnectKey
 
+    // #0101 generation-change detection — mirrors the effect's
+    // startedAtKey logic. The first non-empty observation is NOT a
+    // transition; only flip when both sides are set and differ.
+    const generationChanged =
+      this.prevStartedAtKey !== '' &&
+      startedAtKey !== '' &&
+      startedAtKey !== this.prevStartedAtKey
+    if (startedAtKey) this.prevStartedAtKey = startedAtKey
+
     if (projChanged) {
       this._hardAbort()
+      this.resetCalls++ // term.reset() — fresh emulator for the new project
+      this.bytesReceived = 0
+      this.prevStartedAtKey = startedAtKey
+    } else if (generationChanged) {
+      // #0102: new daemon Process. Reset xterm AND cursor so the
+      // daemon's full buffer replay lands on a fresh emulator state.
+      // Without term.reset(), absolute cursor-positioning escapes
+      // from the new agent's UI redraw collide with xterm's existing
+      // bytes — that's the stacked-banner garbage symptom.
+      this._hardAbort()
+      this.resetCalls++
       this.bytesReceived = 0
     } else if (reconnectKeyChanged) {
+      // Same Process, transient blip. Preserve cursor, do NOT reset
+      // xterm — the user's view and scroll position survive intact.
       this._hardAbort()
-      // Keep bytesReceived intact — daemon resumes at the cursor.
     }
 
     if (active) {
@@ -100,6 +124,20 @@ class AgentTerminalHarness {
       throw new Error('cannot receive bytes without a live subscription')
     }
     this.bytesReceived += byteLength
+  }
+
+  // Simulate the gRPC stream closing (server returned nil, AbortError, or
+  // a transport error). Mirrors the onEnd callback in the hook: do NOT
+  // reset the cursor (#0102 — resetting it caused the daemon to replay
+  // its full buffer and overlap with xterm's existing state), do NOT
+  // write a visible marker, and signal a reconnect when the agent is
+  // still running. The effect itself decides whether to reset xterm
+  // and/or the cursor when it re-runs, based on whether startedAt has
+  // changed in the store by then.
+  endStream({ agentStillRunning } = { agentStillRunning: true }) {
+    if (this.abort) this.abort.aborted = true
+    // Cursor stays at its current value — same-Process catch-up.
+    if (agentStillRunning) this.reconnectKey++
   }
 
   _hardAbort() {
@@ -262,4 +300,224 @@ test('useAgentTerminal threads bytesReceived through subscribeRawOutput', async 
   const src = await readFile(hookPath, 'utf8')
   assert.match(src, /bytesReceivedRef\.current\s*\+=\s*data\.byteLength/)
   assert.match(src, /bytesReceivedRef\.current\s*\)/, 'cursor passed to subscribeRawOutput')
+})
+
+// --- #0101 regression tests -----------------------------------------------
+// The v7.0.0 cursor work (#0100) eliminated the "snap to byte 0" symptom
+// but introduced three new regressions when the daemon Process restarts
+// out from under a live subscription: stale cursors skipped the new
+// agent's initial prompt, the [Agent stopped] marker stamped the xterm
+// once per stream-close cascade, and ChatTab's auto-restart cascade
+// amplified the whole thing into line-stepping while typing. These
+// tests lock in v7.1.0 Forge's fix.
+
+test('#0101 generation change: new started_at resets cursor so new agent prompt isn’t skipped', () => {
+  const h = new AgentTerminalHarness()
+  // Session 1 — a chat agent has been running for a while.
+  h.update({ projectId: 'p1', active: true, reconnectKey: 0, startedAtKey: 't1' })
+  h.receive(50000)
+  assert.equal(h.bytesReceived, 50000)
+
+  // Click "Run All" — daemon kills the chat Process, spawns a task-mode
+  // one. The new Process's rawTotalBytes starts at 0; if we reconnect
+  // with the stale 50000 cursor, SubscribeRawFrom returns an empty
+  // snapshot and the daemon-sent initial prompt ("Implement Task #0001…")
+  // is dropped on the floor.
+  h.update({ projectId: 'p1', active: true, reconnectKey: 0, startedAtKey: 't2' })
+
+  assert.equal(h.abortCalls, 1, 'generation change aborts the stale subscription')
+  assert.equal(h.subscribeCalls.length, 2, 'generation change forces a fresh subscribe')
+  assert.equal(
+    h.subscribeCalls[1].bytesReceived,
+    0,
+    'cursor must reset on generation change so daemon sends the full new-Process buffer'
+  )
+})
+
+test('#0101 first started_at observation is NOT a generation change', () => {
+  const h = new AgentTerminalHarness()
+  // Initial mount: AgentStatus arrives with a startedAt. This is the
+  // first time we've ever seen one — it's not a transition, the agent
+  // didn't restart, so we must NOT reset the cursor or abort.
+  h.update({ projectId: 'p1', active: true, reconnectKey: 0, startedAtKey: '' })
+  h.receive(120)
+  h.update({ projectId: 'p1', active: true, reconnectKey: 0, startedAtKey: 't1' })
+
+  assert.equal(h.abortCalls, 0, 'first started_at observation must not abort')
+  assert.equal(h.subscribeCalls.length, 1, 'first started_at observation must not re-subscribe')
+  assert.equal(h.bytesReceived, 120, 'cursor preserved across first started_at observation')
+})
+
+test('#0101 stable started_at across many polls is a no-op', () => {
+  const h = new AgentTerminalHarness()
+  h.update({ projectId: 'p1', active: true, reconnectKey: 0, startedAtKey: 't1' })
+  h.receive(500)
+  for (let i = 0; i < 30; i++) {
+    h.update({ projectId: 'p1', active: true, reconnectKey: 0, startedAtKey: 't1' })
+  }
+  assert.equal(h.subscribeCalls.length, 1, 'identical started_at must not re-subscribe')
+  assert.equal(h.abortCalls, 0)
+  assert.equal(h.bytesReceived, 500, 'cursor preserved')
+})
+
+test('#0102 onEnd preserves the cursor for same-Process reconnects (no full-buffer replay)', () => {
+  const h = new AgentTerminalHarness()
+  h.update({ projectId: 'p1', active: true, reconnectKey: 0, startedAtKey: 't1' })
+  h.receive(8888)
+  assert.equal(h.bytesReceived, 8888)
+
+  // Stream closes (transient blip on the SAME Process — startedAt
+  // unchanged). The earlier #0101 fix reset the cursor here, which
+  // caused the daemon to replay its full buffer on top of xterm's
+  // existing state — that produced the stacked-banner garbage. The
+  // correct behaviour: leave the cursor alone, let the daemon do its
+  // job and only send bytes past the cursor.
+  h.endStream({ agentStillRunning: true })
+  assert.equal(h.bytesReceived, 8888, 'onEnd must NOT zero the cursor on transient blip')
+
+  // Effect re-runs because reconnectKey bumped (from endStream).
+  // startedAt unchanged → reconnectKey branch → cursor preserved,
+  // xterm NOT reset (user view intact).
+  h.update({ projectId: 'p1', active: true, reconnectKey: h.reconnectKey, startedAtKey: 't1' })
+  assert.equal(
+    h.subscribeCalls[h.subscribeCalls.length - 1].bytesReceived,
+    8888,
+    'reconnect with same startedAt uses preserved cursor (incremental catch-up)'
+  )
+  assert.equal(h.resetCalls, 0, 'same-Process reconnect must NOT term.reset() — destroys scrollback')
+})
+
+test('#0102 wildfire phase transition (new started_at) resets xterm + cursor → no overlap', () => {
+  const h = new AgentTerminalHarness()
+  // Wildfire execute phase running.
+  h.update({ projectId: 'p1', active: true, reconnectKey: 0, startedAtKey: 'execute' })
+  h.receive(12345)
+
+  // Phase ends — daemon's old Process exits, gRPC stream closes.
+  h.endStream({ agentStillRunning: true })
+
+  // Effect re-runs from the reconnect setTimeout. The onEnd's
+  // fetchStatus has updated the store with the refine-phase Process's
+  // new startedAt; the effect sees the generation change and resets.
+  h.update({ projectId: 'p1', active: true, reconnectKey: h.reconnectKey, startedAtKey: 'refine' })
+
+  assert.equal(h.resetCalls, 1, 'generation change must term.reset() — fresh emulator for new agent')
+  assert.equal(h.subscribeCalls.length, 2, 'generation change forces a fresh subscribe')
+  assert.equal(h.subscribeCalls[1].bytesReceived, 0, 'refine-phase prompt arrives via cursor=0 snapshot')
+})
+
+test('#0102 project switch resets xterm + cursor (full reset for new project)', () => {
+  const h = new AgentTerminalHarness()
+  h.update({ projectId: 'p1', active: true, reconnectKey: 0, startedAtKey: 't1' })
+  h.receive(2000)
+  assert.equal(h.resetCalls, 0)
+
+  // Navigate to a different project.
+  h.update({ projectId: 'p2', active: true, reconnectKey: 0, startedAtKey: 'q1' })
+
+  assert.equal(h.resetCalls, 1, 'project switch must term.reset()')
+  assert.equal(h.subscribeCalls[1].projectId, 'p2')
+  assert.equal(h.subscribeCalls[1].bytesReceived, 0, 'cursor reset on project switch')
+})
+
+test('#0102 stable same-Process stream blip-and-recover preserves view + cursor', () => {
+  const h = new AgentTerminalHarness()
+  h.update({ projectId: 'p1', active: true, reconnectKey: 0, startedAtKey: 't1' })
+  h.receive(420)
+
+  // Five blip-and-recover cycles on the same Process — each ends the
+  // stream (reconnectKey++) and immediately the effect re-runs with
+  // same startedAt. The user's xterm should never reset.
+  for (let i = 0; i < 5; i++) {
+    h.endStream({ agentStillRunning: true })
+    h.update({ projectId: 'p1', active: true, reconnectKey: h.reconnectKey, startedAtKey: 't1' })
+    h.receive(80) // some more bytes arrive after each reconnect
+  }
+
+  assert.equal(h.resetCalls, 0, 'same-Process blip cycle must never term.reset()')
+  assert.equal(h.bytesReceived, 420 + 5 * 80, 'cursor accumulates across blips')
+  // Final subscribe uses the final cursor — daemon sends only new bytes.
+  const last = h.subscribeCalls[h.subscribeCalls.length - 1]
+  assert.ok(
+    last.bytesReceived > 0,
+    'final subscribe cursor must be > 0 (preserved across blips)'
+  )
+})
+
+// --- Structural assertions (#0101) ----------------------------------------
+
+test('#0101 [Agent stopped] marker is not written by the hook', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const { fileURLToPath } = await import('node:url')
+  const { dirname, resolve } = await import('node:path')
+  const here = dirname(fileURLToPath(import.meta.url))
+  const hookPath = resolve(here, 'useAgentTerminal.ts')
+  const src = await readFile(hookPath, 'utf8')
+  // Strip line + block comments so an explanatory mention in a comment
+  // doesn't trigger the regression — only real code is inspected.
+  const stripped = src.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '')
+  assert.equal(
+    /\bterm\.write\([^)]*\[Agent stopped\]/i.test(stripped),
+    false,
+    '[Agent stopped] marker write is the original #0101 line-stepping symptom — must stay removed'
+  )
+})
+
+test('#0102 onEnd does NOT zero bytesReceivedRef (same-Process replay was the bug)', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const { fileURLToPath } = await import('node:url')
+  const { dirname, resolve } = await import('node:path')
+  const here = dirname(fileURLToPath(import.meta.url))
+  const hookPath = resolve(here, 'useAgentTerminal.ts')
+  const src = await readFile(hookPath, 'utf8')
+  // Reach into the onEnd callback by anchoring on fetchStatus(projectId)
+  // (only present in onEnd) and the matching setReconnectKey just after
+  // it. Anything between those two markers is the onEnd body — it must
+  // NOT contain `bytesReceivedRef.current = 0`.
+  const fetchIdx = src.indexOf('fetchStatus(projectId)')
+  assert.ok(fetchIdx !== -1, 'onEnd must refresh status before scheduling reconnect')
+  const setKeyIdx = src.indexOf('setReconnectKey(', fetchIdx)
+  assert.ok(setKeyIdx !== -1, 'onEnd must schedule setReconnectKey after fetchStatus resolves')
+  const onEndBody = src.slice(fetchIdx, setKeyIdx)
+  assert.equal(
+    /bytesReceivedRef\.current\s*=\s*0/.test(onEndBody),
+    false,
+    'onEnd resetting cursor caused the daemon to replay its buffer onto stale xterm state (#0102)'
+  )
+})
+
+test('#0102 term.reset() is called on generation change AND project switch', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const { fileURLToPath } = await import('node:url')
+  const { dirname, resolve } = await import('node:path')
+  const here = dirname(fileURLToPath(import.meta.url))
+  const hookPath = resolve(here, 'useAgentTerminal.ts')
+  const src = await readFile(hookPath, 'utf8')
+  // Strip comments — the file mentions term.reset() in commentary and
+  // we only want to count actual code-level calls.
+  const stripped = src.replace(/\/\/[^\n]*/g, '').replace(/\/\*[\s\S]*?\*\//g, '')
+  const matches = stripped.match(/\bterm\.reset\(\)/g) || []
+  assert.ok(
+    matches.length >= 2,
+    `expected at least 2 term.reset() calls (projChanged + generationChanged), found ${matches.length}`
+  )
+})
+
+test('#0102 reconnect delay is 200 ms (post-fetchStatus, localhost-tight)', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const { fileURLToPath } = await import('node:url')
+  const { dirname, resolve } = await import('node:path')
+  const here = dirname(fileURLToPath(import.meta.url))
+  const hookPath = resolve(here, 'useAgentTerminal.ts')
+  const src = await readFile(hookPath, 'utf8')
+  const callIdx = src.lastIndexOf('setReconnectKey(')
+  assert.ok(callIdx !== -1)
+  const tail = src.slice(callIdx)
+  const m = tail.match(/\}\s*,\s*(\d+)\s*\)/)
+  assert.ok(m, 'could not locate setTimeout delay literal')
+  assert.equal(
+    m[1],
+    '200',
+    'fetchStatus already pre-resolves the startedAt race; 200 ms is just a yield before re-subscribing'
+  )
 })

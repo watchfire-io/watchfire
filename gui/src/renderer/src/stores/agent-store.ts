@@ -9,6 +9,17 @@ interface AgentState {
   screenAborts: Record<string, AbortController>
   rawAborts: Record<string, AbortController>
   issueAborts: Record<string, AbortController>
+  // Per-project guard: set while a startAgent RPC is in flight. The
+  // daemon's StartAgent atomically kills the previous agent and spawns
+  // the new one (manager.go:165-189), and there is a tiny window between
+  // "previous removed from m.agents" and "new agent inserted" where
+  // GetAgentStatus legitimately returns {isRunning:false}. A fetchStatus
+  // landing in that window would flip our cached status to false,
+  // ChatTab would auto-restart `chat`, and that racing startAgent would
+  // immediately kill the just-spawned generate-tasks / start-all /
+  // wildfire / generate-definition agent — the user observes "only chat
+  // ever starts". The flag short-circuits fetchStatus during this window.
+  startAgentInFlight: Record<string, boolean>
 
   fetchStatus: (projectId: string) => Promise<void>
   startAgent: (projectId: string, mode: string, opts?: {
@@ -46,8 +57,18 @@ export const useAgentStore = create<AgentState>((set, get) => ({
   screenAborts: {},
   rawAborts: {},
   issueAborts: {},
+  startAgentInFlight: {},
 
   fetchStatus: async (projectId) => {
+    // Skip while a startAgent is in flight (#0104). The daemon's atomic
+    // kill+restart has a small window where m.agents[projectId] is empty;
+    // a fetchStatus landing there returns {isRunning:false}, which would
+    // make ChatTab auto-restart `chat` and race-kill the just-spawned
+    // special-mode agent. The flag is cleared by startAgent's finally,
+    // so an RPC failure (e.g. the daemon's 10 s polling timeout) still
+    // unblocks subsequent polls — they then drive the normal "agent is
+    // gone, auto-start chat" recovery path.
+    if (get().startAgentInFlight[projectId]) return
     try {
       const client = getAgentClient()
       const status = await client.getAgentStatus({ projectId })
@@ -55,26 +76,37 @@ export const useAgentStore = create<AgentState>((set, get) => ({
       if (agentStatusEqual(existing, status)) return
       set((s) => ({ statuses: { ...s.statuses, [projectId]: status } }))
     } catch {
-      // not running — set explicit idle status so consumers know the fetch completed
-      const existing = get().statuses[projectId]
-      if (existing && !existing.isRunning) return
-      set((s) => ({
-        statuses: { ...s.statuses, [projectId]: { isRunning: false } as AgentStatus }
-      }))
+      // The daemon returns a clean {isRunning:false} via the happy path
+      // (agent_service.go:247-256) when no agent is running. Reaching here
+      // means a real transport error — a network blip or gRPC-Web framing
+      // hiccup while the daemon is busy streaming raw output to the same
+      // client. Preserve the last-known status: fabricating isRunning=false
+      // is what made ChatTab auto-restart healthy chat agents in v7.0.0,
+      // cascading into [Agent stopped] floods and line-stepping in the
+      // chat xterm (#0101).
     }
   },
 
   startAgent: async (projectId, mode, opts = {}) => {
-    const client = getAgentClient()
-    const status = await client.startAgent({
-      projectId,
-      mode,
-      taskNumber: opts.taskNumber || 0,
-      rows: opts.rows || 24,
-      cols: opts.cols || 80
-    })
-    set((s) => ({ statuses: { ...s.statuses, [projectId]: status } }))
-    return status
+    set((s) => ({ startAgentInFlight: { ...s.startAgentInFlight, [projectId]: true } }))
+    try {
+      const client = getAgentClient()
+      const status = await client.startAgent({
+        projectId,
+        mode,
+        taskNumber: opts.taskNumber || 0,
+        rows: opts.rows || 24,
+        cols: opts.cols || 80
+      })
+      set((s) => ({ statuses: { ...s.statuses, [projectId]: status } }))
+      return status
+    } finally {
+      set((s) => {
+        const next = { ...s.startAgentInFlight }
+        delete next[projectId]
+        return { startAgentInFlight: next }
+      })
+    }
   },
 
   stopAgent: async (projectId) => {

@@ -11,14 +11,13 @@ interface UseAgentTerminalOptions {
   active?: boolean
 }
 
-// activeFlickerDebounceMs covers a single 2 s status-poll cycle plus a
-// margin. A transient getAgentStatus error briefly sets isRunning=false
-// in the store (agent-store.ts:56-62), which propagates to `active` and
-// previously caused the subscribe effect to abort + re-subscribe + clear
-// the terminal — snapping the viewport to the start of the session.
-// Holding the unsubscribe for this long preserves the subscription
-// across the flicker; the next poll resolves and active flips back true
-// inside the window, cancelling the pending tear-down.
+// activeFlickerDebounceMs is a safety net covering one full 2 s status
+// poll plus margin. v7.1.0 removed the main flicker source (agent-store
+// no longer fabricates isRunning=false on transient errors, #0101) but
+// active can still legitimately drop false → true briefly during
+// stop+start sequences (Run All, Wildfire phase transitions). Holding
+// the unsubscribe across that window preserves the subscription so the
+// generation-change reset in the effect below can take over.
 const activeFlickerDebounceMs = 3000
 
 export function useAgentTerminal({ projectId, containerRef, active = false }: UseAgentTerminalOptions) {
@@ -31,6 +30,7 @@ export function useAgentTerminal({ projectId, containerRef, active = false }: Us
   const bytesReceivedRef = useRef<number>(0)
   const prevProjectIdRef = useRef<string>(projectId)
   const prevReconnectKeyRef = useRef<number>(0)
+  const prevStartedAtKeyRef = useRef<string>('')
 
   const [reconnectKey, setReconnectKey] = useState(0)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -112,32 +112,50 @@ export function useAgentTerminal({ projectId, containerRef, active = false }: Us
       termRef.current = null
       fitRef.current = null
       bytesReceivedRef.current = 0
+      prevStartedAtKeyRef.current = ''
     }
   }, [projectId])
 
-  // Manage the raw-output subscription (#0100). The previous version of
+  // Subscribe to AgentStatus.startedAt so the subscribe effect below
+  // re-runs when the daemon spawns a new Process (kill+restart from
+  // Run All, Wildfire, phase transitions, or a manual ChatTab auto-
+  // restart). The proto Timestamp is the only reliable client-visible
+  // signal of a daemon-side generation change; without it we'd either
+  // miss the new agent's initial prompt (stale cursor races the new
+  // rawTotalBytes counter to zero) or, conversely, replay the full
+  // buffer on every transient stream blip and stack overlapping
+  // banners on top of the existing xterm state.
+  const startedAt = useAgentStore((s) => s.statuses[projectId]?.startedAt)
+  const startedAtKey = startedAt ? `${startedAt.seconds}.${startedAt.nanos}` : ''
+
+  // Manage the raw-output subscription. The previous (#0100) version of
   // this effect ran term.clear() and aborted + re-subscribed on every
-  // dep change, which snapped the viewport to byte 0 whenever `active`
-  // flickered (transient status-poll errors flip isRunning false→true
-  // within one 2 s cycle) or reconnectKey bumped. The new behaviour:
+  // dep change, snapping the viewport to byte 0 on every poll. The
+  // current behaviour mirrors the TUI's contract:
   //
   //  - active=true with a live subscription already in flight → no-op
   //    (idempotent re-run; preserves scroll position)
   //  - active=true with no subscription → fresh subscribe, passing the
   //    bytesReceived cursor so the daemon only sends bytes past the
-  //    client's current position (no full-buffer replay on reconnect)
+  //    client's current position (same-Process catch-up — no replay)
   //  - active=false → schedule a delayed unsubscribe; if active flips
   //    back true within the window, cancel the tear-down
-  //  - reconnectKey changed → hard re-subscribe (deliberate reconnect
-  //    from the onEnd path), still preserving the cursor so the catch-up
-  //    starts from where we left off rather than byte 0
-  //  - projectId changed → hard re-subscribe and reset the cursor (new
-  //    project = new session = no shared history)
+  //  - reconnectKey changed (same Process) → hard re-subscribe with
+  //    cursor preserved, no xterm reset
+  //  - startedAt changed (new daemon Process — #0102) → term.reset()
+  //    + cursor=0 → daemon sends full new-Process buffer onto a fresh
+  //    emulator state, no overlap with the previous agent's bytes
+  //  - projectId changed → same as startedAt: term.reset() + cursor=0
   //
-  // The xterm terminal is never .clear()ed here; the daemon-side cursor
-  // (proto SubscribeRawOutputRequest.bytes_received) guarantees we don't
-  // double-write any byte we already have, so the prior "clear to avoid
-  // duplicates on wildfire phase transitions" reasoning no longer applies.
+  // The TUI does the moral equivalent: it always subscribes with
+  // bytesReceived=0 and calls terminal.Clear() on AgentStartedMsg
+  // (msghandler.go:159), so the vt emulator processes each new
+  // generation's bytes from a clean slate. The GUI keeps the cursor
+  // optimisation for same-Process reconnects (so a transient stream
+  // blip doesn't lose the user's scroll position to a full replay)
+  // but matches the TUI's "fresh emulator on generation change" rule
+  // — which is what stops the stacked-Claude-Code-banner garbage seen
+  // when reset-on-onEnd fired without a corresponding term.reset().
   useEffect(() => {
     const term = termRef.current
     if (!term) return
@@ -147,6 +165,16 @@ export function useAgentTerminal({ projectId, containerRef, active = false }: Us
     prevProjectIdRef.current = projectId
     prevReconnectKeyRef.current = reconnectKey
 
+    // Generation-change detection. The first observation of a non-empty
+    // startedAt is NOT a transition (the agent didn't restart — we're
+    // just learning its identity for the first time); only flip when
+    // both sides are set and differ.
+    const generationChanged =
+      prevStartedAtKeyRef.current !== '' &&
+      startedAtKey !== '' &&
+      startedAtKey !== prevStartedAtKeyRef.current
+    if (startedAtKey) prevStartedAtKeyRef.current = startedAtKey
+
     if (projChanged) {
       abortRef.current?.abort()
       abortRef.current = null
@@ -154,6 +182,24 @@ export function useAgentTerminal({ projectId, containerRef, active = false }: Us
         clearTimeout(unsubDelayRef.current)
         unsubDelayRef.current = null
       }
+      term.reset()
+      bytesReceivedRef.current = 0
+      prevStartedAtKeyRef.current = startedAtKey
+    } else if (generationChanged) {
+      // New daemon Process. Reset xterm AND the byte cursor so the
+      // daemon's full buffer replay (cursor=0 → SubscribeRawFrom
+      // returns the entire rawBuf) lands on a fresh emulator state.
+      // Skipping term.reset() here is what produced the stacked
+      // Claude Code banners (#0102) — absolute cursor-positioning
+      // escapes from the new agent's UI redraw landed at xterm's
+      // current cursor position on top of the previous agent's bytes.
+      abortRef.current?.abort()
+      abortRef.current = null
+      if (unsubDelayRef.current) {
+        clearTimeout(unsubDelayRef.current)
+        unsubDelayRef.current = null
+      }
+      term.reset()
       bytesReceivedRef.current = 0
     } else if (reconnectKeyChanged) {
       abortRef.current?.abort()
@@ -162,8 +208,10 @@ export function useAgentTerminal({ projectId, containerRef, active = false }: Us
         clearTimeout(unsubDelayRef.current)
         unsubDelayRef.current = null
       }
-      // Deliberately leave bytesReceivedRef alone — the daemon-side cursor
-      // resumes the catch-up at this offset, so the user keeps their place.
+      // Same Process — onEnd's fetchStatus already confirmed startedAt
+      // didn't change. Preserve the cursor so the daemon only sends
+      // bytes we haven't seen; do not reset xterm so the user's view
+      // and scroll position survive the transient blip.
     }
 
     if (active) {
@@ -198,16 +246,25 @@ export function useAgentTerminal({ projectId, containerRef, active = false }: Us
           term.write(data)
         },
         () => {
-          term.write('\r\n\x1b[90m[Agent stopped]\x1b[0m\r\n')
-          // Only reconnect if agent is still running (wildfire phase transitions)
-          // Don't reconnect if agent has truly stopped to avoid infinite loop
-          const currentStatus = useAgentStore.getState().statuses[projectId]
-          if (currentStatus?.isRunning) {
-            if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
-            reconnectTimerRef.current = setTimeout(() => {
-              setReconnectKey((k) => k + 1)
-            }, 2000)
-          }
+          // Stream closed. Do NOT reset bytesReceivedRef here — that
+          // forces the daemon to re-send its full buffer on the next
+          // subscribe, and those bytes carry absolute cursor-position
+          // escapes that overlap with xterm's existing screen state,
+          // producing the stacked-banner garbage from #0102. Instead,
+          // refresh the AgentStatus first so the next effect run can
+          // make an informed choice via startedAt:
+          //   - generation changed → term.reset() + cursor=0 path
+          //   - same Process       → reconnectKey path, cursor preserved
+          // Either way, no replay-on-stale-state.
+          useAgentStore.getState().fetchStatus(projectId).finally(() => {
+            const currentStatus = useAgentStore.getState().statuses[projectId]
+            if (currentStatus?.isRunning) {
+              if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+              reconnectTimerRef.current = setTimeout(() => {
+                setReconnectKey((k) => k + 1)
+              }, 200)
+            }
+          })
         },
         bytesReceivedRef.current
       )
@@ -215,10 +272,11 @@ export function useAgentTerminal({ projectId, containerRef, active = false }: Us
       return
     }
 
-    // active=false. Don't tear down immediately — a 2 s status-poll error
-    // briefly flips isRunning false (agent-store.ts:56-62) and the next
-    // poll restores it. Wait one full poll cycle + margin before pulling
-    // the subscription.
+    // active=false. Don't tear down immediately — special-mode start
+    // (Run All, Wildfire) and phase transitions briefly drop active
+    // while the daemon kills the old Process and spawns a new one.
+    // Wait one full poll cycle + margin before pulling the subscription
+    // so the next active=true cancels the pending tear-down.
     if (!abortRef.current || abortRef.current.signal.aborted) return
     if (unsubDelayRef.current) return
     unsubDelayRef.current = setTimeout(() => {
@@ -226,7 +284,7 @@ export function useAgentTerminal({ projectId, containerRef, active = false }: Us
       abortRef.current = null
       unsubDelayRef.current = null
     }, activeFlickerDebounceMs)
-  }, [projectId, active, reconnectKey])
+  }, [projectId, active, reconnectKey, startedAtKey])
 
   /** Get current terminal dimensions (for passing to startAgent) */
   const getDimensions = useCallback(() => {

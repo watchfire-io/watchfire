@@ -31,9 +31,19 @@ export function ModesControl({ projectId, layout }: Props) {
   const activeMode = agentStatus?.mode
   const stopDisabled = !isRunning || activeMode === 'chat'
 
+  // Mode switch: let the daemon's StartAgent do the atomic kill+restart
+  // (manager.go:165-189). A previous client-side stopAgent → startAgent
+  // pair caused a double-stop race: the daemon's StartAgent saw the
+  // still-cleaning-up agent in m.agents, called Process.Stop() a second
+  // time, and polled for up to 10 s — which timed out as "ConnectError:
+  // timed out waiting for previous agent to stop" when the outgoing
+  // agent's monitorProcess was running a slow merge/PR cleanup (any
+  // task-bearing mode: start-all / wildfire-execute). Removing the
+  // client-side stop lets cleanup run in parallel with the polling
+  // inside StartAgent — same wall time, but no double-blocking and no
+  // false-positive timeouts.
   const handleStart = async (mode: Mode) => {
     try {
-      if (isRunning) await stopAgent(projectId)
       await startAgent(projectId, mode)
       await fetchAgentStatus(projectId)
     } catch (err) {
