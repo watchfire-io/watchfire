@@ -52,6 +52,7 @@ Tasks stored in `<project>/.watchfire/tasks/` as individual YAML files.
 Location: `<project>/.watchfire/tasks/{task_number}.yaml` (e.g., `0001.yaml`)
 
 ```yaml
+version: 1
 task_id: <8-char-alphanumeric>
 task_number: <int>
 title: <string>
@@ -64,8 +65,10 @@ success: null                   # null | true | false
 failure_reason: ""
 position: <int>
 agent_sessions: 0
-created_at: "2026-01-01T..."
-updated_at: "2026-01-01T..."
+# Timestamps (created_at, started_at, completed_at, updated_at, deleted_at)
+# are managed by the daemon. When creating a task file, do NOT include
+# them — and never write them as empty strings like `started_at: ""`,
+# which the strict YAML time decoder rejects.
 ```
 
 ### Task Status Values
@@ -115,6 +118,10 @@ You can create new tasks by writing YAML files to `.watchfire/tasks/`:
 1. Find the highest existing task number in `.watchfire/tasks/`
 2. Create `{next_number}.yaml` with the task schema
 3. Set `status: draft` for user review, or `status: ready` to auto-start
+4. **Do NOT include any timestamp fields** (`created_at`, `started_at`,
+   `completed_at`, `updated_at`, `deleted_at`). The daemon fills them in
+   automatically. Writing an empty-string timestamp like `started_at: ""`
+   makes the YAML parser reject the file.
 
 ## What You Should NOT Do
 

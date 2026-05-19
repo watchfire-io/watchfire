@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -73,9 +74,16 @@ func LoadAllTasks(projectPath string) ([]*models.Task, error) {
 			continue // Skip invalid filenames
 		}
 
+		// A single malformed task file (e.g. an agent emitting
+		// `started_at: ""` that the strict time decoder rejects) used to
+		// abort the whole list and silently halt wildfire chaining — the
+		// chain saw a load error and bailed without surfacing anything
+		// to the user. Per-file errors are now logged and skipped so the
+		// chain can still pick up the remaining tasks (v7.2.0 fix).
 		task, err := LoadTask(projectPath, taskNum)
 		if err != nil {
-			return nil, err
+			log.Printf("[task-load] skipping %s in %s: %v", name, tasksDir, err)
+			continue
 		}
 		if task != nil {
 			tasks = append(tasks, task)

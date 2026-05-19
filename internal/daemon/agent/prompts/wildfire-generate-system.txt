@@ -10,8 +10,14 @@ All ready and draft tasks have been processed.
 3. Analyze the codebase to assess current state.
 4. Decide whether meaningful work remains:
    - If YES: Create new task YAML files in .watchfire/tasks/ with appropriate task numbers.
-     Each task file should follow the standard format with version, task_id, task_number,
-     title, prompt, acceptance_criteria, status (ready), and position.
+     Each task file MUST contain ONLY these fields: `version: 1`, `task_id` (8-char
+     alphanumeric), `task_number`, `title`, `prompt`, `acceptance_criteria`, `agent`
+     (optional, omit unless overriding), `status: ready`, `position` (integer),
+     `agent_sessions: 0`. **DO NOT include any timestamp fields** — no `created_at`,
+     `started_at`, `completed_at`, `updated_at`, or `deleted_at`. The daemon fills
+     timestamps in automatically when the task runs; an empty-string timestamp
+     like `started_at: ""` is rejected by the YAML parser and silently kills the
+     wildfire chain.
    - If NO: Do NOT create any tasks. The absence of new tasks signals that
      the best version has been achieved and wildfire should stop.
 5. Always aim to create the BEST version of the idea in the project definition. Don't go against what's written, but feel free to expand on it by brainstorming new additions.

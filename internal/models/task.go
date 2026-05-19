@@ -1,6 +1,10 @@
 package models
 
-import "time"
+import (
+	"time"
+
+	"gopkg.in/yaml.v3"
+)
 
 // TaskStatus represents the status of a task.
 type TaskStatus string
@@ -90,4 +94,44 @@ func (t *Task) Start() {
 	}
 	t.AgentSessions++
 	t.UpdatedAt = now
+}
+
+// taskTimeFields are the YAML keys whose value type is time.Time or
+// *time.Time. Some agents emit `started_at: ""` (literal empty string) when
+// generating new task files; gopkg.in/yaml.v3 rejects that with a parse
+// error which used to poison the entire LoadAllTasks call and silently halt
+// wildfire chaining (v7.2.0 fix).
+var taskTimeFields = map[string]struct{}{
+	"created_at":   {},
+	"started_at":   {},
+	"completed_at": {},
+	"updated_at":   {},
+	"deleted_at":   {},
+}
+
+// UnmarshalYAML treats empty-string scalars on time-typed fields as null so a
+// stray `started_at: ""` (or any other timestamp written as `""`) decodes to
+// the zero time / nil pointer instead of erroring out. Everything else falls
+// through to the default decoder.
+func (t *Task) UnmarshalYAML(node *yaml.Node) error {
+	if node != nil && node.Kind == yaml.MappingNode {
+		for i := 0; i+1 < len(node.Content); i += 2 {
+			key := node.Content[i]
+			val := node.Content[i+1]
+			if key == nil || val == nil {
+				continue
+			}
+			if key.Kind != yaml.ScalarNode || val.Kind != yaml.ScalarNode {
+				continue
+			}
+			if _, ok := taskTimeFields[key.Value]; !ok {
+				continue
+			}
+			if val.Value == "" {
+				val.Tag = "!!null"
+			}
+		}
+	}
+	type rawTask Task
+	return node.Decode((*rawTask)(t))
 }

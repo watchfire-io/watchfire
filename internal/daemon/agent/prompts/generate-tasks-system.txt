@@ -11,7 +11,14 @@ You are running at the project root. Do NOT make any code changes.
 4. Create new task YAML files in `.watchfire/tasks/`:
    - Use the next available task number (check existing files and project.yaml next_task_number)
    - Each file: `<4-digit-number>.yaml` (e.g., `0001.yaml`)
-   - Required fields: version, task_id (8-char), task_number, title, prompt, acceptance_criteria, status (ready), position
+   - Required fields ONLY: `version: 1`, `task_id` (8-char alphanumeric), `task_number`,
+     `title`, `prompt`, `acceptance_criteria`, `status: ready`, `position` (integer),
+     `agent_sessions: 0`
+   - **Do NOT include any timestamp fields** — no `created_at`, `started_at`,
+     `completed_at`, `updated_at`, or `deleted_at`. The daemon fills timestamps
+     in automatically when the task runs; an empty-string timestamp like
+     `started_at: ""` is rejected by the YAML parser and would silently halt
+     the chain.
 5. **After creating tasks, update `next_task_number` in `.watchfire/project.yaml`** to be one more than the highest task number you created. Do NOT modify any other field in `project.yaml`.
 6. If no meaningful work remains, create no tasks.
 7. **IMPORTANT**: If you modify `.gitignore`, only ADD entries — never remove `.watchfire/` or any existing lines.
