@@ -18,6 +18,20 @@ All ready and draft tasks have been processed.
      timestamps in automatically when the task runs; an empty-string timestamp
      like `started_at: ""` is rejected by the YAML parser and silently kills the
      wildfire chain.
+     - **ALWAYS single-quote the `title:` value** and double any literal single
+       quotes inside it. This is non-negotiable: titles often contain colons,
+       em-dashes, double quotes, or apostrophes, and an unquoted scalar with a
+       literal `: ` (colon-space) is parsed as a nested mapping and rejected with
+       `mapping values are not allowed in this context`. The bad task is then
+       silently invisible to the chain. Correct form:
+           title: 'Write a blog post — "Headline: Subhead"'
+           title: 'Add /pricing — costs, plans, FAQ'
+           title: 'Operator''s guide: reading the daemon logs'
+       Wrong form (will be silently dropped):
+           title: Write a blog post — "Headline: Subhead"
+     - For multi-line scalars in `prompt:` and `acceptance_criteria:`, use a
+       block scalar (`|` then indented body) as already shown in existing tasks
+       — that form is colon-safe.
    - If NO: Do NOT create any tasks. The absence of new tasks signals that
      the best version has been achieved and wildfire should stop.
 5. Always aim to create the BEST version of the idea in the project definition. Don't go against what's written, but feel free to expand on it by brainstorming new additions.

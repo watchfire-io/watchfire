@@ -19,6 +19,19 @@ You are running at the project root. Do NOT make any code changes.
      in automatically when the task runs; an empty-string timestamp like
      `started_at: ""` is rejected by the YAML parser and would silently halt
      the chain.
+   - **ALWAYS single-quote the `title:` value** and double any literal single
+     quotes inside it. Titles often contain colons, em-dashes, double quotes, or
+     apostrophes, and an unquoted scalar with a literal `: ` (colon-space) is
+     parsed as a nested mapping and rejected with `mapping values are not
+     allowed in this context`. The bad task is then silently invisible to the
+     chain. Correct form:
+         title: 'Write a blog post — "Headline: Subhead"'
+         title: 'Add /pricing — costs, plans, FAQ'
+         title: 'Operator''s guide: reading the daemon logs'
+     Wrong form (will be silently dropped):
+         title: Write a blog post — "Headline: Subhead"
+   - For multi-line scalars in `prompt:` and `acceptance_criteria:`, use a
+     block scalar (`|` then indented body) — that form is colon-safe.
 5. **After creating tasks, update `next_task_number` in `.watchfire/project.yaml`** to be one more than the highest task number you created. Do NOT modify any other field in `project.yaml`.
 6. If no meaningful work remains, create no tasks.
 7. **IMPORTANT**: If you modify `.gitignore`, only ADD entries — never remove `.watchfire/` or any existing lines.

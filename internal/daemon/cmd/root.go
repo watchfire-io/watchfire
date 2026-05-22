@@ -4,10 +4,12 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -61,6 +63,14 @@ func runDaemon(cmd *cobra.Command, args []string) error {
 	if err := config.EnsureGlobalDir(); err != nil {
 		log.Fatalf("Failed to create global directory: %v", err)
 	}
+
+	// Persist daemon logs. When Watchfire.app launches us, our stdout/stderr
+	// are wired to /dev/null — every chain decision, watcher event, and
+	// LoadAllTasks skip-warning is otherwise discarded, making post-mortem
+	// debugging of wildfire-chain death impossible. Tee log output to
+	// ~/.watchfire/daemon.log so the trail survives across restarts and
+	// across Electron-spawned vs foreground launches.
+	openDaemonLog()
 
 	// Acquire the OS-level singleton lock BEFORE any other startup work.
 	// This is the authoritative "am I alone?" check — it closes the
@@ -259,6 +269,30 @@ func (l *lazyDaemonState) DigestsDir() string {
 		return server.NewTrayState(srv).DigestsDir()
 	}
 	return ""
+}
+
+// openDaemonLog appends future log output to ~/.watchfire/daemon.log in
+// addition to the existing stderr destination. Best-effort: if the file
+// can't be opened, the daemon continues with stderr-only logging.
+//
+// Append (not truncate) so a restart preserves the immediately-prior
+// run's log lines — those are usually the most diagnostic when the
+// last process died unexpectedly. Users can rotate the file manually
+// or via newsyslog; the daemon does not size-cap it.
+func openDaemonLog() {
+	dir, err := config.GlobalDir()
+	if err != nil {
+		log.Printf("[daemon-log] could not resolve global dir: %v — continuing with stderr only", err)
+		return
+	}
+	path := filepath.Join(dir, "daemon.log")
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		log.Printf("[daemon-log] could not open %s: %v — continuing with stderr only", path, err)
+		return
+	}
+	log.SetOutput(io.MultiWriter(os.Stderr, f))
+	log.Printf("[daemon-log] writing logs to %s", path)
 }
 
 // waitForPort polls until a TCP connection to the given port succeeds or the timeout expires.
