@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ListTodo, FileText, Trash2, Settings, GitBranch, Globe, Circle, PanelRightClose, PanelRight, KeyRound, Sparkles } from 'lucide-react'
+import { ListTodo, FileText, Trash2, Settings, GitBranch, Globe, Circle, PanelRightClose, PanelRight, KeyRound, Sparkles, Maximize2, Minimize2 } from 'lucide-react'
 import { useAppStore } from '../../stores/app-store'
 import { useProjectsStore } from '../../stores/projects-store'
 import { useTasksStore } from '../../stores/tasks-store'
@@ -64,6 +64,9 @@ export function ProjectView() {
     const saved = localStorage.getItem('wf-right-panel-open')
     return saved !== null ? saved === 'true' : true
   })
+  const [chatFocus, setChatFocus] = useState(() => {
+    return localStorage.getItem(`wf-chat-focus-${projectId ?? ''}`) === 'true'
+  })
   const { width: rightPanelWidth, handleDragStart } = usePanelResize({
     storageKey: 'wf-right-panel-width',
     defaultWidth: 520,
@@ -74,6 +77,30 @@ export function ProjectView() {
   useEffect(() => {
     localStorage.setItem('wf-right-panel-open', String(rightPanelOpen))
   }, [rightPanelOpen])
+
+  // Per-project: re-hydrate focus state when the active project changes,
+  // and mirror updates back to localStorage.
+  useEffect(() => {
+    if (!projectId) return
+    setChatFocus(localStorage.getItem(`wf-chat-focus-${projectId}`) === 'true')
+  }, [projectId])
+
+  useEffect(() => {
+    if (projectId) localStorage.setItem(`wf-chat-focus-${projectId}`, String(chatFocus))
+  }, [chatFocus, projectId])
+
+  // Interlocks: focus mode is meaningless without the right panel open.
+  // Entering focus auto-opens it; closing the right panel exits focus.
+  const enterFocus = () => {
+    setChatFocus(true)
+    if (!rightPanelOpen) setRightPanelOpen(true)
+  }
+  const toggleFocus = () => (chatFocus ? setChatFocus(false) : enterFocus())
+  const toggleRightPanel = () => {
+    const next = !rightPanelOpen
+    setRightPanelOpen(next)
+    if (!next && chatFocus) setChatFocus(false)
+  }
 
   // Honour tray-driven focus requests: when a focus event lands on this
   // project, switch the center tab to match the requested target.
@@ -166,8 +193,17 @@ export function ProjectView() {
             <ExportPill scope={{ kind: 'project', projectId }} />
             <OpenInIDEButton projectPath={project.path} />
             {!rightPanelOpen && <ModesControl projectId={projectId} layout="menu" />}
+            {rightPanelOpen && (
+              <button
+                onClick={toggleFocus}
+                title={chatFocus ? 'Exit focus' : 'Focus chat'}
+                className="p-1.5 text-[var(--wf-text-muted)] hover:text-[var(--wf-text-primary)] transition-colors"
+              >
+                {chatFocus ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
+              </button>
+            )}
             <button
-              onClick={() => setRightPanelOpen(!rightPanelOpen)}
+              onClick={toggleRightPanel}
               className="p-1.5 text-[var(--wf-text-muted)] hover:text-[var(--wf-text-primary)] transition-colors"
             >
               {rightPanelOpen ? <PanelRightClose size={18} /> : <PanelRight size={18} />}
@@ -211,51 +247,64 @@ export function ProjectView() {
       {/* Content area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="flex-1 flex overflow-hidden min-h-0">
-          {/* Center panel */}
-          <div className="flex-1 flex flex-col overflow-hidden">
-            {/* Tab bar */}
-            <div className="flex items-center gap-1 px-4 py-1 border-b border-[var(--wf-border)]">
-              {CENTER_TABS.map((tab) => {
-                const Icon = tab.icon
-                return (
-                  <button
-                    key={tab.key}
-                    onClick={() => setCenterTab(tab.key)}
-                    className={cn(
-                      'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--wf-radius-md)] transition-colors',
-                      centerTab === tab.key
-                        ? 'bg-[var(--wf-bg-elevated)] text-[var(--wf-text-primary)]'
-                        : 'text-[var(--wf-text-muted)] hover:text-[var(--wf-text-secondary)]'
-                    )}
-                  >
-                    <Icon size={14} />
-                    {tab.label}
-                  </button>
-                )
-              })}
-            </div>
-
-            {/* Tab content */}
+          {/* Center panel — hidden in focus-chat mode */}
+          {!chatFocus && (
             <div className="flex-1 flex flex-col overflow-hidden">
-              {centerTab === 'tasks' && <TasksTab projectId={projectId} />}
-              {centerTab === 'definition' && <DefinitionTab projectId={projectId} project={project} />}
-              {centerTab === 'insights' && <InsightsTab projectId={projectId} />}
-              {centerTab === 'secrets' && <SecretsTab projectId={projectId} project={project} />}
-              {centerTab === 'trash' && <TrashTab projectId={projectId} />}
-              {centerTab === 'settings' && <SettingsTab projectId={projectId} project={project} />}
+              {/* Tab bar */}
+              <div className="flex items-center gap-1 px-4 py-1 border-b border-[var(--wf-border)]">
+                {CENTER_TABS.map((tab) => {
+                  const Icon = tab.icon
+                  return (
+                    <button
+                      key={tab.key}
+                      onClick={() => setCenterTab(tab.key)}
+                      className={cn(
+                        'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--wf-radius-md)] transition-colors',
+                        centerTab === tab.key
+                          ? 'bg-[var(--wf-bg-elevated)] text-[var(--wf-text-primary)]'
+                          : 'text-[var(--wf-text-muted)] hover:text-[var(--wf-text-secondary)]'
+                      )}
+                    >
+                      <Icon size={14} />
+                      {tab.label}
+                    </button>
+                  )
+                })}
+              </div>
+
+              {/* Tab content */}
+              <div className="flex-1 flex flex-col overflow-hidden">
+                {centerTab === 'tasks' && <TasksTab projectId={projectId} />}
+                {centerTab === 'definition' && <DefinitionTab projectId={projectId} project={project} />}
+                {centerTab === 'insights' && <InsightsTab projectId={projectId} />}
+                {centerTab === 'secrets' && <SecretsTab projectId={projectId} project={project} />}
+                {centerTab === 'trash' && <TrashTab projectId={projectId} />}
+                {centerTab === 'settings' && <SettingsTab projectId={projectId} project={project} />}
+              </div>
             </div>
-          </div>
+          )}
 
           {/* Right panel */}
           {rightPanelOpen && (
             <>
               <div
-                onMouseDown={handleDragStart}
-                className="shrink-0 w-1 cursor-col-resize group relative"
+                onMouseDown={chatFocus ? undefined : handleDragStart}
+                onDoubleClick={toggleFocus}
+                title={chatFocus ? 'Double-click to exit focus' : 'Drag to resize · double-click to focus chat'}
+                className={cn(
+                  'shrink-0 w-1 group relative',
+                  chatFocus ? 'cursor-pointer' : 'cursor-col-resize'
+                )}
               >
                 <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 opacity-0 group-hover:opacity-100 bg-[var(--wf-accent)] transition-opacity" />
               </div>
-              <div className="shrink-0 overflow-hidden border-l border-[var(--wf-border)]" style={{ width: rightPanelWidth }}>
+              <div
+                className={cn(
+                  'overflow-hidden border-l border-[var(--wf-border)]',
+                  chatFocus ? 'flex-1' : 'shrink-0'
+                )}
+                style={chatFocus ? undefined : { width: rightPanelWidth }}
+              >
                 <RightPanel projectId={projectId} />
               </div>
             </>

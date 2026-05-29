@@ -29,7 +29,12 @@ export function Sidebar() {
 
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number; projectId: string; projectName: string } | null>(null)
   const [confirmRemove, setConfirmRemove] = useState<{ projectId: string; projectName: string } | null>(null)
+  const [version, setVersion] = useState<string>('')
   const contextMenuRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    window.watchfire.getVersion().then(setVersion).catch(() => {})
+  }, [])
 
   // Close context menu on outside click
   useEffect(() => {
@@ -74,11 +79,18 @@ export function Sidebar() {
         {/* Space for macOS traffic lights */}
         <div className="h-10" />
         {!collapsed ? (
-          <div className="flex items-center gap-2 px-4 pb-3 titlebar-no-drag">
-            <img src={watchfireIcon} alt="Watchfire" className="w-7 h-7 shrink-0" />
-            <span className="font-heading font-semibold text-xl tracking-tight text-[var(--wf-text-primary)]">
-              watchfire
-            </span>
+          <div className="flex flex-col pb-3 titlebar-no-drag">
+            <div className="flex items-center gap-2 px-4">
+              <img src={watchfireIcon} alt="Watchfire" className="w-7 h-7 shrink-0" />
+              <span className="font-heading font-semibold text-xl tracking-tight text-[var(--wf-text-primary)]">
+                watchfire
+              </span>
+            </div>
+            {version && (
+              <span className="px-4 -mt-1 text-[10px] text-[var(--wf-text-muted)]">
+                v{version}
+              </span>
+            )}
           </div>
         ) : (
           <div className="flex justify-center pb-3 titlebar-no-drag">
