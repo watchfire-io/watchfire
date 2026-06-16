@@ -15,11 +15,17 @@ import (
 // (the active file plus its numbered backups) is roughly
 // daemonLogFileCap * (1 + daemonLogBackups).
 //
-// v7.3.0 caps the family at ~1 GiB after a user's daemon.log grew to
-// 300 GB under the v7.2.1 "rotate manually if it grows" deferral.
+// The global daemon.log now carries only coarse lifecycle + project-less
+// lines: the high-volume per-project trail (wildfire chain/merge/agent/poll
+// + the formerly runaway per-event watcher logging) moved to
+// ~/.watchfire/logs/<project_id>/daemon.log, and the watcher no longer logs
+// its own log writes. With that noise gone a small cap is plenty, so this
+// dropped from ~1 GiB to ~64 MiB. (The 1 GiB cap landed in v7.3.0 after a
+// user's daemon.log grew to 300 GB under the v7.2.1 fsnotify feedback loop —
+// that loop is now fixed at the source in the watcher.)
 const (
-	daemonLogFileCap = 500 * 1024 * 1024 // 500 MiB per file
-	daemonLogBackups = 1                 // one numbered backup (daemon.log.1)
+	daemonLogFileCap = 32 * 1024 * 1024 // 32 MiB per file
+	daemonLogBackups = 1                // one numbered backup (daemon.log.1)
 )
 
 // openDaemonLog appends future log output to ~/.watchfire/daemon.log in

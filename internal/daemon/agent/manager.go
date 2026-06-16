@@ -197,7 +197,7 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 	// Load project config for definition and agent selection
 	project, err := config.LoadProject(opts.ProjectPath)
 	if err != nil {
-		log.Printf("Warning: could not load project config: %v", err)
+		config.ProjectLogf(opts.ProjectID, "[agent] Warning: could not load project config: %v", err)
 	}
 
 	// Load the task early for task-scoped modes so its Agent override flows
@@ -244,7 +244,7 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 		//    the post-task merge and silently halts chaining — commit upfront
 		//    so the merge path always has a clean target.
 		if err := CommitDirtyMain(opts.ProjectPath); err != nil {
-			log.Printf("Warning: pre-run auto-commit of main failed: %v", err)
+			config.ProjectLogf(opts.ProjectID, "[agent] Warning: pre-run auto-commit of main failed: %v", err)
 		}
 
 		// 1. Create git worktree
@@ -256,14 +256,14 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 		workDir = wt
 		worktreePath = wt
 
-		// 2. Mark task as started
-		if taskModel != nil {
-			taskModel.Start() // increments AgentSessions, sets StartedAt
-			if taskModel.Status == models.TaskStatusDraft {
-				taskModel.Status = models.TaskStatusReady
-			}
-			_ = config.SaveTask(opts.ProjectPath, taskModel)
-		}
+		// 2. (Stamp moved post-launch.) The task is marked as started
+		//    (AgentSessions++, StartedAt) only AFTER the PTY process is
+		//    confirmed running — see below, just past NewProcess. Stamping
+		//    here used to orphan a task: if any step between here and the
+		//    process spawn failed (system-prompt install, command build,
+		//    sandbox/PTY spawn), the task was already persisted as
+		//    "started" (sessions=1) while no agent ever ran and the chain
+		//    silently dropped to idle, leaving a ready task stranded.
 
 		// 3. Use task-specific system prompt (includes task details)
 		if opts.TaskSystemPrompt != "" {
@@ -361,6 +361,19 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 		return nil, fmt.Errorf("failed to start agent process: %w", err)
 	}
 
+	// Now that the PTY process is confirmed running, mark the task as
+	// started (AgentSessions++, StartedAt, draft→ready). Doing this here
+	// — rather than before the spawn — guarantees a launch failure above
+	// can never leave a task persisted as "started" with no agent behind
+	// it (the stranded-ready-task / silent-drop-to-chat bug).
+	if isTaskScoped && taskModel != nil {
+		taskModel.Start() // increments AgentSessions, sets StartedAt
+		if taskModel.Status == models.TaskStatusDraft {
+			taskModel.Status = models.TaskStatusReady
+		}
+		_ = config.SaveTask(opts.ProjectPath, taskModel)
+	}
+
 	startedAt := time.Now().UTC()
 	// Rising edge: when the chain-restart path forwards a non-zero
 	// RunStartedAt the new session inherits the original run anchor; on a
@@ -391,7 +404,7 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 	m.agents[opts.ProjectID] = ra
 	m.persistStateLocked()
 
-	log.Printf("Agent started for project %s (%s mode)", opts.ProjectName, opts.Mode)
+	config.ProjectLogf(opts.ProjectID, "[agent] started (%s mode)", opts.Mode)
 
 	// Monitor process in background
 	go m.monitorProcess(opts.ProjectID, proc)
@@ -423,7 +436,7 @@ func (m *Manager) monitorProcess(projectID string, proc *Process) {
 		return
 	}
 
-	log.Printf("Agent for project %s exited (mode: %s)", ag.ProjectName, ag.Mode)
+	config.ProjectLogf(projectID, "[agent] exited (mode: %s)", ag.Mode)
 
 	// Persist scrollback to log file
 	m.writeSessionLog(ag, proc)
@@ -437,18 +450,18 @@ func (m *Manager) monitorProcess(projectID string, proc *Process) {
 	// would have no signal that the run-all queue stopped.
 	taskDoneResult := TaskDoneResult{Outcome: TaskDoneOK}
 	if ag.TaskNumber > 0 && m.onTaskDoneFn != nil {
-		log.Printf("[chain] Running onTaskDoneFn for task #%04d (mode=%s)", ag.TaskNumber, ag.Mode)
+		config.ProjectLogf(projectID, "[chain] Running onTaskDoneFn for task #%04d (mode=%s)", ag.TaskNumber, ag.Mode)
 		taskDoneFn := m.onTaskDoneFn
 		taskNum := ag.TaskNumber
 		projPath := ag.ProjectPath
 		wtPath := ag.WorktreePath
 		m.mu.Unlock()
 		taskDoneResult = taskDoneFn(projPath, taskNum, wtPath)
-		log.Printf("[chain] onTaskDoneFn returned outcome=%v reason=%q for task #%04d", taskDoneResult.Outcome, taskDoneResult.Reason, taskNum)
+		config.ProjectLogf(projectID, "[chain] onTaskDoneFn returned outcome=%v reason=%q for task #%04d", taskDoneResult.Outcome, taskDoneResult.Reason, taskNum)
 		m.mu.Lock()
 		// Re-check agent is still ours after releasing lock
 		if curr, ok := m.agents[projectID]; !ok || curr.Process != proc {
-			log.Printf("[chain] Agent replaced or removed during onTaskDoneFn — aborting chain")
+			config.ProjectLogf(projectID, "[chain] Agent replaced or removed during onTaskDoneFn — aborting chain")
 			m.mu.Unlock()
 			return
 		}
@@ -468,11 +481,11 @@ func (m *Manager) monitorProcess(projectID string, proc *Process) {
 	hasIssue := proc.GetIssue() != nil
 	taskDoneOK := taskDoneResult.ShouldContinueChain()
 
-	log.Printf("[chain] Decision: taskDoneOK=%v userStopped=%v hasIssue=%v mode=%s nextTaskFn=%v",
+	config.ProjectLogf(projectID, "[chain] Decision: taskDoneOK=%v userStopped=%v hasIssue=%v mode=%s nextTaskFn=%v",
 		taskDoneOK, ag.userStopped, hasIssue, ag.Mode, m.nextTaskFn != nil)
 
 	if hasIssue {
-		log.Printf("[chain] Chaining blocked: active issue detected (type=%s) — stopping automatic mode", proc.GetIssue().Type)
+		config.ProjectLogf(projectID, "[chain] Chaining blocked: active issue detected (type=%s) — stopping automatic mode", proc.GetIssue().Type)
 	}
 
 	if taskDoneOK && !ag.userStopped && !hasIssue && (ag.Mode == ModeStartAll || ag.Mode == ModeWildfire) && m.nextTaskFn != nil {
@@ -496,7 +509,7 @@ func (m *Manager) monitorProcess(projectID string, proc *Process) {
 
 		nextOpts, err := m.nextTaskFn(projectID, projectPath, agentMode, agentPhase, rows, cols)
 		if err != nil {
-			log.Printf("%s: error finding next task: %v", agentMode, err)
+			config.ProjectLogf(projectID, "[chain] %s: error finding next task: %v", agentMode, err)
 			emitRunComplete(bus, projectID, projectName, projectPath, agentMode, runStartedAt)
 			return
 		}
@@ -510,7 +523,7 @@ func (m *Manager) monitorProcess(projectID string, proc *Process) {
 				m.mu.Unlock()
 
 				if count >= maxTaskRestarts {
-					log.Printf("[chain] Restart limit reached: task #%04d restarted %d times without completing — switching to chat mode", prevTaskNumber, count)
+					config.ProjectLogf(projectID, "[chain] Restart limit reached: task #%04d restarted %d times without completing — switching to chat mode", prevTaskNumber, count)
 					m.mu.Lock()
 					delete(m.taskRestarts, projectID)
 					m.mu.Unlock()
@@ -530,11 +543,11 @@ func (m *Manager) monitorProcess(projectID string, proc *Process) {
 						Cols:         cols,
 					}
 					if _, err := m.StartAgent(chatOpts); err != nil {
-						log.Printf("[chain] Failed to start chat mode after restart limit: %v", err)
+						config.ProjectLogf(projectID, "[chain] Failed to start chat mode after restart limit: %v", err)
 					}
 					return
 				}
-				log.Printf("[chain] Task #%04d restart %d/%d", prevTaskNumber, count, maxTaskRestarts)
+				config.ProjectLogf(projectID, "[chain] Task #%04d restart %d/%d", prevTaskNumber, count, maxTaskRestarts)
 			} else {
 				// Different task — reset counter (successful progression)
 				m.mu.Lock()
@@ -545,15 +558,23 @@ func (m *Manager) monitorProcess(projectID string, proc *Process) {
 			// Forward the run-window anchor so the next chained agent
 			// keeps the same RunStartedAt as the first one in this run.
 			nextOpts.RunStartedAt = runStartedAt
-			log.Printf("%s: starting next — mode=%s phase=%s task=#%04d", agentMode, nextOpts.Mode, nextOpts.WildfirePhase, nextOpts.TaskNumber)
+			config.ProjectLogf(projectID, "[chain] %s: starting next — mode=%s phase=%s task=#%04d", agentMode, nextOpts.Mode, nextOpts.WildfirePhase, nextOpts.TaskNumber)
 			if _, err := m.StartAgent(*nextOpts); err != nil {
-				log.Printf("%s: failed to start next: %v", agentMode, err)
+				config.ProjectLogf(projectID, "[chain] %s: failed to start next (task #%04d): %v", agentMode, nextOpts.TaskNumber, err)
+				// Surface the halt instead of dropping silently to idle. A
+				// launch failure here previously left the chain dead with a
+				// task stamped "started" and no agent behind it; emit a
+				// TASK_FAILED-shaped notification when a task was involved so
+				// the dashboard/notifications reflect the stalled run.
+				if nextOpts.TaskNumber > 0 {
+					emitTaskDoneFailure(bus, projectID, projectPath, projectName, nextOpts.TaskNumber, fmt.Sprintf("failed to start agent: %v", err))
+				}
 				emitRunComplete(bus, projectID, projectName, projectPath, agentMode, runStartedAt)
 			}
 			return
 		}
 
-		log.Printf("%s: no more tasks for project %s", agentMode, projectID)
+		config.ProjectLogf(projectID, "[chain] %s: no more tasks", agentMode)
 		emitRunComplete(bus, projectID, projectName, projectPath, agentMode, runStartedAt)
 		return
 	}
@@ -593,7 +614,7 @@ func (m *Manager) pollTaskStatus(projectID, projectPath string, taskNumber int, 
 				continue
 			}
 			if t.Status == models.TaskStatusDone {
-				log.Printf("[poll] Task #%04d done — stopping agent for project %s", taskNumber, projectID)
+				config.ProjectLogf(projectID, "[poll] Task #%04d done — stopping agent", taskNumber)
 				_ = m.StopAgentForTask(projectID, taskNumber)
 				return
 			}
@@ -623,7 +644,7 @@ func (m *Manager) pollSignalFile(projectID, projectPath string, phase WildfirePh
 			return
 		case <-ticker.C:
 			if _, err := os.Stat(signalPath); err == nil {
-				log.Printf("[poll] Signal file %s found — stopping agent for project %s", signalFile, projectID)
+				config.ProjectLogf(projectID, "[poll] Signal file %s found — stopping agent", signalFile)
 				// Remove signal file before stopping
 				_ = os.Remove(signalPath)
 				_ = m.StopAgent(projectID)
@@ -696,7 +717,7 @@ func (m *Manager) StopAll() {
 	m.mu.Unlock()
 
 	for _, a := range agents {
-		log.Printf("Stopping agent for project %s", a.ProjectName)
+		config.ProjectLogf(a.ProjectID, "[agent] stopping")
 		a.Process.Stop()
 	}
 }
@@ -771,10 +792,10 @@ func (m *Manager) writeSessionLog(ag *RunningAgent, proc *Process) {
 		scrollback,
 	)
 	if err != nil {
-		log.Printf("Failed to write session log for project %s: %v", ag.ProjectName, err)
+		config.ProjectLogf(ag.ProjectID, "[session-log] Failed to write session log: %v", err)
 		return
 	}
-	log.Printf("Session log written: %s", entry.LogID)
+	config.ProjectLogf(ag.ProjectID, "[session-log] written: %s", entry.LogID)
 
 	// Try to find and copy the agent's JSONL transcript
 	workDir := ag.WorktreePath
@@ -784,17 +805,17 @@ func (m *Manager) writeSessionLog(ag *RunningAgent, proc *Process) {
 	if ag.SessionName != "" && workDir != "" {
 		be, ok := backend.Get(backendName)
 		if !ok {
-			log.Printf("backend %q not registered — skipping transcript lookup", backendName)
+			config.ProjectLogf(ag.ProjectID, "[session-log] backend %q not registered — skipping transcript lookup", backendName)
 			return
 		}
 		transcriptPath, findErr := be.LocateTranscript(workDir, proc.StartedAt(), ag.SessionName)
 		if findErr != nil {
-			log.Printf("No transcript found for session %q: %v", ag.SessionName, findErr)
+			config.ProjectLogf(ag.ProjectID, "[session-log] No transcript found for session %q: %v", ag.SessionName, findErr)
 		} else {
 			if copyErr := config.CopyTranscript(ag.ProjectID, entry.LogID, transcriptPath); copyErr != nil {
-				log.Printf("Failed to copy transcript for session %q: %v", ag.SessionName, copyErr)
+				config.ProjectLogf(ag.ProjectID, "[session-log] Failed to copy transcript for session %q: %v", ag.SessionName, copyErr)
 			} else {
-				log.Printf("Transcript copied: %s.jsonl", entry.LogID)
+				config.ProjectLogf(ag.ProjectID, "[session-log] Transcript copied: %s.jsonl", entry.LogID)
 			}
 		}
 	}

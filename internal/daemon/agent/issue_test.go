@@ -27,13 +27,13 @@ func TestDetectAuthError(t *testing.T) {
 			expected: true,
 		},
 		{
-			name:     "Invalid token",
-			line:     "Error: invalid token provided",
+			name:     "Invalid API key",
+			line:     "Error: invalid API key",
 			expected: true,
 		},
 		{
-			name:     "Token expired",
-			line:     "Your token has expired",
+			name:     "OAuth token expired (bare)",
+			line:     "Your OAuth token has expired",
 			expected: true,
 		},
 		{
@@ -44,6 +44,20 @@ func TestDetectAuthError(t *testing.T) {
 		{
 			name:     "Empty line",
 			line:     "",
+			expected: false,
+		},
+		// False-positive guards: ordinary output that mentions tokens must
+		// NOT be flagged as an auth error (regression test for the bare
+		// `invalid.*token` / `token.*expired` patterns that silently halted
+		// the wildfire chain on any project whose code touches tokens).
+		{
+			name:     "Code returning an invalid-token error string",
+			line:     "if token == \"\" { return errors.New(\"invalid token provided\") }",
+			expected: false,
+		},
+		{
+			name:     "Comment about a possibly-expired token",
+			line:     "// the cached token may have expired; refresh before use",
 			expected: false,
 		},
 	}
@@ -78,8 +92,8 @@ func TestDetectRateLimit(t *testing.T) {
 			expectHasReset: false,
 		},
 		{
-			name:           "Too many requests",
-			line:           "Error: too many requests",
+			name:           "Usage limit reached",
+			line:           "Claude usage limit reached. Try again later.",
 			expectDetected: true,
 			expectHasReset: false,
 		},
@@ -92,6 +106,28 @@ func TestDetectRateLimit(t *testing.T) {
 		{
 			name:           "Normal output",
 			line:           "Compiling main.go...",
+			expectDetected: false,
+			expectHasReset: false,
+		},
+		// False-positive guards: ordinary output mentioning rate limiting
+		// must NOT halt the chain (regression test for the bare `rate limit`
+		// / `too many requests` patterns — a project whose own code or task
+		// titles mention rate limiting would otherwise silently stop wildfire).
+		{
+			name:           "Code implementing rate limiting",
+			line:           "Implemented rate limiting with a token-bucket backoff",
+			expectDetected: false,
+			expectHasReset: false,
+		},
+		{
+			name:           "Task title mentioning rate limiting",
+			line:           "Centralized polite-fetch layer: rate limiting, backoff",
+			expectDetected: false,
+			expectHasReset: false,
+		},
+		{
+			name:           "Comment referencing a 429 status",
+			line:           "// upstream returns 429 when the quota is exhausted",
 			expectDetected: false,
 			expectHasReset: false,
 		},

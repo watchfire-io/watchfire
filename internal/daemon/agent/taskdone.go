@@ -94,7 +94,7 @@ func handleTaskDoneWith(fns taskDoneFns, projectPath string, taskNumber int, wor
 	}
 	t, err := fns.LoadTask(projectPath, taskNumber)
 	if err != nil || t == nil {
-		log.Printf("[merge] Failed to load task #%04d: %v", taskNumber, err)
+		config.ProjectLogf(proj.ProjectID, "[merge] Failed to load task #%04d: %v", taskNumber, err)
 		reason := "task not found"
 		if err != nil {
 			reason = fmt.Sprintf("load task: %v", err)
@@ -102,10 +102,10 @@ func handleTaskDoneWith(fns taskDoneFns, projectPath string, taskNumber int, wor
 		return TaskDoneResult{Outcome: TaskDoneMergeFailed, Reason: reason}
 	}
 	if t.Status != models.TaskStatusDone {
-		log.Printf("[merge] Task #%04d not done (status: %s), skipping merge", taskNumber, t.Status)
+		config.ProjectLogf(proj.ProjectID, "[merge] Task #%04d not done (status: %s), skipping merge", taskNumber, t.Status)
 		return TaskDoneResult{Outcome: TaskDoneOK}
 	}
-	log.Printf("[merge] Task #%04d done, deciding merge path (auto_merge=%v, auto_delete=%v)",
+	config.ProjectLogf(proj.ProjectID, "[merge] Task #%04d done, deciding merge path (auto_merge=%v, auto_delete=%v)",
 		taskNumber, proj.AutoMerge, proj.AutoDeleteBranch)
 
 	if proj.AutoMerge && tryAutoPR(fns, proj, t, projectPath, taskNumber, bus) {
@@ -125,7 +125,7 @@ func tryAutoPR(fns taskDoneFns, proj *models.Project, t *models.Task, projectPat
 		return false
 	}
 
-	log.Printf("[auto-pr] Task #%04d: project %s opted into GitHub auto-PR — attempting PR", taskNumber, proj.Name)
+	config.ProjectLogf(proj.ProjectID, "[auto-pr] Task #%04d: project %s opted into GitHub auto-PR — attempting PR", taskNumber, proj.Name)
 
 	prRes, prErr := fns.OpenPR(context.Background(), gitpkg.OpenPROptions{
 		ProjectPath:        projectPath,
@@ -145,11 +145,11 @@ func tryAutoPR(fns taskDoneFns, proj *models.Project, t *models.Task, projectPat
 		GitHubHostname: enterpriseHostnameFor(integrations),
 	})
 	if prErr == nil {
-		log.Printf("[auto-pr] Task #%04d PR opened: %s", taskNumber, prRes.URL)
+		config.ProjectLogf(proj.ProjectID, "[auto-pr] Task #%04d PR opened: %s", taskNumber, prRes.URL)
 		emitPROpenedNotification(fns, bus, proj, taskNumber, prRes.URL)
 		if proj.AutoDeleteBranch {
 			if err := fns.RemoveWorktree(projectPath, taskNumber, true); err != nil {
-				log.Printf("[auto-pr] Failed to remove worktree for task #%04d after PR open: %v", taskNumber, err)
+				config.ProjectLogf(proj.ProjectID, "[auto-pr] Failed to remove worktree for task #%04d after PR open: %v", taskNumber, err)
 			}
 		}
 		return true
@@ -197,7 +197,7 @@ func emitPROpenedNotification(fns taskDoneFns, bus *notify.Bus, proj *models.Pro
 		EmittedAt:  emittedAt,
 	}
 	if err := fns.EmitNotification(bus, n); err != nil {
-		log.Printf("[auto-pr] failed to record PR-opened notification for task #%04d: %v", taskNumber, err)
+		config.ProjectLogf(proj.ProjectID, "[auto-pr] failed to record PR-opened notification for task #%04d: %v", taskNumber, err)
 	}
 }
 
@@ -210,20 +210,20 @@ func runSilentMerge(fns taskDoneFns, proj *models.Project, t *models.Task, proje
 		merged, mergeErr = fns.MergeWorktree(projectPath, taskNumber)
 		switch {
 		case mergeErr != nil:
-			log.Printf("[merge] Auto-merge failed for task #%04d: %v", taskNumber, mergeErr)
+			config.ProjectLogf(proj.ProjectID, "[merge] Auto-merge failed for task #%04d: %v", taskNumber, mergeErr)
 			mergeFailed = true
 			mergeReason = mergeErr.Error()
 		case merged:
-			log.Printf("[merge] Auto-merged task #%04d into current branch", taskNumber)
+			config.ProjectLogf(proj.ProjectID, "[merge] Auto-merged task #%04d into current branch", taskNumber)
 		default:
-			log.Printf("[merge] Task #%04d has no file differences — skipped merge", taskNumber)
+			config.ProjectLogf(proj.ProjectID, "[merge] Task #%04d has no file differences — skipped merge", taskNumber)
 		}
 	}
 	if proj.AutoDeleteBranch && !mergeFailed {
 		if err := fns.RemoveWorktree(projectPath, taskNumber, merged); err != nil {
-			log.Printf("[merge] Failed to remove worktree for task #%04d: %v", taskNumber, err)
+			config.ProjectLogf(proj.ProjectID, "[merge] Failed to remove worktree for task #%04d: %v", taskNumber, err)
 		} else {
-			log.Printf("[merge] Removed worktree for task #%04d", taskNumber)
+			config.ProjectLogf(proj.ProjectID, "[merge] Removed worktree for task #%04d", taskNumber)
 		}
 	}
 	if !mergeFailed {
@@ -238,7 +238,7 @@ func runSilentMerge(fns taskDoneFns, proj *models.Project, t *models.Task, proje
 		t.MergeFailureReason = mergeReason
 		t.UpdatedAt = time.Now().UTC()
 		if err := fns.SaveTask(projectPath, t); err != nil {
-			log.Printf("[merge] Failed to persist merge_failure_reason for task #%04d: %v", taskNumber, err)
+			config.ProjectLogf(proj.ProjectID, "[merge] Failed to persist merge_failure_reason for task #%04d: %v", taskNumber, err)
 		}
 	}
 	return TaskDoneResult{Outcome: TaskDoneMergeFailed, Reason: mergeReason}

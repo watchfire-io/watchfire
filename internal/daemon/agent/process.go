@@ -2,7 +2,6 @@ package agent
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"os/exec"
 	"regexp"
@@ -13,6 +12,7 @@ import (
 	"github.com/creack/pty"
 	"github.com/hinshun/vt10x"
 
+	"github.com/watchfire-io/watchfire/internal/config"
 	"github.com/watchfire-io/watchfire/internal/vtansi"
 )
 
@@ -466,10 +466,11 @@ func (p *Process) IsRunning() bool {
 	}
 }
 
-// logf logs a message with the process context.
+// logf logs a message with the process context. Routed to the per-project
+// daemon log (~/.watchfire/logs/<projectID>/daemon.log) so the high-volume
+// PTY/agent trail stays out of the global daemon.log.
 func (p *Process) logf(format string, args ...interface{}) {
-	prefix := fmt.Sprintf("[agent:%s] ", p.projectID)
-	log.Printf(prefix+format, args...)
+	config.ProjectLogf(p.projectID, "[agent] "+format, args...)
 }
 
 // detectIssues scans PTY output for auth errors and rate limits.

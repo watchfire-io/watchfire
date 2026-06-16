@@ -2,7 +2,6 @@ package server
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"github.com/watchfire-io/watchfire/internal/config"
@@ -76,6 +75,6 @@ func emitTaskFailed(bus *notify.Bus, projectID, projectPath, projectName string,
 
 	bus.Emit(n)
 	if err := notify.AppendLogLine(n); err != nil {
-		log.Printf("[task-failed] failed to append notifications.log for %s task #%04d: %v", projectName, t.TaskNumber, err)
+		config.ProjectLogf(projectID, "[task-failed] failed to append notifications.log for task #%04d: %v", t.TaskNumber, err)
 	}
 }

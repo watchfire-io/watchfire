@@ -3,7 +3,9 @@ package watcher
 
 import (
 	"log"
+	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -11,6 +13,23 @@ import (
 
 	"github.com/watchfire-io/watchfire/internal/config"
 )
+
+// watcherDebug gates the high-volume per-event fsnotify logging. It is OFF
+// by default: the daemon previously logged every raw event (including its
+// own writes to ~/.watchfire/daemon.log, which sits inside the watched
+// global dir) and that fed a runaway feedback loop that ballooned the log
+// to hundreds of MB of pure noise. Set WATCHFIRE_DEBUG=1 to re-enable the
+// per-event trail for diagnostics.
+var watcherDebug = os.Getenv("WATCHFIRE_DEBUG") != ""
+
+// isSelfLogPath reports whether a path is the daemon's own log file
+// (daemon.log or a rotated daemon.log.N) living inside the watched global
+// dir. Writes to it must never be logged or processed — doing so feeds an
+// infinite fsnotify loop.
+func isSelfLogPath(path string) bool {
+	base := filepath.Base(path)
+	return base == "daemon.log" || strings.HasPrefix(base, "daemon.log.")
+}
 
 // EventType represents the type of file system event.
 type EventType int
@@ -178,7 +197,14 @@ func (w *Watcher) processEvents() {
 			if !ok {
 				return
 			}
-			log.Printf("[watcher] fsnotify: %s %s", event.Op, event.Name)
+			// Ignore the daemon's own log writes — they sit inside the
+			// watched global dir and would otherwise feed an infinite loop.
+			if isSelfLogPath(event.Name) {
+				continue
+			}
+			if watcherDebug {
+				log.Printf("[watcher] fsnotify: %s %s", event.Op, event.Name)
+			}
 			w.handleEvent(event)
 		case err, ok := <-w.fsWatcher.Errors:
 			if !ok {
@@ -226,7 +252,9 @@ func (w *Watcher) debounceEvent(path string, fn func()) {
 
 // processFileChange handles a debounced file change.
 func (w *Watcher) processFileChange(path string, op fsnotify.Op) {
-	log.Printf("[watcher] debounce fired: %s (op=%s)", path, op)
+	if watcherDebug {
+		log.Printf("[watcher] debounce fired: %s (op=%s)", path, op)
+	}
 	filename := filepath.Base(path)
 	dir := filepath.Dir(path)
 

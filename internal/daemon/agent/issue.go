@@ -26,22 +26,38 @@ type AgentIssue struct {
 	CooldownUntil *time.Time // When to auto-resume
 }
 
-// Pattern detection for auth errors
+// Pattern detection for auth errors.
+//
+// These must match the SHAPE of a provider auth error, not a bare domain
+// phrase. The detector scans the agent's entire PTY scrollback — including
+// source code, comments, and task prompts the agent prints — so loose
+// patterns like `invalid.*token` or `token.*expired` produced false halts:
+// any project whose code mentions tokens would trip them. Each pattern now
+// requires error framing (an HTTP 401, the literal `authentication_error`,
+// an OAuth/API-key qualifier, or the `/login` remediation hint).
 var authPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`(?i)API Error:\s*401.*authentication_error`),
-	regexp.MustCompile(`(?i)OAuth token has expired`),
-	regexp.MustCompile(`(?i)Please run /login`),
-	regexp.MustCompile(`(?i)authentication_error.*OAuth token`),
-	regexp.MustCompile(`(?i)invalid.*token`),
-	regexp.MustCompile(`(?i)token.*expired`),
+	regexp.MustCompile(`(?i)\bAPI Error:\s*401\b`),
+	regexp.MustCompile(`(?i)\b401\b[^\n]*\b(unauthorized|authentication_error)\b`),
+	regexp.MustCompile(`(?i)authentication_error`),
+	regexp.MustCompile(`(?i)OAuth token (has )?expired`),
+	regexp.MustCompile(`(?i)please run /login`),
+	regexp.MustCompile(`(?i)invalid\s+(api[ _-]?key|access[ _-]?token|bearer token)`),
+	regexp.MustCompile(`(?i)\b(api[ _-]?key|access[ _-]?token)\b[^\n]*\b(invalid|expired|revoked)\b`),
 }
 
-// Pattern detection for rate limits
+// Pattern detection for rate limits.
+//
+// Same rationale as authPatterns: the old bare `rate limit` / `too many
+// requests` substrings matched ordinary output (e.g. a project's own
+// rate-limiting code or a task titled "rate limiting, backoff"), silently
+// halting the wildfire chain. Detection now requires the provider's own
+// error shape — Claude Code's "you've hit your limit" banner, an explicit
+// "usage/rate limit reached|exceeded", or an HTTP 429.
 var rateLimitPatterns = []*regexp.Regexp{
-	regexp.MustCompile(`(?i)You've hit your limit`),
-	regexp.MustCompile(`(?i)rate limit`),
-	regexp.MustCompile(`(?i)too many requests`),
-	regexp.MustCompile(`(?i)API Error:\s*429`),
+	regexp.MustCompile(`(?i)you'?ve hit your (usage |rate )?limit`),
+	regexp.MustCompile(`(?i)\b(usage|rate) limit (reached|exceeded)\b`),
+	regexp.MustCompile(`(?i)\bAPI Error:\s*429\b`),
+	regexp.MustCompile(`(?i)\b429\b[^\n]*\b(too many requests|rate ?limit)\b`),
 }
 
 // rateLimitResetPattern extracts reset time from rate limit messages
