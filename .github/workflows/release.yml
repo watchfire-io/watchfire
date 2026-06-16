@@ -425,7 +425,12 @@ jobs:
     name: Build GUI (Windows)
     needs: [version, build-go-windows]
     if: needs.version.outputs.should_build == 'true'
-    runs-on: windows-latest
+    # Pinned to windows-2022: when `windows-latest` rolled to Windows Server
+    # 2025 (10.0.26100) the bundled node-gyp could no longer locate Visual
+    # Studio on the runner ("Could not find any Visual Studio installation to
+    # use") and electron-builder's native rebuild of node-pty failed. The
+    # 2022 image is the one the last successful release built against.
+    runs-on: windows-2022
     permissions:
       contents: write
     env:

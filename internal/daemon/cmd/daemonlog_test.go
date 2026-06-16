@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 )
@@ -192,4 +193,80 @@ func TestRotatingFileWriter_ConcurrentWritesDoNotPanic(t *testing.T) {
 	if total > 2*fileCap {
 		t.Errorf("total bytes on disk = %d; want <= %d", total, 2*fileCap)
 	}
+}
+
+func TestReclaimOversizedDaemonLogs_TruncatesActiveAndDropsBackup(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "daemon.log")
+
+	// Oversized active file: 3840 bytes of bulk + a 256-byte recognizable tail.
+	bulk := make([]byte, 3840)
+	for i := range bulk {
+		bulk[i] = 'A'
+	}
+	tail := make([]byte, 256)
+	for i := range tail {
+		tail[i] = 'B'
+	}
+	if err := os.WriteFile(path, append(bulk, tail...), 0o644); err != nil {
+		t.Fatalf("write active: %v", err)
+	}
+	// Oversized legacy backup that should be dropped outright.
+	if err := os.WriteFile(path+".1", make([]byte, 4096), 0o644); err != nil {
+		t.Fatalf("write backup: %v", err)
+	}
+
+	reclaimOversizedDaemonLogs(path, 1024 /*fileCap*/, 256 /*tailBytes*/)
+
+	// Backup gone.
+	if _, err := os.Stat(path + ".1"); !os.IsNotExist(err) {
+		t.Errorf("daemon.log.1 should have been removed; stat err = %v", err)
+	}
+	// Active reclaimed: smaller than original, still under-ish, keeps the tail, drops the bulk.
+	content, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read active: %v", err)
+	}
+	if int64(len(content)) >= 4096 {
+		t.Errorf("active not reclaimed: size = %d, want < 4096", len(content))
+	}
+	if !strings.Contains(string(content), "migrated on startup") {
+		t.Errorf("active missing migration marker: %q", firstBytes(content, 120))
+	}
+	if !strings.Contains(string(content), strings.Repeat("B", 256)) {
+		t.Errorf("active should retain the 256-byte tail")
+	}
+	if strings.Contains(string(content), strings.Repeat("A", 3840)) {
+		t.Errorf("active should have dropped the leading bulk")
+	}
+}
+
+func TestReclaimOversizedDaemonLogs_LeavesNormalFilesUntouched(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "daemon.log")
+
+	active := []byte("a normal, under-cap active log line\n")
+	backup := []byte("a normal, under-cap backup\n")
+	if err := os.WriteFile(path, active, 0o644); err != nil {
+		t.Fatalf("write active: %v", err)
+	}
+	if err := os.WriteFile(path+".1", backup, 0o644); err != nil {
+		t.Fatalf("write backup: %v", err)
+	}
+
+	reclaimOversizedDaemonLogs(path, 1024 /*fileCap*/, 256 /*tailBytes*/)
+
+	if got, _ := os.ReadFile(path); string(got) != string(active) {
+		t.Errorf("under-cap active file was modified: %q", string(got))
+	}
+	if got, _ := os.ReadFile(path + ".1"); string(got) != string(backup) {
+		t.Errorf("under-cap backup file was modified: %q", string(got))
+	}
+}
+
+func firstBytes(b []byte, n int) string {
+	if len(b) < n {
+		return string(b)
+	}
+	return string(b[:n])
 }

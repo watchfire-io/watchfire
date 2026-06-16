@@ -26,6 +26,10 @@ import (
 const (
 	daemonLogFileCap = 32 * 1024 * 1024 // 32 MiB per file
 	daemonLogBackups = 1                // one numbered backup (daemon.log.1)
+
+	// daemonLogMigrationTail is how much of an oversized legacy log to keep
+	// when reclaiming it on first run (see reclaimOversizedDaemonLogs).
+	daemonLogMigrationTail = 256 * 1024 // 256 KiB
 )
 
 // openDaemonLog appends future log output to ~/.watchfire/daemon.log in
@@ -44,6 +48,10 @@ func openDaemonLog() {
 		return
 	}
 	path := filepath.Join(dir, "daemon.log")
+	// First-run migration: reclaim any oversized pre-7.4.0 log before the
+	// rotating writer opens it (otherwise startup-rotation would just preserve
+	// the bloat as daemon.log.1).
+	reclaimOversizedDaemonLogs(path, daemonLogFileCap, daemonLogMigrationTail)
 	w, err := newRotatingFileWriter(path, daemonLogFileCap, daemonLogBackups)
 	if err != nil {
 		log.Printf("[daemon-log] could not open %s: %v — continuing with stderr only", path, err)
@@ -51,6 +59,75 @@ func openDaemonLog() {
 	}
 	log.SetOutput(io.MultiWriter(os.Stderr, w))
 	log.Printf("[daemon-log] writing logs to %s (cap %d MiB, %d backup)", path, daemonLogFileCap>>20, daemonLogBackups)
+}
+
+// reclaimOversizedDaemonLogs is a one-time, first-run migration that frees
+// space left by a pre-7.4.0 daemon. Older builds capped the log family at
+// ~1 GiB (v7.3.0) or not at all (≤v7.2.1), and the v7.2.1 fsnotify feedback
+// loop could grow daemon.log to hundreds of MB — even GB — of pure noise.
+// Simply handing such a file to newRotatingFileWriter would preserve the
+// bloat: its startup rotation renames the oversized active file to
+// daemon.log.1 rather than reclaiming it. So before the writer opens,
+// reclaim anything that exceeds the current cap:
+//
+//   - drop any numbered backup (daemon.log.1 … .10) larger than cap — those
+//     are legacy 500 MiB backups or runaway-loop artifacts with no value;
+//   - truncate an oversized active daemon.log down to its last
+//     daemonLogMigrationTail bytes so recent context survives but the bulk
+//     is freed.
+//
+// It only fires on files that exceed cap, which a v7.4.0+ daemon never
+// produces (the writer rotates at cap), so steady-state operation — and any
+// legitimately-sized backup the writer created — is left untouched. Best
+// effort: every step is allowed to fail without aborting daemon startup.
+func reclaimOversizedDaemonLogs(path string, fileCap, tailBytes int64) {
+	for i := 1; i <= 10; i++ {
+		backup := fmt.Sprintf("%s.%d", path, i)
+		if info, err := os.Stat(backup); err == nil && info.Size() > fileCap {
+			_ = os.Remove(backup)
+		}
+	}
+
+	info, err := os.Stat(path)
+	if err != nil || info.Size() <= fileCap {
+		return
+	}
+
+	tail := readFileTail(path, tailBytes)
+	marker := []byte(fmt.Sprintf(
+		"[daemon-log] migrated on startup: reclaimed oversized pre-7.4.0 log (was %d MiB); kept last %d KiB below\n",
+		info.Size()>>20, int64(len(tail))>>10))
+	if err := os.WriteFile(path, append(marker, tail...), 0o644); err != nil {
+		// If the rewrite fails, still reclaim the space by truncating.
+		_ = os.Truncate(path, 0)
+	}
+}
+
+// readFileTail returns up to the last n bytes of the file at path, or nil on
+// any error. Used to salvage recent context from an oversized log before it
+// is reclaimed.
+func readFileTail(path string, n int64) []byte {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil
+	}
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil {
+		return nil
+	}
+	start := info.Size() - n
+	if start < 0 {
+		start = 0
+	}
+	if _, err := f.Seek(start, io.SeekStart); err != nil {
+		return nil
+	}
+	buf, err := io.ReadAll(f)
+	if err != nil {
+		return nil
+	}
+	return buf
 }
 
 // rotatingFileWriter is a tiny self-rotating io.Writer for the daemon
