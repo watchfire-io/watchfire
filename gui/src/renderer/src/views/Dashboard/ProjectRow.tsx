@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { GitBranch, ChevronRight, X } from 'lucide-react'
+import { GitBranch, ChevronRight, ExternalLink, X } from 'lucide-react'
 import type { Project } from '../../generated/watchfire_pb'
 import { useProjectsStore } from '../../stores/projects-store'
 import { useAppStore } from '../../stores/app-store'
@@ -44,7 +44,15 @@ export function ProjectRow({ project }: ProjectRowProps) {
   return (
     <>
       <div
-        onClick={() => selectProject(project.projectId)}
+        onClick={(e) => {
+          // Cmd/Ctrl-click opens the project in its own window; a plain click
+          // navigates in-window (v8 Inferno — Feature 1).
+          if (e.metaKey || e.ctrlKey) {
+            window.watchfire.openProjectWindow(project.projectId)
+          } else {
+            selectProject(project.projectId)
+          }
+        }}
         className={cn(
           'group relative flex items-center gap-3 h-[46px] px-4 bg-[var(--wf-bg-secondary)] border border-[var(--wf-border)] rounded-[var(--wf-radius-lg)] transition-all hover:border-[var(--wf-fire)] hover:-translate-y-0.5 cursor-pointer overflow-hidden',
           hasFailed && 'border-l-2 border-l-[var(--wf-error)]'
@@ -92,6 +100,14 @@ export function ProjectRow({ project }: ProjectRowProps) {
             <span className="text-[var(--wf-text-muted)]">No tasks yet</span>
           )}
         </div>
+
+        <button
+          onClick={(e) => { e.stopPropagation(); window.watchfire.openProjectWindow(project.projectId) }}
+          className="p-1 rounded-[var(--wf-radius-md)] text-[var(--wf-text-muted)] hover:text-[var(--wf-fire)] hover:bg-[var(--wf-bg-elevated)] opacity-0 group-hover:opacity-100 transition-all shrink-0"
+          title="Open in new window (⌘-click)"
+        >
+          <ExternalLink size={14} />
+        </button>
 
         <button
           onClick={(e) => { e.stopPropagation(); setShowConfirm(true) }}

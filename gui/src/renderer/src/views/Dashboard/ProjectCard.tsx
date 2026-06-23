@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Activity, AlertTriangle, Clock, Flame, Folder, GitBranch, ChevronRight, CheckCircle2, Code2, ListTodo, Terminal, X } from 'lucide-react'
+import { Activity, AlertTriangle, Clock, ExternalLink, Flame, Folder, GitBranch, ChevronRight, CheckCircle2, Code2, ListTodo, Terminal, X } from 'lucide-react'
 import type { Project } from '../../generated/watchfire_pb'
 import { useProjectsStore } from '../../stores/projects-store'
 import { useAppStore } from '../../stores/app-store'
@@ -103,19 +103,36 @@ export function ProjectCard({ project }: ProjectCardProps) {
   return (
     <>
     <div
-      onClick={() => selectProject(project.projectId)}
+      onClick={(e) => {
+        // Cmd/Ctrl-click opens the project in its own window; a plain click
+        // keeps today's in-window navigation (v8 Inferno — Feature 1).
+        if (e.metaKey || e.ctrlKey) {
+          window.watchfire.openProjectWindow(project.projectId)
+        } else {
+          selectProject(project.projectId)
+        }
+      }}
       className={`group relative h-56 flex flex-col bg-[var(--wf-bg-secondary)] border rounded-[var(--wf-radius-lg)] p-4 transition-all hover:border-[var(--wf-fire)] hover:-translate-y-0.5 cursor-pointer ${
         hasFailed ? 'border-[var(--wf-error)]/50' : 'border-[var(--wf-border)]'
       }`}
     >
-      {/* Remove button (visible on hover) */}
-      <button
-        onClick={(e) => { e.stopPropagation(); setShowConfirm(true) }}
-        className="absolute top-2 right-2 z-10 p-1 rounded-[var(--wf-radius-md)] text-[var(--wf-text-muted)] hover:text-[var(--wf-error)] hover:bg-[var(--wf-bg-elevated)] opacity-0 group-hover:opacity-100 transition-all"
-        title="Remove project"
-      >
-        <X size={14} />
-      </button>
+      {/* Hover actions: open-in-new-window + remove */}
+      <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
+        <button
+          onClick={(e) => { e.stopPropagation(); window.watchfire.openProjectWindow(project.projectId) }}
+          className="p-1 rounded-[var(--wf-radius-md)] text-[var(--wf-text-muted)] hover:text-[var(--wf-fire)] hover:bg-[var(--wf-bg-elevated)] opacity-0 group-hover:opacity-100 transition-all"
+          title="Open in new window (⌘-click)"
+        >
+          <ExternalLink size={14} />
+        </button>
+        <button
+          onClick={(e) => { e.stopPropagation(); setShowConfirm(true) }}
+          className="p-1 rounded-[var(--wf-radius-md)] text-[var(--wf-text-muted)] hover:text-[var(--wf-error)] hover:bg-[var(--wf-bg-elevated)] opacity-0 group-hover:opacity-100 transition-all"
+          title="Remove project"
+        >
+          <X size={14} />
+        </button>
+      </div>
 
       {/* Header: color dot + name + chevron */}
       <div className="flex items-center justify-between mb-3">

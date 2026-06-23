@@ -234,3 +234,28 @@ export function getMostRecentlyFocusedWindow(): BrowserWindow | null {
   }
   return getHomeWindow()
 }
+
+// Cycle focus across the open windows (v8 Inferno — Cmd+Shift+] / Cmd+Shift+[).
+// `direction` is +1 for next, -1 for previous. Windows are ordered by `win.id`
+// (creation order) for a stable, predictable cycle, and the traversal wraps
+// around. No-op with fewer than two live windows.
+export function focusAdjacentWindow(direction: 1 | -1): void {
+  const wins = [...windows.values()]
+    .map((w) => w.win)
+    .filter((w) => !w.isDestroyed())
+    .sort((a, b) => a.id - b.id)
+  if (wins.length < 2) return
+
+  const focused = BrowserWindow.getFocusedWindow()
+  const currentIdx = focused ? wins.findIndex((w) => w.id === focused.id) : -1
+  const nextIdx =
+    currentIdx === -1
+      ? direction === 1
+        ? 0
+        : wins.length - 1
+      : (currentIdx + direction + wins.length) % wins.length
+
+  const target = wins[nextIdx]
+  if (target.isMinimized()) target.restore()
+  target.focus()
+}
