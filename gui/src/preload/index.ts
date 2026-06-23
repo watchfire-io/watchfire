@@ -116,6 +116,21 @@ const api = {
   openProjectWindow: (projectId: string): Promise<void> =>
     ipcRenderer.invoke('open-project-window', projectId),
 
+  // v8 Inferno — mission control. The list of projects that currently have
+  // their own window, so the home/dashboard can flip a card's affordance to
+  // "focus existing window". Snapshot read; pair with `onProjectWindowsChanged`
+  // to keep it live.
+  listProjectWindows: (): Promise<string[]> => ipcRenderer.invoke('list-project-windows'),
+
+  // Subscribe to open-project-window changes (a project window opened or
+  // closed). The main process broadcasts the full id set. Returns an
+  // unsubscribe fn so the home renderer can clean up on unmount.
+  onProjectWindowsChanged: (callback: (projectIds: string[]) => void): (() => void) => {
+    const handler = (_ev: unknown, projectIds: string[]): void => callback(projectIds)
+    ipcRenderer.on('project-windows-changed', handler)
+    return () => ipcRenderer.removeListener('project-windows-changed', handler)
+  },
+
   // Show a native OS notification. The renderer relays each message it
   // receives from the daemon's NotificationService.Subscribe stream so
   // Electron's Notification API can produce the platform-correct toast /

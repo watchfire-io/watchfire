@@ -24,6 +24,7 @@ import { FilterChips } from './FilterChips'
 import { StatusBar } from './StatusBar'
 import { InsightsRollupCard } from './InsightsRollupCard'
 import { ExportPill } from '../../components/ExportPill'
+import { useOpenProjectWindows } from '../../hooks/useOpenProjectWindows'
 import { cn } from '../../lib/utils'
 import {
   DASHBOARD_FILTERS,
@@ -83,6 +84,9 @@ export function Dashboard() {
   const loading = useProjectsStore((s) => s.loading)
   const reorderProjects = useProjectsStore((s) => s.reorderProjects)
   const tasksByProjectId = useTasksStore((s) => s.tasks)
+  // Live set of projects that already have their own window open — drives the
+  // per-card "focus existing window" affordance (v8 Inferno — mission control).
+  const openWindows = useOpenProjectWindows()
   const [layout, setLayout] = useState<DashboardLayout>(readSavedLayout)
   const [filter, setFilter] = useState<DashboardFilter>(readSavedFilter)
 
@@ -200,7 +204,11 @@ export function Dashboard() {
               <SortableContext items={sortedProjects.map((p) => p.projectId)} strategy={rectSortingStrategy}>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {sortedProjects.map((p) => (
-                    <SortableProjectCard key={p.projectId} project={p} />
+                    <SortableProjectCard
+                      key={p.projectId}
+                      project={p}
+                      hasWindow={openWindows.has(p.projectId)}
+                    />
                   ))}
                 </div>
               </SortableContext>
@@ -208,7 +216,11 @@ export function Dashboard() {
               <SortableContext items={sortedProjects.map((p) => p.projectId)} strategy={verticalListSortingStrategy}>
                 <div className="flex flex-col gap-2">
                   {sortedProjects.map((p) => (
-                    <SortableProjectRow key={p.projectId} project={p} />
+                    <SortableProjectRow
+                      key={p.projectId}
+                      project={p}
+                      hasWindow={openWindows.has(p.projectId)}
+                    />
                   ))}
                 </div>
               </SortableContext>
@@ -263,7 +275,7 @@ function LayoutToggle({ layout, onChange }: LayoutToggleProps) {
   )
 }
 
-function SortableProjectCard({ project }: { project: Project }) {
+function SortableProjectCard({ project, hasWindow }: { project: Project; hasWindow: boolean }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: project.projectId
   })
@@ -276,12 +288,12 @@ function SortableProjectCard({ project }: { project: Project }) {
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <ProjectCard project={project} />
+      <ProjectCard project={project} hasWindow={hasWindow} />
     </div>
   )
 }
 
-function SortableProjectRow({ project }: { project: Project }) {
+function SortableProjectRow({ project, hasWindow }: { project: Project; hasWindow: boolean }) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: project.projectId
   })
@@ -294,7 +306,7 @@ function SortableProjectRow({ project }: { project: Project }) {
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <ProjectRow project={project} />
+      <ProjectRow project={project} hasWindow={hasWindow} />
     </div>
   )
 }

@@ -8,14 +8,18 @@ import { useGitStore } from '../../stores/git-store'
 import { StatusDot } from '../../components/StatusDot'
 import { isAgentWorking } from '../../lib/agent-utils'
 import { AgentBadge } from '../../components/AgentBadge'
+import { WildfirePhaseBadge } from '../../components/WildfirePhaseBadge'
 import { Modal } from '../../components/ui/Modal'
 import { cn } from '../../lib/utils'
 
 interface ProjectRowProps {
   project: Project
+  // True when this project already has its own window open (v8 Inferno —
+  // mission control): the action focuses it instead of spawning a duplicate.
+  hasWindow?: boolean
 }
 
-export function ProjectRow({ project }: ProjectRowProps) {
+export function ProjectRow({ project, hasWindow = false }: ProjectRowProps) {
   const selectProject = useAppStore((s) => s.selectProject)
   const agentStatus = useProjectsStore((s) => s.agentStatuses[project.projectId])
   const removeProject = useProjectsStore((s) => s.removeProject)
@@ -39,6 +43,7 @@ export function ProjectRow({ project }: ProjectRowProps) {
   }
 
   const running = !!agentStatus?.isRunning
+  const isWildfire = running && agentStatus?.mode === 'wildfire'
   const hasFailed = taskCounts.failed > 0
 
   return (
@@ -75,7 +80,15 @@ export function ProjectRow({ project }: ProjectRowProps) {
         <div className="flex items-center gap-3 text-xs min-w-0 flex-1">
           {running ? (
             <>
-              <AgentBadge status={agentStatus} className="shrink-0" />
+              {isWildfire ? (
+                <WildfirePhaseBadge
+                  phase={agentStatus.wildfirePhase}
+                  compact
+                  className="shrink-0"
+                />
+              ) : (
+                <AgentBadge status={agentStatus} className="shrink-0" />
+              )}
               {agentStatus.taskTitle && (
                 <span className="text-[var(--wf-text-secondary)] truncate min-w-0">
                   {agentStatus.taskTitle}
@@ -103,8 +116,13 @@ export function ProjectRow({ project }: ProjectRowProps) {
 
         <button
           onClick={(e) => { e.stopPropagation(); window.watchfire.openProjectWindow(project.projectId) }}
-          className="p-1 rounded-[var(--wf-radius-md)] text-[var(--wf-text-muted)] hover:text-[var(--wf-fire)] hover:bg-[var(--wf-bg-elevated)] opacity-0 group-hover:opacity-100 transition-all shrink-0"
-          title="Open in new window (⌘-click)"
+          className={cn(
+            'p-1 rounded-[var(--wf-radius-md)] hover:bg-[var(--wf-bg-elevated)] transition-all shrink-0',
+            hasWindow
+              ? 'text-[var(--wf-fire)] opacity-100'
+              : 'text-[var(--wf-text-muted)] hover:text-[var(--wf-fire)] opacity-0 group-hover:opacity-100'
+          )}
+          title={hasWindow ? 'Focus open window' : 'Open in new window (⌘-click)'}
         >
           <ExternalLink size={14} />
         </button>

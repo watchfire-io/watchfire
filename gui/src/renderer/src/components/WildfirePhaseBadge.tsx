@@ -16,6 +16,10 @@ interface Props {
   // AgentStatus.wildfire_phase: one of PHASES while looping, "" when the
   // loop is between phases / idle.
   phase: string
+  // Dense single-chip form ("Wildfire · Execute") for space-constrained
+  // surfaces like the mission-control dashboard cards. Default false renders
+  // the full Execute → Refine → Generate stepper.
+  compact?: boolean
   className?: string
 }
 
@@ -25,8 +29,24 @@ interface Props {
  * the flame pulsing while a phase is active. Falls back to a quiet "Idle"
  * treatment when no phase is reported.
  */
-export function WildfirePhaseBadge({ phase, className }: Props) {
+export function WildfirePhaseBadge({ phase, compact = false, className }: Props) {
   const active = (PHASES as readonly string[]).includes(phase)
+
+  if (compact) {
+    return (
+      <span
+        className={cn(
+          'inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium',
+          'bg-fire-500/15 border border-fire-500/30 text-fire-400',
+          className
+        )}
+        title={active ? `Wildfire phase: ${PHASE_LABEL[phase]}` : 'Wildfire running (idle between phases)'}
+      >
+        <Flame size={10} className={cn('text-fire-400 shrink-0', active && 'animate-pulse')} />
+        <span className="truncate">Wildfire · {active ? PHASE_LABEL[phase] : 'Idle'}</span>
+      </span>
+    )
+  }
 
   return (
     <span
