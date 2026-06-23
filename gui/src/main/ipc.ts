@@ -203,6 +203,33 @@ export function setupIpc(): void {
     if (typeof projectId === 'string' && projectId) createProjectWindow(projectId)
   })
 
+  // Open (or focus) a project's window and route its renderer to a surface.
+  // Drives the home window's needs-attention click-through (v8 Inferno —
+  // mission control). Mirrors the notification-click path: a freshly-created
+  // window's renderer isn't loaded yet, so the routing message is deferred to
+  // `did-finish-load`.
+  ipcMain.handle(
+    'focus-project-window',
+    (_event, projectId: string, target?: string, taskNumber?: number) => {
+      if (typeof projectId !== 'string' || !projectId) return
+      const win = createProjectWindow(projectId)
+      if (!win || win.isDestroyed()) return
+      if (win.isMinimized()) win.restore()
+      win.show()
+      win.focus()
+
+      const send = (): void => {
+        if (win.isDestroyed()) return
+        win.webContents.send('project-focus', { projectId, target, taskNumber })
+      }
+      if (win.webContents.isLoading()) {
+        win.webContents.once('did-finish-load', send)
+      } else {
+        send()
+      }
+    }
+  )
+
   // The set of projects that currently have their own window. The home/dashboard
   // renderer reads this once at mount and then keeps it fresh via the
   // `project-windows-changed` broadcast, so each card can show "focus existing

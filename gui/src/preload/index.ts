@@ -116,6 +116,25 @@ const api = {
   openProjectWindow: (projectId: string): Promise<void> =>
     ipcRenderer.invoke('open-project-window', projectId),
 
+  // v8 Inferno — mission control. Open (or focus) a project's window AND route
+  // its renderer to a surface (Tasks tab / a task / just-focus). Used by the
+  // home window's needs-attention panel click-through. The main process defers
+  // the routing message until the (possibly freshly-created) window's renderer
+  // has loaded.
+  focusProjectWindow: (
+    projectId: string,
+    target?: string,
+    taskNumber?: number
+  ): Promise<void> => ipcRenderer.invoke('focus-project-window', projectId, target, taskNumber),
+
+  // Receive a routing request for this window (sent by `focusProjectWindow`).
+  // App.tsx translates it into an app-store focus request.
+  onProjectFocus: (
+    callback: (payload: { projectId: string; target?: string; taskNumber?: number }) => void
+  ): void => {
+    ipcRenderer.on('project-focus', (_ev, payload) => callback(payload))
+  },
+
   // v8 Inferno — mission control. The list of projects that currently have
   // their own window, so the home/dashboard can flip a card's affordance to
   // "focus existing window". Snapshot read; pair with `onProjectWindowsChanged`
