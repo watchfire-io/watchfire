@@ -4,7 +4,13 @@ import { readFileSync } from 'fs'
 import { homedir } from 'os'
 import { is } from '@electron-toolkit/utils'
 import { parse } from 'yaml'
-import { loadWindowState, trackWindowState } from './window-state'
+import {
+  loadWindowState,
+  trackWindowState,
+  addOpenProject,
+  removeOpenProject,
+  getOpenProjects
+} from './window-state'
 import { destroyForWindow as destroyPtysForWindow } from './pty-manager'
 
 // A registry of every BrowserWindow the app owns. Replaces the single
@@ -35,6 +41,19 @@ function resolveProjectName(projectId: string): string | null {
     return match?.name?.trim() || null
   } catch {
     return null
+  }
+}
+
+// All project ids currently registered in ~/.watchfire/projects.yaml. Used to
+// drop stale ids when restoring open windows on relaunch.
+function listProjectIds(): string[] {
+  try {
+    const path = join(homedir(), '.watchfire', 'projects.yaml')
+    const raw = readFileSync(path, 'utf-8')
+    const parsed = parse(raw) as { projects?: Array<{ project_id: string }> } | null
+    return parsed?.projects?.map((p) => p.project_id) ?? []
+  } catch {
+    return []
   }
 }
 
@@ -118,7 +137,7 @@ export function createHomeWindow(): BrowserWindow {
   const existing = getHomeWindow()
   if (existing) return focusWindow(existing)
 
-  const savedState = loadWindowState()
+  const savedState = loadWindowState('home')
   const usePosition = savedState.x !== -1 && savedState.y !== -1
 
   const win = new BrowserWindow({
@@ -128,7 +147,7 @@ export function createHomeWindow(): BrowserWindow {
     ...baseWindowOptions('Watchfire')
   })
 
-  trackWindowState(win)
+  trackWindowState(win, 'home')
   registerWindow(win, 'home')
   loadRenderer(win, '')
   return win
@@ -142,15 +161,36 @@ export function createProjectWindow(projectId: string): BrowserWindow {
   if (existing) return focusWindow(existing)
 
   const name = resolveProjectName(projectId)
+  const savedState = loadWindowState(projectId)
+  const usePosition = savedState.x !== -1 && savedState.y !== -1
+
   const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
+    width: savedState.width,
+    height: savedState.height,
+    ...(usePosition ? { x: savedState.x, y: savedState.y } : {}),
     ...baseWindowOptions(name ?? 'Watchfire')
   })
 
+  trackWindowState(win, projectId)
+  addOpenProject(projectId)
+  win.on('closed', () => removeOpenProject(projectId))
   registerWindow(win, 'project', projectId)
   loadRenderer(win, `?project=${encodeURIComponent(projectId)}`)
   return win
+}
+
+// Re-open the project windows that were open at last quit (v8 Inferno D3).
+// Stale ids — projects deleted from projects.yaml while the app was closed —
+// are skipped so a removed project never resurrects an empty window.
+export function restoreOpenProjectWindows(): void {
+  const valid = new Set(listProjectIds())
+  for (const projectId of getOpenProjects()) {
+    if (valid.has(projectId)) {
+      createProjectWindow(projectId)
+    } else {
+      removeOpenProject(projectId)
+    }
+  }
 }
 
 export function getProjectWindow(projectId: string): BrowserWindow | null {
