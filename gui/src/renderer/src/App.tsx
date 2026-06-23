@@ -8,6 +8,7 @@ import { useFocusStore } from './stores/focus-store'
 // subscriber from task 0049 is the call site.
 import { useNotificationsStore } from './stores/notifications-store'
 import { useDigestStore } from './stores/digest-store'
+import { isHomeWindow } from './lib/window-scope'
 import { Sidebar } from './components/Sidebar'
 import { Dashboard } from './views/Dashboard/Dashboard'
 import { AddProjectWizard } from './views/AddProject/AddProjectWizard'
@@ -72,10 +73,15 @@ export default function App() {
   // Open the tray-driven focus stream when the daemon connects so a click
   // in the menu bar can route the GUI to a specific project / tab. The
   // stream auto-reconnects on transient errors via the focus store.
+  //
+  // D1 — single OS-notifier: only the home window subscribes to the daemon
+  // notification stream (and thus fires the OS toast + sound). Project windows
+  // skip it so a single event never produces N toasts. `startNotifications`
+  // also self-guards in the store, so this is belt-and-suspenders.
   useEffect(() => {
     if (!connected) return
     startFocus()
-    startNotifications()
+    if (isHomeWindow()) startNotifications()
     return () => {
       stopFocus()
       stopNotifications()

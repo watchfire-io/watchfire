@@ -18,6 +18,11 @@ export interface WfWindow {
 
 const windows = new Map<number, WfWindow>()
 
+// The id of the window that most recently gained focus. Drives `focus-window`
+// and notification routing fallbacks so a tray click or a digest notification
+// lands on the window the user was last looking at rather than an arbitrary one.
+let lastFocusedId: number | null = null
+
 // Resolve a project's display name from ~/.watchfire/projects.yaml so the
 // window title reads "watchfire" instead of a bare UUID. Best-effort: any
 // read/parse failure falls back to null (caller uses "Watchfire").
@@ -61,6 +66,11 @@ function baseWindowOptions(title: string): Electron.BrowserWindowConstructorOpti
 function registerWindow(win: BrowserWindow, kind: 'home' | 'project', projectId?: string): void {
   windows.set(win.id, { win, kind, projectId })
 
+  // Track the most-recently-focused window for focus/notification routing.
+  win.on('focus', () => {
+    lastFocusedId = win.id
+  })
+
   win.on('ready-to-show', () => {
     win.show()
     // Auto-open DevTools in dev so any residual renderer error is visible to
@@ -80,6 +90,7 @@ function registerWindow(win: BrowserWindow, kind: 'home' | 'project', projectId?
     // stay alive. Capture the id before the BrowserWindow is gone.
     destroyPtysForWindow(win.id)
     windows.delete(win.id)
+    if (lastFocusedId === win.id) lastFocusedId = null
   })
 }
 
@@ -162,4 +173,24 @@ export function allWindows(): BrowserWindow[] {
 
 export function windowForId(id: number): WfWindow | undefined {
   return windows.get(id)
+}
+
+// Send an IPC message to EVERY open window. Used for app-wide lifecycle/update
+// events (daemon-ready/shutdown, update-*) that are not scoped to one project.
+// Destroyed windows are skipped — a window can be torn down between iterations.
+export function broadcast(channel: string, ...args: unknown[]): void {
+  for (const { win } of windows.values()) {
+    if (!win.isDestroyed()) win.webContents.send(channel, ...args)
+  }
+}
+
+// The window the user most recently focused, or the home window as a fallback
+// (or null if nothing is open). Used to route `focus-window` and digest
+// notification clicks to the most contextually-relevant window.
+export function getMostRecentlyFocusedWindow(): BrowserWindow | null {
+  if (lastFocusedId !== null) {
+    const w = windows.get(lastFocusedId)
+    if (w && !w.win.isDestroyed()) return w.win
+  }
+  return getHomeWindow()
 }
