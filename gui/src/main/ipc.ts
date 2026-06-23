@@ -119,8 +119,14 @@ async function openInIDE(ide: string, projectPath: string): Promise<{ ok: boolea
 }
 
 export function setupIpc(): void {
-  // PTY handlers
-  ipcMain.handle('pty-create', (_ev, cwd: string) => ptyManager.createPty(cwd))
+  // PTY handlers. Resolve the originating window from the IPC sender so the
+  // session routes its output back to the window that asked for it — not a
+  // module-global "current" window that would bleed across project windows.
+  ipcMain.handle('pty-create', (ev, cwd: string) => {
+    const windowId = BrowserWindow.fromWebContents(ev.sender)?.id
+    if (windowId === undefined) throw new Error('pty-create: no originating window')
+    return ptyManager.createPty(cwd, windowId)
+  })
 
   // Browse for a custom shell binary. Used by the global settings UI's
   // "Terminal shell" field (issue #32). Returns the absolute path on pick,
