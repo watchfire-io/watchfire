@@ -75,6 +75,19 @@ export default function App() {
     })
   }, [requestFocus])
 
+  // v8 Inferno — mission control click-through. When the home window's
+  // needs-attention panel routes here (via the main process's
+  // `focus-project-window` IPC), translate it into an app-store focus request
+  // so this (project) window surfaces the relevant tab/task. Reuses the same
+  // requestFocus path as notification clicks.
+  useEffect(() => {
+    window.watchfire.onProjectFocus(({ projectId, target, taskNumber }) => {
+      if (!projectId) return
+      const t = target === 'tasks' || target === 'task' ? target : 'main'
+      requestFocus({ projectId, target: t, taskNumber: taskNumber || undefined })
+    })
+  }, [requestFocus])
+
   // Open the tray-driven focus stream when the daemon connects so a click
   // in the menu bar can route the GUI to a specific project / tab. The
   // stream auto-reconnects on transient errors via the focus store.

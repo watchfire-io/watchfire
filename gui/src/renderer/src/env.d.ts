@@ -63,6 +63,13 @@ interface WatchfireAPI {
   openHomeWindow(): Promise<void>
   openProjectWindow(projectId: string): Promise<void>
 
+  // v8 Inferno — mission control: open/focus a project window and route it to a
+  // surface (needs-attention click-through), plus the renderer-side receiver.
+  focusProjectWindow(projectId: string, target?: string, taskNumber?: number): Promise<void>
+  onProjectFocus(
+    callback: (payload: { projectId: string; target?: string; taskNumber?: number }) => void
+  ): void
+
   // v8 Inferno — mission control: which projects already have their own window,
   // plus a live subscription so the dashboard can focus instead of duplicate.
   listProjectWindows(): Promise<string[]>
