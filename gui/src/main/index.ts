@@ -1,19 +1,18 @@
-import { app, BrowserWindow, protocol, shell, net } from 'electron'
+import { app, protocol, net } from 'electron'
 import { join } from 'path'
 import { existsSync } from 'fs'
 import { pathToFileURL } from 'url'
 import { homedir } from 'os'
-import { electronApp, optimizer, is } from '@electron-toolkit/utils'
-import { loadWindowState, trackWindowState } from './window-state'
+import { electronApp, optimizer } from '@electron-toolkit/utils'
 import { setupIpc } from './ipc'
 import { ensureDaemon, getDaemonInfo } from './daemon'
 import { checkAndInstallCLI } from './cli-installer'
 import { initAutoUpdater } from './auto-updater'
 import { setWindow as setPtyWindow, destroyAll as destroyAllPtys } from './pty-manager'
+import { createHomeWindow, getHomeWindow } from './windows'
 
 const DAEMON_YAML = join(homedir(), '.watchfire', 'daemon.yaml')
 
-let mainWindow: BrowserWindow | null = null
 let daemonWatcherInterval: ReturnType<typeof setInterval> | null = null
 let watchedDaemonPid: number | null = null
 
@@ -24,7 +23,9 @@ function startDaemonWatcher(): void {
   ensureDaemon()
     .then((info) => {
       watchedDaemonPid = info.pid
-      mainWindow?.webContents.send('daemon-ready')
+      // Routed to the home window for now; IPC fan-out to all windows lands
+      // in a follow-up task.
+      getHomeWindow()?.webContents.send('daemon-ready')
 
       daemonWatcherInterval = setInterval(async () => {
         try {
@@ -36,7 +37,7 @@ function startDaemonWatcher(): void {
           if (!existsSync(DAEMON_YAML)) {
             // daemon.yaml removed → graceful shutdown, quit the app
             console.log('Daemon shut down gracefully, quitting GUI...')
-            mainWindow?.webContents.send('daemon-shutdown')
+            getHomeWindow()?.webContents.send('daemon-shutdown')
             setTimeout(() => app.quit(), 3000)
           } else {
             // daemon.yaml still exists with stale PID → crash, restart
@@ -51,60 +52,6 @@ function startDaemonWatcher(): void {
       // Retry after a delay
       setTimeout(() => startDaemonWatcher(), 5000)
     })
-}
-
-function createWindow(): void {
-  const savedState = loadWindowState()
-  const usePosition = savedState.x !== -1 && savedState.y !== -1
-
-  mainWindow = new BrowserWindow({
-    width: savedState.width,
-    height: savedState.height,
-    ...(usePosition ? { x: savedState.x, y: savedState.y } : {}),
-    minWidth: 900,
-    minHeight: 600,
-    show: false,
-    title: 'Watchfire',
-    ...(process.platform === 'darwin'
-      ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 16, y: 16 } }
-      : { frame: true }),
-    backgroundColor: '#16181d',
-    webPreferences: {
-      preload: join(__dirname, '../preload/index.js'),
-      sandbox: false,
-      contextIsolation: true,
-      nodeIntegration: false
-    }
-  })
-
-  trackWindowState(mainWindow)
-
-  mainWindow.on('ready-to-show', () => {
-    mainWindow?.show()
-    // Auto-open DevTools in dev so any residual renderer error is visible
-    // to anyone running `npm run dev` without requiring Cmd+Opt+I.
-    if (is.dev) {
-      mainWindow?.webContents.openDevTools({ mode: 'detach' })
-    }
-  })
-
-  mainWindow.webContents.setWindowOpenHandler((details) => {
-    shell.openExternal(details.url)
-    return { action: 'deny' }
-  })
-
-  // Load renderer. In production, serve via a custom `app://` scheme instead
-  // of `file://`. Vite emits `<script type="module" crossorigin>` for the
-  // entry bundle, and Chromium treats `crossorigin` modules loaded from a
-  // `file://` origin as cross-origin requests — they are silently blocked,
-  // producing the exact blank-window symptom seen on macOS. Loading from a
-  // standard `app://` scheme gives the renderer a real origin and restores
-  // module execution. Dev mode keeps using the Vite dev server.
-  if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
-    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL'])
-  } else {
-    mainWindow.loadURL('app://renderer/index.html')
-  }
 }
 
 const RENDERER_DIR = join(__dirname, '../renderer')
@@ -138,43 +85,51 @@ protocol.registerSchemesAsPrivileged([
   }
 ])
 
-app.whenReady().then(async () => {
-  electronApp.setAppUserModelId('io.watchfire.app')
-
-  registerAppProtocol()
-
-  // Optimize for development
-  app.on('browser-window-created', (_, window) => {
-    optimizer.watchWindowShortcuts(window)
+// Single-instance lock: a second `watchfire` launch must focus the existing
+// instance rather than spawn a second Electron process — two processes would
+// each run a daemon watcher and double-merge worktrees. If we don't hold the
+// lock, quit immediately and let the running instance handle `second-instance`.
+const gotSingleInstanceLock = app.requestSingleInstanceLock()
+if (!gotSingleInstanceLock) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    // Another launch was redirected here — surface the home window.
+    createHomeWindow()
   })
 
-  // First-launch CLI installation (only when packaged)
-  await checkAndInstallCLI()
+  app.whenReady().then(async () => {
+    electronApp.setAppUserModelId('io.watchfire.app')
 
-  // Ensure daemon is running and auto-restart if it dies
-  startDaemonWatcher()
+    registerAppProtocol()
 
-  // Set up IPC handlers
-  setupIpc()
+    // Optimize for development
+    app.on('browser-window-created', (_, window) => {
+      optimizer.watchWindowShortcuts(window)
+    })
 
-  createWindow()
+    // First-launch CLI installation (only when packaged)
+    await checkAndInstallCLI()
 
-  // Wire PTY manager to main window
-  if (mainWindow) {
-    setPtyWindow(mainWindow)
-  }
+    // Ensure daemon is running and auto-restart if it dies
+    startDaemonWatcher()
 
-  // Initialize auto-updater
-  if (mainWindow) {
-    initAutoUpdater(mainWindow)
-  }
+    // Set up IPC handlers
+    setupIpc()
 
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
-    }
+    // Open the dashboard-first home window. The PTY manager and auto-updater
+    // still target a single window for now; both are pointed at the home
+    // window and rewired to be window-aware in follow-up tasks.
+    const homeWindow = createHomeWindow()
+    setPtyWindow(homeWindow)
+    initAutoUpdater(homeWindow)
+
+    app.on('activate', () => {
+      // Dock click (macOS) → focus the home window, creating it if none.
+      createHomeWindow()
+    })
   })
-})
+}
 
 app.on('window-all-closed', () => {
   destroyAllPtys()
