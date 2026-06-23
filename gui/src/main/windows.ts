@@ -5,6 +5,7 @@ import { homedir } from 'os'
 import { is } from '@electron-toolkit/utils'
 import { parse } from 'yaml'
 import { loadWindowState, trackWindowState } from './window-state'
+import { destroyForWindow as destroyPtysForWindow } from './pty-manager'
 
 // A registry of every BrowserWindow the app owns. Replaces the single
 // `mainWindow` singleton so the GUI can run one independent window per project
@@ -75,6 +76,9 @@ function registerWindow(win: BrowserWindow, kind: 'home' | 'project', projectId?
   })
 
   win.on('closed', () => {
+    // Tear down only this window's integrated terminals; other windows' PTYs
+    // stay alive. Capture the id before the BrowserWindow is gone.
+    destroyPtysForWindow(win.id)
     windows.delete(win.id)
   })
 }

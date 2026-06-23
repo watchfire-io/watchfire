@@ -8,7 +8,7 @@ import { setupIpc } from './ipc'
 import { ensureDaemon, getDaemonInfo } from './daemon'
 import { checkAndInstallCLI } from './cli-installer'
 import { initAutoUpdater } from './auto-updater'
-import { setWindow as setPtyWindow, destroyAll as destroyAllPtys } from './pty-manager'
+import { destroyAll as destroyAllPtys } from './pty-manager'
 import { createHomeWindow, getHomeWindow } from './windows'
 
 const DAEMON_YAML = join(homedir(), '.watchfire', 'daemon.yaml')
@@ -117,11 +117,10 @@ if (!gotSingleInstanceLock) {
     // Set up IPC handlers
     setupIpc()
 
-    // Open the dashboard-first home window. The PTY manager and auto-updater
-    // still target a single window for now; both are pointed at the home
-    // window and rewired to be window-aware in follow-up tasks.
+    // Open the dashboard-first home window. The PTY manager is now window-aware
+    // (each session routes to its originating window); the auto-updater still
+    // targets a single window for now and is pointed at the home window.
     const homeWindow = createHomeWindow()
-    setPtyWindow(homeWindow)
     initAutoUpdater(homeWindow)
 
     app.on('activate', () => {

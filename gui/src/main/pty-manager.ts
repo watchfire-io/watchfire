@@ -14,16 +14,18 @@ const pty = _require('node-pty') as typeof import('node-pty')
 interface PtySession {
   pty: import('node-pty').IPty
   id: string
+  windowId: number
 }
 
 let sessions: Map<string, PtySession> = new Map()
-let win: BrowserWindow | null = null
 
-export function setWindow(w: BrowserWindow): void {
-  win = w
-}
-
-function safeSend(channel: string, data: unknown): void {
+// Route a PTY event to the window that owns the session. With one window per
+// project, terminal bytes must land only in the originating window — sending
+// to a module-global "current" window would bleed project A's output into
+// whatever window was focused last. Resolve the window by id each time and
+// guard destruction (the window may have closed while bytes were in flight).
+function send(windowId: number, channel: string, data: unknown): void {
+  const win = BrowserWindow.fromId(windowId)
   if (win && !win.isDestroyed() && !win.webContents.isDestroyed()) {
     win.webContents.send(channel, data)
   }
@@ -51,9 +53,7 @@ function readConfiguredShell(): string | null {
   }
 }
 
-export async function createPty(cwd: string): Promise<string> {
-  if (!win) throw new Error('No window set')
-
+export async function createPty(cwd: string, windowId: number): Promise<string> {
   const id = randomUUID()
   const env = await loginShellEnv()
   const shell = readConfiguredShell() || process.env.SHELL || '/bin/zsh'
@@ -67,15 +67,15 @@ export async function createPty(cwd: string): Promise<string> {
   })
 
   p.onData((data) => {
-    safeSend('pty-output', { id, data })
+    send(windowId, 'pty-output', { id, data })
   })
 
   p.onExit(({ exitCode }) => {
-    safeSend('pty-exit', { id, exitCode })
+    send(windowId, 'pty-exit', { id, exitCode })
     sessions.delete(id)
   })
 
-  sessions.set(id, { pty: p, id })
+  sessions.set(id, { pty: p, id, windowId })
   return id
 }
 
@@ -96,6 +96,18 @@ export function destroyPty(id: string): void {
   if (session) {
     session.pty.kill()
     sessions.delete(id)
+  }
+}
+
+// Kill and forget every session owned by a single window. Wired to each
+// project window's `closed` event so closing one window tears down only its
+// terminals, leaving other windows' PTYs alive.
+export function destroyForWindow(windowId: number): void {
+  for (const [id, session] of sessions) {
+    if (session.windowId === windowId) {
+      session.pty.kill()
+      sessions.delete(id)
+    }
   }
 }
 
