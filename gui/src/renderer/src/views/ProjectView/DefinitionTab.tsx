@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import type { Project } from '../../generated/watchfire_pb'
 import { getProjectClient } from '../../lib/grpc-client'
 import { useToast } from '../../components/ui/Toast'
+import { MarkdownEditor } from '../../components/ui/MarkdownEditor'
 
 interface Props {
   projectId: string
@@ -68,12 +69,16 @@ export function DefinitionTab({ projectId, project }: Props) {
           {saved ? 'Saved' : 'Saving...'}
         </span>
       </div>
-      <textarea
-        value={value}
-        onChange={(e) => handleChange(e.target.value)}
-        className="flex-1 w-full px-4 py-3 bg-[var(--wf-bg-primary)] text-sm font-mono leading-relaxed text-[var(--wf-text-primary)] placeholder-[var(--wf-text-muted)] focus:outline-none resize-none"
-        placeholder="Describe your project, its architecture, coding conventions..."
-      />
+      <div className="flex-1 min-h-0 p-3">
+        <MarkdownEditor
+          value={value}
+          onChange={handleChange}
+          minHeight="100%"
+          className="h-full"
+          ariaLabel="Project definition"
+          placeholder="Describe your project, its architecture, coding conventions..."
+        />
+      </div>
     </div>
   )
 }
