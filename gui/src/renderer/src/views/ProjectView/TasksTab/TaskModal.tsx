@@ -3,6 +3,7 @@ import { ScanSearch, Pencil } from 'lucide-react'
 import { SlidePanel } from '../../../components/ui/SlidePanel'
 import { Button } from '../../../components/ui/Button'
 import { Input } from '../../../components/ui/Input'
+import { MarkdownEditor } from '../../../components/ui/MarkdownEditor'
 import { Select, type SelectOption } from '../../../components/ui/Select'
 import { useTasksStore } from '../../../stores/tasks-store'
 import { useProjectsStore } from '../../../stores/projects-store'
@@ -196,12 +197,12 @@ export function TaskModal({ open, onClose, projectId, task }: Props) {
             <label className="block text-sm font-medium text-[var(--wf-text-secondary)] mb-1.5">
               Prompt
             </label>
-            <textarea
+            <MarkdownEditor
               value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
+              onChange={setPrompt}
               placeholder="Detailed instructions for the AI agent..."
-              rows={8}
-              className="w-full px-3 py-2 rounded-[var(--wf-radius-md)] bg-[var(--wf-bg-primary)] border border-[var(--wf-border)] text-sm font-mono text-[var(--wf-text-primary)] placeholder-[var(--wf-text-muted)] focus:outline-none focus:border-fire-500 focus:ring-1 focus:ring-fire-500/30 transition-colors resize-none"
+              minHeight={180}
+              ariaLabel="Task prompt"
             />
           </div>
 
@@ -209,12 +210,12 @@ export function TaskModal({ open, onClose, projectId, task }: Props) {
             <label className="block text-sm font-medium text-[var(--wf-text-secondary)] mb-1.5">
               Acceptance Criteria
             </label>
-            <textarea
+            <MarkdownEditor
               value={criteria}
-              onChange={(e) => setCriteria(e.target.value)}
+              onChange={setCriteria}
               placeholder="How will we know this task is done?"
-              rows={6}
-              className="w-full px-3 py-2 rounded-[var(--wf-radius-md)] bg-[var(--wf-bg-primary)] border border-[var(--wf-border)] text-sm font-mono text-[var(--wf-text-primary)] placeholder-[var(--wf-text-muted)] focus:outline-none focus:border-fire-500 focus:ring-1 focus:ring-fire-500/30 transition-colors resize-none"
+              minHeight={140}
+              ariaLabel="Task acceptance criteria"
             />
           </div>
 
