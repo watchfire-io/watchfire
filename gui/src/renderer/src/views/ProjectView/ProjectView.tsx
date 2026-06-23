@@ -20,6 +20,7 @@ import { BottomPanel } from './BottomPanel/BottomPanel'
 import { useTerminalStore } from '../../stores/terminal-store'
 import { useIntegrationsStore } from '../../stores/integrations-store'
 import { ModesControl } from './ModesControl'
+import { WildfireControl } from './WildfireControl'
 import { OpenInIDEButton } from './OpenInIDEButton'
 import { ExportPill } from '../../components/ExportPill'
 
@@ -190,6 +191,7 @@ export function ProjectView() {
             )}
           </div>
           <div className="flex items-center gap-2">
+            <WildfireControl projectId={projectId} />
             <ExportPill scope={{ kind: 'project', projectId }} />
             <OpenInIDEButton projectPath={project.path} />
             {!rightPanelOpen && <ModesControl projectId={projectId} layout="menu" />}

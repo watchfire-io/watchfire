@@ -1,18 +1,20 @@
 import { useEffect, useRef, useState } from 'react'
-import { Sparkles, ListTodo, Play, Flame, Square, ChevronDown } from 'lucide-react'
+import { Sparkles, ListTodo, Play, Square, ChevronDown } from 'lucide-react'
 import { useProjectsStore } from '../../stores/projects-store'
 import { useAgentStore } from '../../stores/agent-store'
 import { Button } from '../../components/ui/Button'
 import { useToast } from '../../components/ui/Toast'
 import { cn } from '../../lib/utils'
 
-type Mode = 'generate-definition' | 'generate-tasks' | 'start-all' | 'wildfire'
+// Wildfire is intentionally absent here: it gets a dedicated, confirm-gated
+// control in the ProjectView header (WildfireControl) because it is autonomous
+// and spends tokens unattended.
+type Mode = 'generate-definition' | 'generate-tasks' | 'start-all'
 
 const MODES: { mode: Mode; label: string; icon: typeof Sparkles; title: string }[] = [
   { mode: 'generate-definition', label: 'Generate', icon: Sparkles, title: 'Generate project definition from codebase' },
   { mode: 'generate-tasks', label: 'Plan', icon: ListTodo, title: 'Generate tasks from project definition' },
-  { mode: 'start-all', label: 'Run All', icon: Play, title: 'Run all ready tasks sequentially' },
-  { mode: 'wildfire', label: 'Wildfire', icon: Flame, title: 'Autonomous loop: generate, plan, and execute' }
+  { mode: 'start-all', label: 'Run All', icon: Play, title: 'Run all ready tasks sequentially' }
 ]
 
 interface Props {
