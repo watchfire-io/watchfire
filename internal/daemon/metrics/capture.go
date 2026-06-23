@@ -3,11 +3,71 @@ package metrics
 import (
 	"log"
 	"os"
+	"sync"
 	"time"
 
 	"github.com/watchfire-io/watchfire/internal/config"
 	"github.com/watchfire-io/watchfire/internal/models"
 )
+
+// metricsFileMu serializes the read-modify-write access to a task's
+// `<n>.metrics.yaml`. The token capture (Capture, watcher-driven) and the
+// code-output capture (RecordCodeStats, merge-path-driven) run concurrently
+// in the daemon and touch disjoint field sets of the same file; the lock +
+// read-modify-write in both keeps whichever writes second from clobbering
+// the other's fields. A single process-wide mutex is plenty — metrics
+// writes are rare and fast.
+var metricsFileMu sync.Mutex
+
+// CodeStats carries the code-output numbers computed by the task-done merge
+// path (`agent.HandleTaskDone`) from git + the diff package, ready to be
+// merged into the task's metrics YAML by RecordCodeStats.
+type CodeStats struct {
+	Commits      int
+	FilesChanged int
+	LinesAdded   int
+	LinesRemoved int
+	Merged       bool
+	MergeKind    models.MergeKind
+}
+
+// RecordCodeStats merges code-output stats into a task's `<n>.metrics.yaml`,
+// preserving the token/cost fields the watcher-driven Capture may have
+// already written (and vice-versa). Best-effort: on any read/write error it
+// logs and returns — a metrics hiccup must never strand or fail the merge.
+//
+// Safe to call concurrently with Capture; both take metricsFileMu.
+func RecordCodeStats(projectPath, projectID string, t *models.Task, cs CodeStats) {
+	if t == nil || t.TaskNumber <= 0 {
+		return
+	}
+
+	metricsFileMu.Lock()
+	defer metricsFileMu.Unlock()
+
+	m, err := config.ReadMetrics(projectPath, t.TaskNumber)
+	if err != nil || m == nil {
+		// No metrics file yet (Capture hasn't landed) — build the base
+		// record so the code stats aren't lost. Capture will later read
+		// this back and graft its token fields on top.
+		m = BuildBaseMetrics(projectID, t)
+	}
+	if m == nil {
+		return
+	}
+
+	m.Commits = cs.Commits
+	m.FilesChanged = cs.FilesChanged
+	m.LinesAdded = cs.LinesAdded
+	m.LinesRemoved = cs.LinesRemoved
+	m.NetLines = cs.LinesAdded - cs.LinesRemoved
+	m.Merged = cs.Merged
+	m.MergeKind = cs.MergeKind
+
+	if writeErr := config.WriteMetrics(projectPath, m); writeErr != nil {
+		log.Printf("[metrics] failed to persist code stats for project %s task #%04d: %v", projectID, t.TaskNumber, writeErr)
+	}
+}
 
 // BuildBaseMetrics derives the duration-only fields from the canonical
 // task YAML. Token + cost remain nil for the caller to fill in via a
@@ -88,6 +148,22 @@ func Capture(projectPath, projectID, sessionLogPath string, t *models.Task) {
 			m.TokensOut = out
 			m.CostUSD = cost
 		}
+	}
+
+	metricsFileMu.Lock()
+	defer metricsFileMu.Unlock()
+
+	// Preserve any code-output stats RecordCodeStats may have already written
+	// from the (concurrent) merge path — this fresh record only carries
+	// duration + token/cost fields.
+	if existing, _ := config.ReadMetrics(projectPath, t.TaskNumber); existing != nil {
+		m.Commits = existing.Commits
+		m.FilesChanged = existing.FilesChanged
+		m.LinesAdded = existing.LinesAdded
+		m.LinesRemoved = existing.LinesRemoved
+		m.NetLines = existing.NetLines
+		m.Merged = existing.Merged
+		m.MergeKind = existing.MergeKind
 	}
 
 	if err := config.WriteMetrics(projectPath, m); err != nil {

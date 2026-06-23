@@ -5,12 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os/exec"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/watchfire-io/watchfire/internal/config"
+	"github.com/watchfire-io/watchfire/internal/daemon/diff"
 	gitpkg "github.com/watchfire-io/watchfire/internal/daemon/git"
+	"github.com/watchfire-io/watchfire/internal/daemon/metrics"
 	"github.com/watchfire-io/watchfire/internal/daemon/notify"
 	"github.com/watchfire-io/watchfire/internal/models"
 )
@@ -28,6 +32,12 @@ type taskDoneFns struct {
 	MergeWorktree    func(projectPath string, taskNumber int) (bool, error)
 	RemoveWorktree   func(projectPath string, taskNumber int, merged bool) error
 	EmitNotification func(bus *notify.Bus, n notify.Notification) error
+	// v8.0 Inferno — code-output metrics. ComputeCodeStats reads git + the
+	// diff package for the pre-merge branch state; RecordCodeStats merges the
+	// result into `<n>.metrics.yaml`. Both are nil-guarded so the merge tests
+	// can leave them unset and stay off disk.
+	ComputeCodeStats func(projectPath, projectID string, taskNumber int) metrics.CodeStats
+	RecordCodeStats  func(projectPath, projectID string, t *models.Task, cs metrics.CodeStats)
 }
 
 var defaultTaskDoneFns = taskDoneFns{
@@ -44,6 +54,58 @@ var defaultTaskDoneFns = taskDoneFns{
 		}
 		return notify.AppendLogLine(n)
 	},
+	ComputeCodeStats: computeCodeStats,
+	RecordCodeStats:  metrics.RecordCodeStats,
+}
+
+// computeCodeStats derives the per-task code-output numbers from the still-live
+// `watchfire/<n>` branch: commit count via `git rev-list` and files/lines via
+// the diff package (the same call Inspect + the auto-PR body use, so the
+// numbers line up). MUST run BEFORE the merge — once the branch is folded into
+// the default branch, the merge-base equals the branch tip and the commit
+// count collapses to zero. Best-effort throughout: a git/diff error yields
+// zeros rather than failing the merge.
+func computeCodeStats(projectPath, projectID string, taskNumber int) metrics.CodeStats {
+	var cs metrics.CodeStats
+	branch := fmt.Sprintf("watchfire/%04d", taskNumber)
+
+	if base := gitOutput(projectPath, "merge-base", "HEAD", branch); base != "" {
+		if n := gitOutput(projectPath, "rev-list", "--count", base+".."+branch); n != "" {
+			if c, err := strconv.Atoi(n); err == nil {
+				cs.Commits = c
+			}
+		}
+	}
+
+	if set, err := diff.TaskDiff(projectPath, projectID, taskNumber); err == nil && set != nil {
+		cs.FilesChanged = len(set.Files)
+		cs.LinesAdded = set.TotalAdditions
+		cs.LinesRemoved = set.TotalDeletions
+	}
+	return cs
+}
+
+// gitOutput runs `git <args>` in dir and returns trimmed stdout, or "" on any
+// error (best-effort — callers treat "" as "stat unavailable").
+func gitOutput(dir string, args ...string) string {
+	cmd := exec.Command("git", args...) //nolint:gosec // args are produced internally
+	cmd.Dir = dir
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
+}
+
+// recordCodeStats fills the merge-path fields and persists, nil-guarding both
+// hooks so the merge unit tests (which leave them unset) stay off git + disk.
+func recordCodeStats(fns taskDoneFns, proj *models.Project, t *models.Task, projectPath string, merged bool, kind models.MergeKind, cs metrics.CodeStats) {
+	if fns.RecordCodeStats == nil {
+		return
+	}
+	cs.Merged = merged
+	cs.MergeKind = kind
+	fns.RecordCodeStats(projectPath, proj.ProjectID, t, cs)
 }
 
 // ghFallbackWarned dedupes the ErrGHUnavailable / ErrNotGitHub fallback WARN
@@ -108,18 +170,26 @@ func handleTaskDoneWith(fns taskDoneFns, projectPath string, taskNumber int, wor
 	config.ProjectLogf(proj.ProjectID, "[merge] Task #%04d done, deciding merge path (auto_merge=%v, auto_delete=%v)",
 		taskNumber, proj.AutoMerge, proj.AutoDeleteBranch)
 
-	if proj.AutoMerge && tryAutoPR(fns, proj, t, projectPath, taskNumber, bus) {
+	// v8.0 Inferno — snapshot the code-output numbers from the still-live task
+	// branch BEFORE either merge path runs (the merge moves HEAD and would
+	// zero out the commit count). merged/merge_kind are filled per path.
+	var codeStats metrics.CodeStats
+	if fns.ComputeCodeStats != nil {
+		codeStats = fns.ComputeCodeStats(projectPath, proj.ProjectID, taskNumber)
+	}
+
+	if proj.AutoMerge && tryAutoPR(fns, proj, t, projectPath, taskNumber, bus, codeStats) {
 		return TaskDoneResult{Outcome: TaskDoneOK}
 	}
 
-	return runSilentMerge(fns, proj, t, projectPath, taskNumber)
+	return runSilentMerge(fns, proj, t, projectPath, taskNumber, codeStats)
 }
 
 // tryAutoPR returns true when the auto-PR flow took ownership of the merge
 // (PR opened successfully, worktree cleaned). It returns false in two cases:
 // auto-PR is not enabled for this project, or the PR attempt failed and the
 // caller should fall through to silent merge.
-func tryAutoPR(fns taskDoneFns, proj *models.Project, t *models.Task, projectPath string, taskNumber int, bus *notify.Bus) bool {
+func tryAutoPR(fns taskDoneFns, proj *models.Project, t *models.Task, projectPath string, taskNumber int, bus *notify.Bus, codeStats metrics.CodeStats) bool {
 	integrations, _ := fns.LoadIntegrations()
 	if integrations == nil || !integrations.GitHub.AutoPRApplies(proj.ProjectID) {
 		return false
@@ -147,6 +217,10 @@ func tryAutoPR(fns taskDoneFns, proj *models.Project, t *models.Task, projectPat
 	if prErr == nil {
 		config.ProjectLogf(proj.ProjectID, "[auto-pr] Task #%04d PR opened: %s", taskNumber, prRes.URL)
 		emitPROpenedNotification(fns, bus, proj, taskNumber, prRes.URL)
+		// The work landed as a PR, not a local merge — record merged=false so
+		// rollups don't double-count it as merged-to-default. Done before
+		// worktree cleanup, though codeStats was already snapshotted.
+		recordCodeStats(fns, proj, t, projectPath, false, models.MergeKindAutoPR, codeStats)
 		if proj.AutoDeleteBranch {
 			if err := fns.RemoveWorktree(projectPath, taskNumber, true); err != nil {
 				config.ProjectLogf(proj.ProjectID, "[auto-pr] Failed to remove worktree for task #%04d after PR open: %v", taskNumber, err)
@@ -201,7 +275,7 @@ func emitPROpenedNotification(fns taskDoneFns, bus *notify.Bus, proj *models.Pro
 	}
 }
 
-func runSilentMerge(fns taskDoneFns, proj *models.Project, t *models.Task, projectPath string, taskNumber int) TaskDoneResult {
+func runSilentMerge(fns taskDoneFns, proj *models.Project, t *models.Task, projectPath string, taskNumber int, codeStats metrics.CodeStats) TaskDoneResult {
 	var merged bool
 	var mergeReason string
 	mergeFailed := false
@@ -219,6 +293,9 @@ func runSilentMerge(fns taskDoneFns, proj *models.Project, t *models.Task, proje
 			config.ProjectLogf(proj.ProjectID, "[merge] Task #%04d has no file differences — skipped merge", taskNumber)
 		}
 	}
+	// Persist code-output metrics before worktree cleanup deletes the branch.
+	// codeStats was snapshotted pre-merge; here we only stamp the outcome.
+	recordCodeStats(fns, proj, t, projectPath, merged, models.MergeKindSilent, codeStats)
 	if proj.AutoDeleteBranch && !mergeFailed {
 		if err := fns.RemoveWorktree(projectPath, taskNumber, merged); err != nil {
 			config.ProjectLogf(proj.ProjectID, "[merge] Failed to remove worktree for task #%04d: %v", taskNumber, err)
