@@ -63,6 +63,11 @@ interface WatchfireAPI {
   openHomeWindow(): Promise<void>
   openProjectWindow(projectId: string): Promise<void>
 
+  // v8 Inferno — mission control: which projects already have their own window,
+  // plus a live subscription so the dashboard can focus instead of duplicate.
+  listProjectWindows(): Promise<string[]>
+  onProjectWindowsChanged(callback: (projectIds: string[]) => void): () => void
+
   // Native OS notifications (v5.0 Pulse)
   emitNotification(payload: {
     id: string

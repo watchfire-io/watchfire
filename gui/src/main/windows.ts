@@ -110,6 +110,9 @@ function registerWindow(win: BrowserWindow, kind: 'home' | 'project', projectId?
     destroyPtysForWindow(win.id)
     windows.delete(win.id)
     if (lastFocusedId === win.id) lastFocusedId = null
+    // A project window closing changes the open-windows set the home/dashboard
+    // renders; broadcast so its "focus existing window" affordances update live.
+    if (kind === 'project') broadcastProjectWindows()
   })
 }
 
@@ -176,6 +179,9 @@ export function createProjectWindow(projectId: string): BrowserWindow {
   win.on('closed', () => removeOpenProject(projectId))
   registerWindow(win, 'project', projectId)
   loadRenderer(win, `?project=${encodeURIComponent(projectId)}`)
+  // Tell the home/dashboard window a new project window now exists so its
+  // per-card affordance flips to "focus existing window".
+  broadcastProjectWindows()
   return win
 }
 
@@ -191,6 +197,24 @@ export function restoreOpenProjectWindows(): void {
       removeOpenProject(projectId)
     }
   }
+}
+
+// The project ids that currently have a live window, derived from the registry
+// (not the persisted last-quit set in window-state). The home/dashboard window
+// uses this to show which projects are already open so it focuses rather than
+// duplicates. Broadcast on every open/close via `project-windows-changed`.
+export function getOpenProjectWindowIds(): string[] {
+  const ids: string[] = []
+  for (const w of windows.values()) {
+    if (w.kind === 'project' && w.projectId) ids.push(w.projectId)
+  }
+  return ids
+}
+
+// Push the current open-project-window set to every renderer. Cheap and
+// idempotent — the home window dedups in its store.
+function broadcastProjectWindows(): void {
+  broadcast('project-windows-changed', getOpenProjectWindowIds())
 }
 
 export function getProjectWindow(projectId: string): BrowserWindow | null {

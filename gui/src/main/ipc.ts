@@ -10,7 +10,8 @@ import {
   createHomeWindow,
   createProjectWindow,
   getHomeWindow,
-  getMostRecentlyFocusedWindow
+  getMostRecentlyFocusedWindow,
+  getOpenProjectWindowIds
 } from './windows'
 
 // IDE launch command specs. Each entry resolves to an (argv, options) tuple for child_process.spawn.
@@ -201,6 +202,12 @@ export function setupIpc(): void {
   ipcMain.handle('open-project-window', (_event, projectId: string) => {
     if (typeof projectId === 'string' && projectId) createProjectWindow(projectId)
   })
+
+  // The set of projects that currently have their own window. The home/dashboard
+  // renderer reads this once at mount and then keeps it fresh via the
+  // `project-windows-changed` broadcast, so each card can show "focus existing
+  // window" instead of implying a duplicate would be spawned.
+  ipcMain.handle('list-project-windows', () => getOpenProjectWindowIds())
 
   // Bring a window to the foreground. Called by the renderer's focus
   // subscriber on every incoming tray event so a click in the menu bar

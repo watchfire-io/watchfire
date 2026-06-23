@@ -10,6 +10,7 @@ import { StatusDot } from '../../components/StatusDot'
 import { isAgentWorking } from '../../lib/agent-utils'
 import { relativeTime, timestampToMs } from '../../lib/relative-time'
 import { AgentBadge } from '../../components/AgentBadge'
+import { WildfirePhaseBadge } from '../../components/WildfirePhaseBadge'
 import { Modal } from '../../components/ui/Modal'
 import { useAgentPreview } from '../../hooks/useAgentPreview'
 
@@ -28,9 +29,12 @@ function formatElapsed(ms: number): string {
 
 interface ProjectCardProps {
   project: Project
+  // True when this project already has its own window open, so the card
+  // focuses it instead of spawning a duplicate (v8 Inferno — mission control).
+  hasWindow?: boolean
 }
 
-export function ProjectCard({ project }: ProjectCardProps) {
+export function ProjectCard({ project, hasWindow = false }: ProjectCardProps) {
   const selectProject = useAppStore((s) => s.selectProject)
   const agentStatus = useProjectsStore((s) => s.agentStatuses[project.projectId])
   const removeProject = useProjectsStore((s) => s.removeProject)
@@ -42,6 +46,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
   const expandPanel = useTerminalStore((s) => s.expandPanel)
   const [showConfirm, setShowConfirm] = useState(false)
   const isAgentRunning = !!agentStatus?.isRunning
+  const isWildfire = isAgentRunning && agentStatus?.mode === 'wildfire'
   const ptyPreview = useAgentPreview(project.projectId, isAgentRunning)
   const [now, setNow] = useState(() => Date.now())
 
@@ -116,12 +121,18 @@ export function ProjectCard({ project }: ProjectCardProps) {
         hasFailed ? 'border-[var(--wf-error)]/50' : 'border-[var(--wf-border)]'
       }`}
     >
-      {/* Hover actions: open-in-new-window + remove */}
+      {/* Hover actions: open-in-new-window + remove. When a window for this
+          project is already open the button stays visible (no hover needed) and
+          flips to a "focus existing window" treatment so we never duplicate. */}
       <div className="absolute top-2 right-2 z-10 flex items-center gap-1">
         <button
           onClick={(e) => { e.stopPropagation(); window.watchfire.openProjectWindow(project.projectId) }}
-          className="p-1 rounded-[var(--wf-radius-md)] text-[var(--wf-text-muted)] hover:text-[var(--wf-fire)] hover:bg-[var(--wf-bg-elevated)] opacity-0 group-hover:opacity-100 transition-all"
-          title="Open in new window (⌘-click)"
+          className={`p-1 rounded-[var(--wf-radius-md)] hover:bg-[var(--wf-bg-elevated)] transition-all ${
+            hasWindow
+              ? 'text-[var(--wf-fire)] opacity-100'
+              : 'text-[var(--wf-text-muted)] hover:text-[var(--wf-fire)] opacity-0 group-hover:opacity-100'
+          }`}
+          title={hasWindow ? 'Focus open window' : 'Open in new window (⌘-click)'}
         >
           <ExternalLink size={14} />
         </button>
@@ -191,10 +202,16 @@ export function ProjectCard({ project }: ProjectCardProps) {
         )}
       </div>
 
-      {/* Agent badge */}
+      {/* Agent badge — a wildfire loop gets its dedicated phase badge so the
+          mission-control home window shows which projects are looping and where
+          they are in execute → refine → generate. */}
       {isAgentRunning && (
         <div className="mb-3 flex items-center gap-2">
-          <AgentBadge status={agentStatus} />
+          {isWildfire ? (
+            <WildfirePhaseBadge phase={agentStatus?.wildfirePhase ?? ''} compact />
+          ) : (
+            <AgentBadge status={agentStatus} />
+          )}
           {elapsedMs !== null && (
             <span
               className="inline-flex items-center gap-1 text-[11px] font-medium tabular-nums"
