@@ -6,6 +6,7 @@ import { spawn } from 'child_process'
 import { getDaemonInfo, ensureDaemon } from './daemon'
 import { installCLI, needsInstall } from './cli-installer'
 import * as ptyManager from './pty-manager'
+import { createProjectWindow, getHomeWindow, getMostRecentlyFocusedWindow } from './windows'
 
 // IDE launch command specs. Each entry resolves to an (argv, options) tuple for child_process.spawn.
 // Commands are looked up on PATH via shell: true so common installer-provided shims work cross-platform.
@@ -183,13 +184,13 @@ export function setupIpc(): void {
     return openInIDE(ide, projectPath)
   })
 
-  // Bring the main window to the foreground. Called by the renderer's focus
+  // Bring a window to the foreground. Called by the renderer's focus
   // subscriber on every incoming tray event so a click in the menu bar
-  // always lands the user back on the GUI.
+  // always lands the user back on the GUI. Targets the most-recently-focused
+  // window (falling back to the home window) rather than an arbitrary one.
   ipcMain.handle('focus-window', () => {
-    const wins = BrowserWindow.getAllWindows()
-    if (wins.length === 0) return
-    const win = wins[0]
+    const win = getMostRecentlyFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+    if (!win || win.isDestroyed()) return
     if (win.isMinimized()) win.restore()
     win.show()
     win.focus()
@@ -214,20 +215,37 @@ export function setupIpc(): void {
         body: payload.body,
         silent: true
       })
-      // Click → focus the GUI window and route by kind. WEEKLY_DIGEST opens
-      // the digest modal; TASK_FAILED / RUN_COMPLETE route to the project.
+      // Click → focus the right window and route by kind. TASK_FAILED /
+      // RUN_COMPLETE open (or focus) the project's own window; WEEKLY_DIGEST
+      // is global, so it surfaces on the home window. A freshly-opened project
+      // window hasn't loaded its renderer yet, so defer the IPC send until the
+      // contents finish loading.
       n.on('click', () => {
-        const wins = BrowserWindow.getAllWindows()
-        if (wins.length === 0) return
-        const win = wins[0]
+        const isProjectEvent = payload.kind !== 'WEEKLY_DIGEST' && !!payload.projectId
+        const win = isProjectEvent
+          ? createProjectWindow(payload.projectId)
+          : getHomeWindow() ?? getMostRecentlyFocusedWindow()
+        if (!win || win.isDestroyed()) return
+
+        // createProjectWindow already focuses an existing window; ensure a
+        // minimized/hidden window is surfaced regardless of path.
         if (win.isMinimized()) win.restore()
         win.show()
         win.focus()
-        win.webContents.send('notifications:click', {
-          kind: payload.kind,
-          projectId: payload.projectId,
-          taskNumber: payload.taskNumber
-        })
+
+        const send = (): void => {
+          if (win.isDestroyed()) return
+          win.webContents.send('notifications:click', {
+            kind: payload.kind,
+            projectId: payload.projectId,
+            taskNumber: payload.taskNumber
+          })
+        }
+        if (win.webContents.isLoading()) {
+          win.webContents.once('did-finish-load', send)
+        } else {
+          send()
+        }
       })
       n.show()
     }

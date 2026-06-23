@@ -1,34 +1,32 @@
 import { autoUpdater } from 'electron-updater'
-import { BrowserWindow, ipcMain } from 'electron'
+import { ipcMain } from 'electron'
 import { checkAndInstallCLI } from './cli-installer'
+import { broadcast } from './windows'
 
-let mainWindow: BrowserWindow | null = null
-
-export function initAutoUpdater(window: BrowserWindow): void {
-  mainWindow = window
-
+export function initAutoUpdater(): void {
   // Configure auto-updater
   autoUpdater.autoDownload = true
   autoUpdater.autoInstallOnAppQuit = true
 
-  // Events → renderer
+  // Events → every open window. The update banner lives in each renderer, so
+  // a project window should learn about an available/downloaded update too.
   autoUpdater.on('update-available', (info) => {
-    mainWindow?.webContents.send('update-available', {
+    broadcast('update-available', {
       version: info.version,
       releaseNotes: info.releaseNotes
     })
   })
 
   autoUpdater.on('download-progress', (progress) => {
-    mainWindow?.webContents.send('update-progress', progress.percent)
+    broadcast('update-progress', progress.percent)
   })
 
   autoUpdater.on('update-downloaded', () => {
-    mainWindow?.webContents.send('update-downloaded')
+    broadcast('update-downloaded')
   })
 
   autoUpdater.on('error', (err) => {
-    mainWindow?.webContents.send('update-error', err.message)
+    broadcast('update-error', err.message)
   })
 
   // IPC handlers

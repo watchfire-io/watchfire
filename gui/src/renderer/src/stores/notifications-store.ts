@@ -13,6 +13,7 @@ import {
   type NotificationKind,
   type PlayableAudio
 } from './notifications-sound'
+import { isHomeWindow } from '../lib/window-scope'
 
 // Vite serves the renderer's `public/` dir at the root of the bundled output,
 // so these absolute URLs resolve to the bundled WAV files at runtime in both
@@ -187,6 +188,12 @@ export const useNotificationsStore = create<NotificationsStoreState>((set, get) 
       return playSoundForKind(kind, prefs, audios)
     },
     start: () => {
+      // D1 — single OS-notifier. Each subscribing renderer fires its own OS
+      // toast (via the notifications:emit IPC) and plays its own sound, so with
+      // N windows open we'd get N toasts/sounds per event. Only the HOME window
+      // owns the notification stream; project windows never subscribe, which
+      // guarantees exactly one notifier regardless of window count.
+      if (!isHomeWindow()) return
       set({ active: true })
       internalStart()
     },

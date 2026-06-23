@@ -9,7 +9,7 @@ import { ensureDaemon, getDaemonInfo } from './daemon'
 import { checkAndInstallCLI } from './cli-installer'
 import { initAutoUpdater } from './auto-updater'
 import { destroyAll as destroyAllPtys } from './pty-manager'
-import { createHomeWindow, getHomeWindow } from './windows'
+import { createHomeWindow, broadcast } from './windows'
 
 const DAEMON_YAML = join(homedir(), '.watchfire', 'daemon.yaml')
 
@@ -23,9 +23,9 @@ function startDaemonWatcher(): void {
   ensureDaemon()
     .then((info) => {
       watchedDaemonPid = info.pid
-      // Routed to the home window for now; IPC fan-out to all windows lands
-      // in a follow-up task.
-      getHomeWindow()?.webContents.send('daemon-ready')
+      // Fan out to every open window — each renderer drives its own daemon
+      // connection and needs to learn the daemon is up.
+      broadcast('daemon-ready')
 
       daemonWatcherInterval = setInterval(async () => {
         try {
@@ -37,7 +37,7 @@ function startDaemonWatcher(): void {
           if (!existsSync(DAEMON_YAML)) {
             // daemon.yaml removed → graceful shutdown, quit the app
             console.log('Daemon shut down gracefully, quitting GUI...')
-            getHomeWindow()?.webContents.send('daemon-shutdown')
+            broadcast('daemon-shutdown')
             setTimeout(() => app.quit(), 3000)
           } else {
             // daemon.yaml still exists with stale PID → crash, restart
@@ -117,11 +117,11 @@ if (!gotSingleInstanceLock) {
     // Set up IPC handlers
     setupIpc()
 
-    // Open the dashboard-first home window. The PTY manager is now window-aware
-    // (each session routes to its originating window); the auto-updater still
-    // targets a single window for now and is pointed at the home window.
-    const homeWindow = createHomeWindow()
-    initAutoUpdater(homeWindow)
+    // Open the dashboard-first home window. The PTY manager is window-aware
+    // (each session routes to its originating window) and the auto-updater now
+    // broadcasts update events to every open window.
+    createHomeWindow()
+    initAutoUpdater()
 
     app.on('activate', () => {
       // Dock click (macOS) → focus the home window, creating it if none.
