@@ -92,14 +92,22 @@ export default function App() {
   // in the menu bar can route the GUI to a specific project / tab. The
   // stream auto-reconnects on transient errors via the focus store.
   //
-  // D1 — single OS-notifier: only the home window subscribes to the daemon
-  // notification stream (and thus fires the OS toast + sound). Project windows
-  // skip it so a single event never produces N toasts. `startNotifications`
-  // also self-guards in the store, so this is belt-and-suspenders.
+  // v8 Inferno — only the home window subscribes to the focus stream. It is the
+  // single tray-event router for the whole app: project events open/focus that
+  // project's own window via the main process, global/digest events surface the
+  // home window. Project windows skip the stream so one tray click never fans
+  // out into N windows each trying to focus.
+  //
+  // D1 — single OS-notifier: likewise only the home window subscribes to the
+  // daemon notification stream (and thus fires the OS toast + sound), so a
+  // single event never produces N toasts. Both stores also self-guard, so this
+  // is belt-and-suspenders.
   useEffect(() => {
     if (!connected) return
-    startFocus()
-    if (isHomeWindow()) startNotifications()
+    if (isHomeWindow()) {
+      startFocus()
+      startNotifications()
+    }
     return () => {
       stopFocus()
       stopNotifications()

@@ -32,31 +32,38 @@ async function consume(abort: AbortController): Promise<void> {
   try {
     for await (const ev of stream) {
       if (abort.signal.aborted) return
-      // Bring the GUI window to the foreground on every event. The main
-      // process's `focus-window` IPC handles minimised / hidden windows.
-      try {
-        await window.watchfire.focusWindow()
-      } catch {
-        /* ignore */
-      }
-      // v6.0 Ember — DIGEST target opens the modal with the named date,
-      // bypassing the project / task routing path.
+      // v8 Inferno — tray → open/focus the relevant project window. Only the
+      // home window subscribes to this stream (App.tsx gates `startFocus()` on
+      // `isHomeWindow()`, mirroring the D1 single-notifier election), so it
+      // owns routing for the whole app and delegates window targeting to the
+      // main process, which owns the window registry. Each branch surfaces the
+      // OS window the event is about rather than a generic first/most-recent
+      // window.
+
+      // v6.0 Ember — DIGEST target is global: surface the home window and open
+      // the digest modal with the named date (the modal lives in this window).
       if (ev.target === FocusTarget.DIGEST) {
+        void window.watchfire.openHomeWindow()
         const date = ev.digestDate
         if (date) void useDigestStore.getState().open(date)
         continue
       }
-      // No project ID means "open Watchfire / dashboard" — drop the project
-      // selection and switch to dashboard view.
+      // No project ID means "open Watchfire / dashboard" — focus the home
+      // window and switch it to the dashboard view.
       if (!ev.projectId) {
+        void window.watchfire.openHomeWindow()
         useAppStore.getState().setView('dashboard')
         continue
       }
-      useAppStore.getState().requestFocus({
-        projectId: ev.projectId,
-        target: targetToRequest(ev.target),
-        taskNumber: ev.taskNumber || undefined
-      })
+      // A project event opens (or focuses) that project's own window and routes
+      // its renderer to the relevant tab/task. The main process creates the
+      // window if it isn't open yet and defers the routing message until the
+      // renderer has loaded.
+      void window.watchfire.focusProjectWindow(
+        ev.projectId,
+        targetToRequest(ev.target),
+        ev.taskNumber || undefined
+      )
     }
   } catch (err) {
     if (abort.signal.aborted) return
