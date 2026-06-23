@@ -59,6 +59,10 @@ interface WatchfireAPI {
   // Bring the main window to the foreground
   focusWindow(): Promise<void>
 
+  // v8 Inferno — open/focus the home window or a project's window
+  openHomeWindow(): Promise<void>
+  openProjectWindow(projectId: string): Promise<void>
+
   // Native OS notifications (v5.0 Pulse)
   emitNotification(payload: {
     id: string

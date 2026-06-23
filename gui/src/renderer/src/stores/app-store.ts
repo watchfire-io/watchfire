@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { getWindowScope, type WindowScope } from '../lib/window-scope'
 
 function safeGetItem(key: string): string | null {
   try {
@@ -29,6 +30,13 @@ export interface FocusRequest {
 }
 
 interface AppState {
+  // The scope this window booted into, derived ONCE from the URL the main
+  // process set when it created the window (`?project=<id>` ⇒ project window,
+  // no query ⇒ home window). It never changes for the window's lifetime — it's
+  // the boot identity, not navigation state. The home window keeps the sidebar
+  // + dashboard; a project window renders ProjectView full-bleed. See
+  // `lib/window-scope.ts` (v8 "Inferno" Feature 1).
+  windowScope: WindowScope
   view: AppView
   selectedProjectId: string | null
   connected: boolean
@@ -47,9 +55,15 @@ interface AppState {
 
 let focusRequestSeq = 0
 
+// Read the boot scope exactly once, at store-factory time. A project window
+// boots straight into its ProjectView (view='project', project preselected) so
+// there's no flash of the dashboard before navigation catches up.
+const bootScope = getWindowScope()
+
 export const useAppStore = create<AppState>((set) => ({
-  view: 'dashboard',
-  selectedProjectId: null,
+  windowScope: bootScope,
+  view: bootScope.kind === 'project' ? 'project' : 'dashboard',
+  selectedProjectId: bootScope.kind === 'project' ? bootScope.projectId : null,
   connected: false,
   daemonPort: null,
   theme: 'system',

@@ -6,7 +6,12 @@ import { spawn } from 'child_process'
 import { getDaemonInfo, ensureDaemon } from './daemon'
 import { installCLI, needsInstall } from './cli-installer'
 import * as ptyManager from './pty-manager'
-import { createProjectWindow, getHomeWindow, getMostRecentlyFocusedWindow } from './windows'
+import {
+  createHomeWindow,
+  createProjectWindow,
+  getHomeWindow,
+  getMostRecentlyFocusedWindow
+} from './windows'
 
 // IDE launch command specs. Each entry resolves to an (argv, options) tuple for child_process.spawn.
 // Commands are looked up on PATH via shell: true so common installer-provided shims work cross-platform.
@@ -182,6 +187,19 @@ export function setupIpc(): void {
 
   ipcMain.handle('open-in-ide', (_event, ide: string, projectPath: string) => {
     return openInIDE(ide, projectPath)
+  })
+
+  // v8 Inferno — boot-scoped windows. A project window's "Open another
+  // project" affordance routes back to the home/dashboard surface; the
+  // registry focuses an existing home window or creates one.
+  ipcMain.handle('open-home-window', () => {
+    createHomeWindow()
+  })
+
+  // Open (or focus) a specific project's window. One window per project — a
+  // repeat call just focuses the existing one (handled inside the registry).
+  ipcMain.handle('open-project-window', (_event, projectId: string) => {
+    if (typeof projectId === 'string' && projectId) createProjectWindow(projectId)
   })
 
   // Bring a window to the foreground. Called by the renderer's focus
