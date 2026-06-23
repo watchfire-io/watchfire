@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { ListTodo, FileText, Trash2, Settings, GitBranch, Globe, Circle, PanelRightClose, PanelRight, KeyRound, Sparkles, Maximize2, Minimize2 } from 'lucide-react'
+import { ListTodo, FileText, Trash2, Settings, GitBranch, Globe, Circle, KeyRound, Sparkles, Maximize2, Minimize2 } from 'lucide-react'
 import { useAppStore } from '../../stores/app-store'
 import { useProjectsStore } from '../../stores/projects-store'
 import { useTasksStore } from '../../stores/tasks-store'
@@ -19,14 +19,15 @@ import { RightPanel } from './RightPanel/RightPanel'
 import { BottomPanel } from './BottomPanel/BottomPanel'
 import { useTerminalStore } from '../../stores/terminal-store'
 import { useIntegrationsStore } from '../../stores/integrations-store'
-import { ModesControl } from './ModesControl'
 import { WildfireControl } from './WildfireControl'
 import { OpenInIDEButton } from './OpenInIDEButton'
 import { ExportPill } from '../../components/ExportPill'
 
-type CenterTab = 'tasks' | 'definition' | 'insights' | 'secrets' | 'trash' | 'settings'
+// v8 Inferno: the reference region (Tasks/Definition/etc.) now lives in the
+// RIGHT pane; the agent chat/terminal is the primary LEFT pane.
+type RefTab = 'tasks' | 'definition' | 'insights' | 'secrets' | 'trash' | 'settings'
 
-const CENTER_TABS: { key: CenterTab; icon: typeof ListTodo; label: string }[] = [
+const REF_TABS: { key: RefTab; icon: typeof ListTodo; label: string }[] = [
   { key: 'tasks', icon: ListTodo, label: 'Tasks' },
   { key: 'definition', icon: FileText, label: 'Definition' },
   { key: 'insights', icon: Sparkles, label: 'Insights' },
@@ -60,24 +61,21 @@ export function ProjectView() {
     return gh.projectScopes.includes(projectId)
   })()
 
-  const [centerTab, setCenterTab] = useState<CenterTab>('tasks')
-  const [rightPanelOpen, setRightPanelOpen] = useState(() => {
-    const saved = localStorage.getItem('wf-right-panel-open')
-    return saved !== null ? saved === 'true' : true
-  })
+  const [refTab, setRefTab] = useState<RefTab>('tasks')
+  // v8 Inferno: chatFocus now means "hide the right reference region" so the
+  // primary left chat/terminal pane goes full-width.
   const [chatFocus, setChatFocus] = useState(() => {
     return localStorage.getItem(`wf-chat-focus-${projectId ?? ''}`) === 'true'
   })
-  const { width: rightPanelWidth, handleDragStart } = usePanelResize({
+  // Width of the now-right reference region. We keep the historical
+  // `wf-right-panel-width` key (its semantics — the width of the right panel —
+  // are unchanged; only the panel's contents flipped).
+  const { width: refPanelWidth, handleDragStart } = usePanelResize({
     storageKey: 'wf-right-panel-width',
-    defaultWidth: 520,
-    minWidth: 350,
-    maxWidth: 800
+    defaultWidth: 560,
+    minWidth: 360,
+    maxWidth: 900
   })
-
-  useEffect(() => {
-    localStorage.setItem('wf-right-panel-open', String(rightPanelOpen))
-  }, [rightPanelOpen])
 
   // Per-project: re-hydrate focus state when the active project changes,
   // and mirror updates back to localStorage.
@@ -90,26 +88,17 @@ export function ProjectView() {
     if (projectId) localStorage.setItem(`wf-chat-focus-${projectId}`, String(chatFocus))
   }, [chatFocus, projectId])
 
-  // Interlocks: focus mode is meaningless without the right panel open.
-  // Entering focus auto-opens it; closing the right panel exits focus.
-  const enterFocus = () => {
-    setChatFocus(true)
-    if (!rightPanelOpen) setRightPanelOpen(true)
-  }
-  const toggleFocus = () => (chatFocus ? setChatFocus(false) : enterFocus())
-  const toggleRightPanel = () => {
-    const next = !rightPanelOpen
-    setRightPanelOpen(next)
-    if (!next && chatFocus) setChatFocus(false)
-  }
+  const toggleFocus = () => setChatFocus((v) => !v)
 
   // Honour tray-driven focus requests: when a focus event lands on this
-  // project, switch the center tab to match the requested target.
+  // project, surface the Tasks tab — and reveal the reference region if it's
+  // currently collapsed behind focus mode.
   const focusRequest = useAppStore((s) => s.focusRequest)
   useEffect(() => {
     if (!focusRequest || focusRequest.projectId !== projectId) return
     if (focusRequest.target === 'tasks' || focusRequest.target === 'task') {
-      setCenterTab('tasks')
+      setRefTab('tasks')
+      setChatFocus(false)
     }
   }, [focusRequest, projectId])
 
@@ -194,21 +183,12 @@ export function ProjectView() {
             <WildfireControl projectId={projectId} />
             <ExportPill scope={{ kind: 'project', projectId }} />
             <OpenInIDEButton projectPath={project.path} />
-            {!rightPanelOpen && <ModesControl projectId={projectId} layout="menu" />}
-            {rightPanelOpen && (
-              <button
-                onClick={toggleFocus}
-                title={chatFocus ? 'Exit focus' : 'Focus chat'}
-                className="p-1.5 text-[var(--wf-text-muted)] hover:text-[var(--wf-text-primary)] transition-colors"
-              >
-                {chatFocus ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
-              </button>
-            )}
             <button
-              onClick={toggleRightPanel}
+              onClick={toggleFocus}
+              title={chatFocus ? 'Show reference panel' : 'Focus chat — hide reference panel'}
               className="p-1.5 text-[var(--wf-text-muted)] hover:text-[var(--wf-text-primary)] transition-colors"
             >
-              {rightPanelOpen ? <PanelRightClose size={18} /> : <PanelRight size={18} />}
+              {chatFocus ? <Minimize2 size={18} /> : <Maximize2 size={18} />}
             </button>
           </div>
         </div>
@@ -249,65 +229,59 @@ export function ProjectView() {
       {/* Content area */}
       <div className="flex-1 flex flex-col overflow-hidden">
         <div className="flex-1 flex overflow-hidden min-h-0">
-          {/* Center panel — hidden in focus-chat mode */}
+          {/* LEFT (primary): agent chat / terminal — always present, full-width
+              when the reference region is collapsed via focus mode. Note:
+              RightPanel keeps its historical name but now renders on the left. */}
+          <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+            <RightPanel projectId={projectId} />
+          </div>
+
+          {/* RIGHT: reference region (Tasks/Definition/etc.) — hidden in focus mode */}
           {!chatFocus && (
-            <div className="flex-1 flex flex-col overflow-hidden">
-              {/* Tab bar */}
-              <div className="flex items-center gap-1 px-4 py-1 border-b border-[var(--wf-border)]">
-                {CENTER_TABS.map((tab) => {
-                  const Icon = tab.icon
-                  return (
-                    <button
-                      key={tab.key}
-                      onClick={() => setCenterTab(tab.key)}
-                      className={cn(
-                        'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--wf-radius-md)] transition-colors',
-                        centerTab === tab.key
-                          ? 'bg-[var(--wf-bg-elevated)] text-[var(--wf-text-primary)]'
-                          : 'text-[var(--wf-text-muted)] hover:text-[var(--wf-text-secondary)]'
-                      )}
-                    >
-                      <Icon size={14} />
-                      {tab.label}
-                    </button>
-                  )
-                })}
-              </div>
-
-              {/* Tab content */}
-              <div className="flex-1 flex flex-col overflow-hidden">
-                {centerTab === 'tasks' && <TasksTab projectId={projectId} />}
-                {centerTab === 'definition' && <DefinitionTab projectId={projectId} project={project} />}
-                {centerTab === 'insights' && <InsightsTab projectId={projectId} />}
-                {centerTab === 'secrets' && <SecretsTab projectId={projectId} project={project} />}
-                {centerTab === 'trash' && <TrashTab projectId={projectId} />}
-                {centerTab === 'settings' && <SettingsTab projectId={projectId} project={project} />}
-              </div>
-            </div>
-          )}
-
-          {/* Right panel */}
-          {rightPanelOpen && (
             <>
               <div
-                onMouseDown={chatFocus ? undefined : handleDragStart}
+                onMouseDown={handleDragStart}
                 onDoubleClick={toggleFocus}
-                title={chatFocus ? 'Double-click to exit focus' : 'Drag to resize · double-click to focus chat'}
-                className={cn(
-                  'shrink-0 w-1 group relative',
-                  chatFocus ? 'cursor-pointer' : 'cursor-col-resize'
-                )}
+                title="Drag to resize · double-click to focus chat"
+                className="shrink-0 w-1 group relative cursor-col-resize"
               >
                 <div className="absolute inset-y-0 left-1/2 -translate-x-1/2 w-0.5 opacity-0 group-hover:opacity-100 bg-[var(--wf-accent)] transition-opacity" />
               </div>
               <div
-                className={cn(
-                  'overflow-hidden border-l border-[var(--wf-border)]',
-                  chatFocus ? 'flex-1' : 'shrink-0'
-                )}
-                style={chatFocus ? undefined : { width: rightPanelWidth }}
+                className="shrink-0 flex flex-col overflow-hidden border-l border-[var(--wf-border)]"
+                style={{ width: refPanelWidth }}
               >
-                <RightPanel projectId={projectId} />
+                {/* Tab bar */}
+                <div className="flex items-center gap-1 px-4 py-1 border-b border-[var(--wf-border)]">
+                  {REF_TABS.map((tab) => {
+                    const Icon = tab.icon
+                    return (
+                      <button
+                        key={tab.key}
+                        onClick={() => setRefTab(tab.key)}
+                        className={cn(
+                          'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-[var(--wf-radius-md)] transition-colors',
+                          refTab === tab.key
+                            ? 'bg-[var(--wf-bg-elevated)] text-[var(--wf-text-primary)]'
+                            : 'text-[var(--wf-text-muted)] hover:text-[var(--wf-text-secondary)]'
+                        )}
+                      >
+                        <Icon size={14} />
+                        {tab.label}
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {/* Tab content */}
+                <div className="flex-1 flex flex-col overflow-hidden">
+                  {refTab === 'tasks' && <TasksTab projectId={projectId} />}
+                  {refTab === 'definition' && <DefinitionTab projectId={projectId} project={project} />}
+                  {refTab === 'insights' && <InsightsTab projectId={projectId} />}
+                  {refTab === 'secrets' && <SecretsTab projectId={projectId} project={project} />}
+                  {refTab === 'trash' && <TrashTab projectId={projectId} />}
+                  {refTab === 'settings' && <SettingsTab projectId={projectId} project={project} />}
+                </div>
               </div>
             </>
           )}
