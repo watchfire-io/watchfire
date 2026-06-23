@@ -3,46 +3,55 @@ import { readFileSync, writeFileSync, mkdirSync } from 'fs'
 import { join } from 'path'
 import { homedir } from 'os'
 
-interface WindowState {
+interface WindowBounds {
   x: number
   y: number
   width: number
   height: number
 }
 
+// Keyed window state. `home` holds the dashboard window bounds; `projects`
+// holds per-project window bounds keyed by projectId; `openProjects` lists the
+// project ids whose windows were open at last quit, so they can be restored on
+// relaunch (v8 Inferno D3).
+interface WindowStateFile {
+  home?: WindowBounds
+  projects?: Record<string, WindowBounds>
+  openProjects?: string[]
+}
+
+// A window-state key is either the singleton home window or a projectId.
+export type WindowStateKey = 'home' | string
+
 const STATE_FILE = join(homedir(), '.watchfire', 'window-state.json')
 
-const DEFAULTS: WindowState = {
+const DEFAULTS: WindowBounds = {
   x: -1,
   y: -1,
   width: 1280,
   height: 800
 }
 
-export function loadWindowState(): WindowState {
+// Read and normalise the on-disk state. Backward-compat: the v7 schema was a
+// bare bounds rectangle `{x,y,width,height}` for the single (home) window; if
+// we find that shape, treat it as the home bounds.
+function readState(): WindowStateFile {
   try {
-    const data = JSON.parse(readFileSync(STATE_FILE, 'utf-8')) as WindowState
-    // Validate that the saved position is on a visible display
-    const displays = screen.getAllDisplays()
-    const visible = displays.some((d) => {
-      const b = d.bounds
-      return (
-        data.x >= b.x - 50 &&
-        data.y >= b.y - 50 &&
-        data.x < b.x + b.width &&
-        data.y < b.y + b.height
-      )
-    })
-    if (visible && data.width > 0 && data.height > 0) {
-      return data
+    const data = JSON.parse(readFileSync(STATE_FILE, 'utf-8')) as
+      | WindowStateFile
+      | WindowBounds
+    if (data && typeof (data as WindowBounds).width === 'number') {
+      // Old flat shape — migrate to keyed `home`.
+      return { home: data as WindowBounds }
     }
+    return (data as WindowStateFile) ?? {}
   } catch {
     // File doesn't exist or is invalid
+    return {}
   }
-  return { ...DEFAULTS }
 }
 
-function saveWindowState(state: WindowState): void {
+function writeState(state: WindowStateFile): void {
   try {
     mkdirSync(join(homedir(), '.watchfire'), { recursive: true })
     writeFileSync(STATE_FILE, JSON.stringify(state))
@@ -51,14 +60,54 @@ function saveWindowState(state: WindowState): void {
   }
 }
 
-export function trackWindowState(win: BrowserWindow): void {
+// Is the saved top-left corner on a currently-visible display? Guards against
+// restoring a window off-screen after a monitor is unplugged.
+function isOnVisibleDisplay(bounds: WindowBounds): boolean {
+  const displays = screen.getAllDisplays()
+  return displays.some((d) => {
+    const b = d.bounds
+    return (
+      bounds.x >= b.x - 50 &&
+      bounds.y >= b.y - 50 &&
+      bounds.x < b.x + b.width &&
+      bounds.y < b.y + b.height
+    )
+  })
+}
+
+function boundsForKey(state: WindowStateFile, key: WindowStateKey): WindowBounds | undefined {
+  return key === 'home' ? state.home : state.projects?.[key]
+}
+
+// Load the saved bounds for a given window key ('home' or a projectId),
+// validating that the position is on a visible display. Falls back to defaults.
+export function loadWindowState(key: WindowStateKey): WindowBounds {
+  const bounds = boundsForKey(readState(), key)
+  if (bounds && bounds.width > 0 && bounds.height > 0 && isOnVisibleDisplay(bounds)) {
+    return bounds
+  }
+  return { ...DEFAULTS }
+}
+
+// Persist the bounds for a given window key, preserving the rest of the state.
+export function saveWindowState(key: WindowStateKey, bounds: WindowBounds): void {
+  const state = readState()
+  if (key === 'home') {
+    state.home = bounds
+  } else {
+    state.projects = { ...state.projects, [key]: bounds }
+  }
+  writeState(state)
+}
+
+// Track resize/move/close on a window, debouncing saves under its key.
+export function trackWindowState(win: BrowserWindow, key: WindowStateKey): void {
   let saveTimeout: ReturnType<typeof setTimeout> | null = null
 
   const debouncedSave = (): void => {
     if (saveTimeout) clearTimeout(saveTimeout)
     saveTimeout = setTimeout(() => {
-      const bounds = win.getBounds()
-      saveWindowState(bounds)
+      saveWindowState(key, win.getBounds())
     }, 500)
   }
 
@@ -66,7 +115,29 @@ export function trackWindowState(win: BrowserWindow): void {
   win.on('move', debouncedSave)
   win.on('close', () => {
     if (saveTimeout) clearTimeout(saveTimeout)
-    const bounds = win.getBounds()
-    saveWindowState(bounds)
+    saveWindowState(key, win.getBounds())
   })
+}
+
+// Record/forget a project window in the `openProjects` set so it can be
+// restored on relaunch. Called on project-window create (add) and close
+// (remove). The home window is never tracked here.
+export function addOpenProject(projectId: string): void {
+  const state = readState()
+  const open = new Set(state.openProjects ?? [])
+  open.add(projectId)
+  state.openProjects = [...open]
+  writeState(state)
+}
+
+export function removeOpenProject(projectId: string): void {
+  const state = readState()
+  if (!state.openProjects?.length) return
+  state.openProjects = state.openProjects.filter((id) => id !== projectId)
+  writeState(state)
+}
+
+// The project ids whose windows were open at last quit. Restored on relaunch.
+export function getOpenProjects(): string[] {
+  return readState().openProjects ?? []
 }

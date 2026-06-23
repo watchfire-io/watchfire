@@ -9,7 +9,7 @@ import { ensureDaemon, getDaemonInfo } from './daemon'
 import { checkAndInstallCLI } from './cli-installer'
 import { initAutoUpdater } from './auto-updater'
 import { destroyAll as destroyAllPtys } from './pty-manager'
-import { createHomeWindow, broadcast } from './windows'
+import { createHomeWindow, restoreOpenProjectWindows, broadcast } from './windows'
 
 const DAEMON_YAML = join(homedir(), '.watchfire', 'daemon.yaml')
 
@@ -121,6 +121,9 @@ if (!gotSingleInstanceLock) {
     // (each session routes to its originating window) and the auto-updater now
     // broadcasts update events to every open window.
     createHomeWindow()
+    // Restore the project windows that were open at last quit (D3=yes). Stale
+    // ids (projects deleted while closed) are skipped inside the helper.
+    restoreOpenProjectWindows()
     initAutoUpdater()
 
     app.on('activate', () => {
