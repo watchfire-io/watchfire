@@ -10,6 +10,7 @@ import { useNotificationsStore } from './stores/notifications-store'
 import { useDigestStore } from './stores/digest-store'
 import { isHomeWindow } from './lib/window-scope'
 import { Sidebar } from './components/Sidebar'
+import { ProjectWindowHeader } from './components/ProjectWindowHeader'
 import { Dashboard } from './views/Dashboard/Dashboard'
 import { AddProjectWizard } from './views/AddProject/AddProjectWizard'
 import { ProjectView } from './views/ProjectView/ProjectView'
@@ -25,6 +26,10 @@ useNotificationsStore.getState()
 export default function App() {
   const { wasConnected, stopReconnect } = useAutoReconnect()
   const view = useAppStore((s) => s.view)
+  // Boot scope is fixed for the window's lifetime: a project window renders
+  // ProjectView full-bleed with no multi-project sidebar; the home window keeps
+  // the dashboard + sidebar. v8 "Inferno" Feature 1.
+  const isProjectWindow = useAppStore((s) => s.windowScope.kind === 'project')
   const connected = useAppStore((s) => s.connected)
   const setView = useAppStore((s) => s.setView)
   const startFocus = useFocusStore((s) => s.start)
@@ -109,10 +114,16 @@ export default function App() {
 
   return (
     <div className="flex h-screen bg-[var(--wf-bg-primary)] text-[var(--wf-text-primary)]">
-      <Sidebar />
+      {/* Home windows show the multi-project sidebar; project windows are
+          full-bleed and use a slim header instead. */}
+      {!isProjectWindow && <Sidebar />}
       <main className="flex-1 flex flex-col overflow-hidden relative">
-        {/* macOS title bar drag area */}
-        <div className="titlebar-drag h-8 shrink-0" />
+        {isProjectWindow ? (
+          <ProjectWindowHeader inSettings={view === 'settings'} />
+        ) : (
+          /* macOS title bar drag area */
+          <div className="titlebar-drag h-8 shrink-0" />
+        )}
         <UpdateBanner />
 
         {/* Always render views so they stay mounted during disconnects */}
@@ -137,10 +148,19 @@ export default function App() {
           </div>
         ) : (
           <>
-            {view === 'dashboard' && <Dashboard />}
-            {view === 'add-project' && <AddProjectWizard />}
-            {view === 'project' && <ProjectView />}
-            {view === 'settings' && <GlobalSettings />}
+            {isProjectWindow ? (
+              /* Project window: ProjectView full-bleed (the project is
+                 preselected at boot). Settings stays reachable in-window via
+                 Cmd+, / the header gear. */
+              view === 'settings' ? <GlobalSettings /> : <ProjectView />
+            ) : (
+              <>
+                {view === 'dashboard' && <Dashboard />}
+                {view === 'add-project' && <AddProjectWizard />}
+                {view === 'project' && <ProjectView />}
+                {view === 'settings' && <GlobalSettings />}
+              </>
+            )}
 
             {/* Overlay for reconnecting state — views stay visible underneath */}
             {!connected && wasConnected && (

@@ -105,6 +105,17 @@ const api = {
   // into view.
   focusWindow: (): Promise<void> => ipcRenderer.invoke('focus-window'),
 
+  // v8 Inferno — open (or focus) the home/dashboard window. A project window's
+  // "Open another project" affordance calls this to get back to the
+  // multi-project surface where the user can pick a different project.
+  openHomeWindow: (): Promise<void> => ipcRenderer.invoke('open-home-window'),
+
+  // v8 Inferno — open (or focus) a project's own window. The main process
+  // resolves it through the window registry (one window per project). Reused
+  // by the dashboard/sidebar "Open in new window" affordances (#0107).
+  openProjectWindow: (projectId: string): Promise<void> =>
+    ipcRenderer.invoke('open-project-window', projectId),
+
   // Show a native OS notification. The renderer relays each message it
   // receives from the daemon's NotificationService.Subscribe stream so
   // Electron's Notification API can produce the platform-correct toast /
