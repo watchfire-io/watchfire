@@ -10,6 +10,7 @@ import { checkAndInstallCLI } from './cli-installer'
 import { initAutoUpdater } from './auto-updater'
 import { destroyAll as destroyAllPtys } from './pty-manager'
 import { createHomeWindow, restoreOpenProjectWindows, broadcast } from './windows'
+import { buildAppMenu } from './menu'
 
 const DAEMON_YAML = join(homedir(), '.watchfire', 'daemon.yaml')
 
@@ -102,6 +103,11 @@ if (!gotSingleInstanceLock) {
     electronApp.setAppUserModelId('io.watchfire.app')
 
     registerAppProtocol()
+
+    // Install the app menu — provides Cmd+N (new home window) and
+    // Cmd+Shift+] / Cmd+Shift+[ window-cycle shortcuts for the multi-window
+    // model, plus the standard edit/view/window roles.
+    buildAppMenu()
 
     // Optimize for development
     app.on('browser-window-created', (_, window) => {

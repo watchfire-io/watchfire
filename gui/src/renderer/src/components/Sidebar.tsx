@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { LayoutDashboard, Plus, Settings, PanelLeftClose, PanelLeft, Wifi, WifiOff, Trash2, Bell } from 'lucide-react'
+import { LayoutDashboard, Plus, Settings, PanelLeftClose, PanelLeft, Wifi, WifiOff, Trash2, Bell, ExternalLink } from 'lucide-react'
 import { useDigestStore } from '../stores/digest-store'
 import { useNotificationsStore } from '../stores/notifications-store'
 import { DndContext, closestCenter, type DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
@@ -130,7 +130,15 @@ export function Sidebar() {
                   label={p.name}
                   active={view === 'project' && selectedProjectId === p.projectId}
                   collapsed={collapsed}
-                  onClick={() => selectProject(p.projectId)}
+                  onClick={(e) => {
+                    // Cmd/Ctrl-click opens the project in its own window;
+                    // plain click navigates in-window (v8 Inferno).
+                    if (e.metaKey || e.ctrlKey) {
+                      window.watchfire.openProjectWindow(p.projectId)
+                    } else {
+                      selectProject(p.projectId)
+                    }
+                  }}
                   onContextMenu={(e) => {
                     e.preventDefault()
                     setContextMenu({ x: e.clientX, y: e.clientY, projectId: p.projectId, projectName: p.name })
@@ -193,6 +201,16 @@ export function Sidebar() {
           style={{ left: contextMenu.x, top: contextMenu.y }}
         >
           <button
+            className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-[var(--wf-text-secondary)] hover:bg-[var(--wf-bg-secondary)] hover:text-[var(--wf-text-primary)] transition-colors"
+            onClick={() => {
+              window.watchfire.openProjectWindow(contextMenu.projectId)
+              setContextMenu(null)
+            }}
+          >
+            <ExternalLink size={14} />
+            Open in New Window
+          </button>
+          <button
             className="flex items-center gap-2 w-full px-3 py-1.5 text-sm text-[var(--wf-error)] hover:bg-[var(--wf-bg-secondary)] transition-colors"
             onClick={() => {
               setConfirmRemove({ projectId: contextMenu.projectId, projectName: contextMenu.projectName })
@@ -246,7 +264,7 @@ interface SidebarItemProps {
   label: string
   active?: boolean
   collapsed?: boolean
-  onClick: () => void
+  onClick: (e: React.MouseEvent) => void
 }
 
 function SidebarItem({ icon, label, active, collapsed, onClick }: SidebarItemProps) {
