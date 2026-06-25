@@ -75,6 +75,108 @@ export function formatPercent(rate: number): string {
   return `${Math.round(rate * 100)}%`
 }
 
+/** formatInt renders an integer count with thousands separators. Accepts
+ *  the number | bigint the generated proto fields surface. */
+export function formatInt(value: number | bigint): string {
+  const n = typeof value === 'bigint' ? Number(value) : value
+  if (!Number.isFinite(n)) return '0'
+  return Math.round(n).toLocaleString()
+}
+
+/** formatSignedLines renders a net-line delta with an explicit sign, using a
+ *  real minus glyph (U+2212) so "−97" lines up under "+412". Zero renders as
+ *  a bare "0". */
+export function formatSignedLines(value: number | bigint): string {
+  const n = typeof value === 'bigint' ? Number(value) : value
+  if (!Number.isFinite(n) || n === 0) return '0'
+  if (n > 0) return `+${Math.round(n).toLocaleString()}`
+  return `−${Math.round(Math.abs(n)).toLocaleString()}`
+}
+
+/** formatLinesPair renders the added/removed churn pair the "shipped" line
+ *  uses ("+412 / −97"). */
+export function formatLinesPair(added: number | bigint, removed: number | bigint): string {
+  const a = typeof added === 'bigint' ? Number(added) : added
+  const r = typeof removed === 'bigint' ? Number(removed) : removed
+  return `+${Math.round(a).toLocaleString()} / −${Math.round(r).toLocaleString()}`
+}
+
+/** mergeRate returns the merged-tasks ratio in [0, 1]. Returns 0 when no
+ *  tasks are in scope so the KPI shows "0%" instead of NaN. */
+export function mergeRate(merged: number | bigint, total: number | bigint): number {
+  const m = typeof merged === 'bigint' ? Number(merged) : merged
+  const t = typeof total === 'bigint' ? Number(total) : total
+  if (t <= 0) return 0
+  return m / t
+}
+
+/** codeCoverageNote builds the honest "based on N of M tasks" caption for
+ *  the code KPIs, given the missing-code counter and the task total. Returns
+ *  null when every task carried code data (or there are no tasks) so the
+ *  caller can omit the caption entirely. */
+export function codeCoverageNote(
+  missingCode: number | bigint,
+  tasksTotal: number | bigint
+): string | null {
+  const missing = typeof missingCode === 'bigint' ? Number(missingCode) : missingCode
+  const total = typeof tasksTotal === 'bigint' ? Number(tasksTotal) : tasksTotal
+  if (total <= 0 || missing <= 0) return null
+  const covered = Math.max(0, total - missing)
+  return `Code stats based on ${covered} of ${total} tasks`
+}
+
+/** ChurnCell is the per-day sizing the code-churn-by-day chart reads —
+ *  parallel to DayCell but stacking added (up) over removed so the bar height
+ *  reflects total churn for the day. */
+export interface ChurnCell {
+  date: string
+  addedHeight: number
+  removedHeight: number
+  added: number
+  removed: number
+}
+
+/** churnBarHeights converts the lines-added/removed series into stacked
+ *  pixel heights, scaled to the busiest day's total churn. Mirrors
+ *  dayBarHeights so the churn chart can reuse the tasks-by-day layout. */
+export function churnBarHeights(
+  buckets: ReadonlyArray<{ date: string; linesAdded: number | bigint; linesRemoved: number | bigint }>,
+  maxHeightPx: number
+): ChurnCell[] {
+  if (buckets.length === 0) return []
+  const rows = buckets.map((b) => ({
+    date: b.date,
+    added: typeof b.linesAdded === 'bigint' ? Number(b.linesAdded) : b.linesAdded,
+    removed: typeof b.linesRemoved === 'bigint' ? Number(b.linesRemoved) : b.linesRemoved
+  }))
+  const peak = rows.reduce((m, r) => Math.max(m, r.added + r.removed), 0)
+  if (peak <= 0) {
+    return rows.map((r) => ({ date: r.date, addedHeight: 0, removedHeight: 0, added: 0, removed: 0 }))
+  }
+  return rows.map((r) => ({
+    date: r.date,
+    addedHeight: Math.round((r.added / peak) * maxHeightPx),
+    removedHeight: Math.round((r.removed / peak) * maxHeightPx),
+    added: r.added,
+    removed: r.removed
+  }))
+}
+
+/** hasCodeData reports whether a rollup carries any shipped-code signal, so
+ *  the UI can hide the code section (rather than render a row of zeros) for
+ *  windows made entirely of pre-v8.0 tasks. */
+export function hasCodeData(
+  insights: { totalCommits: number | bigint; totalLinesAdded: number | bigint; totalLinesRemoved: number | bigint; tasksMerged: number | bigint }
+): boolean {
+  const n = (v: number | bigint) => (typeof v === 'bigint' ? Number(v) : v)
+  return (
+    n(insights.totalCommits) > 0 ||
+    n(insights.totalLinesAdded) > 0 ||
+    n(insights.totalLinesRemoved) > 0 ||
+    n(insights.tasksMerged) > 0
+  )
+}
+
 /** successRate computes the rollup-level success ratio as a number in
  *  [0, 1]. Returns 0 when no tasks are in scope (so the KPI shows "0%"
  *  instead of NaN). */

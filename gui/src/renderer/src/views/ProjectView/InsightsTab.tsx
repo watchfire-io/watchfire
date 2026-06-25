@@ -11,15 +11,22 @@
 // don't carry cost numbers (task 0056 still gates that data).
 
 import { useMemo, useState } from 'react'
-import { AlertTriangle, Sparkles } from 'lucide-react'
+import { AlertTriangle, GitCommitHorizontal, Sparkles } from 'lucide-react'
 import { useProjectInsights } from '../../hooks/useProjectInsights'
 import {
   agentSegmentWidths,
+  churnBarHeights,
+  codeCoverageNote,
   dayBarHeights,
   formatCost,
   formatDuration,
+  formatInt,
+  formatLinesPair,
   formatPercent,
+  formatSignedLines,
+  hasCodeData,
   INSIGHTS_WINDOWS,
+  mergeRate,
   readSavedWindow,
   saveWindow,
   type InsightsWindow
@@ -176,6 +183,8 @@ function InsightsBody({ insights }: BodyProps) {
     [insights]
   )
 
+  const showCode = hasCodeData(insights)
+
   return (
     <div className="space-y-4">
       <section className="grid grid-cols-2 sm:grid-cols-4 gap-3" aria-label="Headline metrics">
@@ -189,6 +198,8 @@ function InsightsBody({ insights }: BodyProps) {
           warnHint={`${insights.tasksMissingCost} task${insights.tasksMissingCost === 1 ? '' : 's'} missing cost`}
         />
       </section>
+
+      <CodeOutputSection insights={insights} show={showCode} />
 
       <section
         aria-label="Tasks per day"
@@ -204,6 +215,23 @@ function InsightsBody({ insights }: BodyProps) {
         </header>
         <DayStackedBar buckets={insights.tasksByDay} />
       </section>
+
+      {showCode && (
+        <section
+          aria-label="Code churn per day"
+          className="rounded-[var(--wf-radius-md)] border border-[var(--wf-border)] bg-[var(--wf-bg-secondary)] p-4"
+        >
+          <header className="flex items-center justify-between mb-2">
+            <h4 className="text-xs font-semibold text-[var(--wf-text-secondary)]">
+              Code churn per day
+            </h4>
+            <LegendDot label="Added" color="var(--wf-success, #22c55e)">
+              <LegendDot label="Removed" color="var(--wf-warning, #ef4444)" />
+            </LegendDot>
+          </header>
+          <ChurnStackedBar buckets={insights.tasksByDay} />
+        </section>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
         <section
@@ -236,9 +264,10 @@ interface KpiCellProps {
   value: string
   warn?: boolean
   warnHint?: string
+  sub?: string
 }
 
-function KpiCell({ label, value, warn, warnHint }: KpiCellProps) {
+function KpiCell({ label, value, warn, warnHint, sub }: KpiCellProps) {
   return (
     <div className="rounded-[var(--wf-radius-md)] border border-[var(--wf-border)] bg-[var(--wf-bg-secondary)] px-4 py-3">
       <div className="text-[10px] uppercase tracking-wide text-[var(--wf-text-muted)]">
@@ -252,6 +281,9 @@ function KpiCell({ label, value, warn, warnHint }: KpiCellProps) {
           </span>
         )}
       </div>
+      {sub && (
+        <div className="text-[10px] tabular-nums text-[var(--wf-text-muted)] mt-0.5">{sub}</div>
+      )}
     </div>
   )
 }
@@ -307,6 +339,106 @@ function DayStackedBar({ buckets }: DayStackedBarProps) {
             <div
               style={{ height: `${c.failedHeight}px`, backgroundColor: 'var(--wf-warning, #ef4444)' }}
             />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+interface CodeOutputSectionProps {
+  insights: ProjectInsights
+  show: boolean
+}
+
+// CodeOutputSection — v8.0 Inferno shipped-code KPI strip. Surfaces commit
+// volume, net-line delta, files touched and merge rate so the tab answers
+// "how much did the agents ship?", with an honest coverage caption when some
+// tasks predate code-metrics capture.
+function CodeOutputSection({ insights, show }: CodeOutputSectionProps) {
+  const coverage = useMemo(
+    () => codeCoverageNote(insights.metricsMissingCode, insights.tasksTotal),
+    [insights]
+  )
+  const mergePct = useMemo(
+    () => formatPercent(mergeRate(insights.tasksMerged, insights.tasksTotal)),
+    [insights]
+  )
+
+  if (!show) {
+    return (
+      <section
+        aria-label="Code output"
+        className="rounded-[var(--wf-radius-md)] border border-dashed border-[var(--wf-border)] bg-[var(--wf-bg-secondary)] px-4 py-3"
+      >
+        <div className="flex items-center gap-2 text-[11px] text-[var(--wf-text-muted)]">
+          <GitCommitHorizontal size={13} />
+          <span>
+            No code-output data yet — metrics are captured at merge time for new
+            tasks.
+          </span>
+        </div>
+      </section>
+    )
+  }
+
+  const mergeHint =
+    insights.tasksViaPr > 0
+      ? `${insights.tasksMerged} merged · ${insights.tasksViaPr} via PR`
+      : `${insights.tasksMerged} of ${insights.tasksTotal} tasks merged`
+
+  return (
+    <section aria-label="Code output" className="space-y-1.5">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <KpiCell label="Commits" value={formatInt(insights.totalCommits)} />
+        <KpiCell
+          label="Net lines"
+          value={formatSignedLines(insights.netLines)}
+          sub={formatLinesPair(insights.totalLinesAdded, insights.totalLinesRemoved)}
+        />
+        <KpiCell label="Files touched" value={formatInt(insights.totalFilesChanged)} />
+        <KpiCell label="Merge rate" value={mergePct} sub={mergeHint} />
+      </div>
+      {coverage && (
+        <p className="text-[10px] text-[var(--wf-text-muted)] flex items-center gap-1">
+          <AlertTriangle size={11} className="text-[var(--wf-warning)]" />
+          {coverage}
+        </p>
+      )}
+    </section>
+  )
+}
+
+interface ChurnStackedBarProps {
+  buckets: ProjectInsights['tasksByDay']
+}
+
+// ChurnStackedBar mirrors DayStackedBar but stacks lines-added (green) over
+// lines-removed (red), scaled to the busiest day's total churn.
+function ChurnStackedBar({ buckets }: ChurnStackedBarProps) {
+  const slice = buckets.length > MAX_DAY_CELLS ? buckets.slice(-MAX_DAY_CELLS) : buckets
+  const cells = useMemo(() => churnBarHeights(slice, BAR_HEIGHT_PX), [slice])
+  const anyChurn = cells.some((c) => c.added > 0 || c.removed > 0)
+
+  if (cells.length === 0 || !anyChurn) {
+    return (
+      <div className="h-24 rounded-[var(--wf-radius-sm)] bg-[var(--wf-bg-elevated)] flex items-center justify-center">
+        <span className="text-[10px] text-[var(--wf-text-muted)]">No code churn in this window</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-[var(--wf-radius-sm)] bg-[var(--wf-bg-elevated)] p-3">
+      <div className="flex items-end gap-0.5" style={{ height: `${BAR_HEIGHT_PX}px` }}>
+        {cells.map((c) => (
+          <div
+            key={c.date}
+            title={`${c.date}: +${c.added} / −${c.removed}`}
+            className="flex-1 flex flex-col-reverse min-w-[3px]"
+          >
+            <div style={{ height: `${c.addedHeight}px`, backgroundColor: 'var(--wf-success, #22c55e)' }} />
+            <div style={{ height: `${c.removedHeight}px`, backgroundColor: 'var(--wf-warning, #ef4444)' }} />
           </div>
         ))}
       </div>
@@ -404,6 +536,11 @@ interface AgentTableProps {
 
 function AgentTable({ agents }: AgentTableProps) {
   if (agents.length === 0) return null
+  // Only widen the table with output columns when at least one agent shipped
+  // code in the window — otherwise it's a row of zeros for legacy tasks.
+  const showOutput = agents.some(
+    (a) => Number(a.commits) > 0 || Number(a.linesAdded) > 0 || Number(a.linesRemoved) > 0
+  )
   return (
     <table className="w-full text-[11px]">
       <thead className="text-[var(--wf-text-muted)]">
@@ -412,6 +549,8 @@ function AgentTable({ agents }: AgentTableProps) {
           <th className="text-right font-medium pb-1">Tasks</th>
           <th className="text-right font-medium pb-1">Success</th>
           <th className="text-right font-medium pb-1">Avg</th>
+          {showOutput && <th className="text-right font-medium pb-1">Commits</th>}
+          {showOutput && <th className="text-right font-medium pb-1">Net</th>}
         </tr>
       </thead>
       <tbody>
@@ -432,6 +571,14 @@ function AgentTable({ agents }: AgentTableProps) {
             <td className="text-right tabular-nums py-1.5 text-[var(--wf-text-muted)]">
               {formatDuration(a.avgDurationMs)}
             </td>
+            {showOutput && (
+              <td className="text-right tabular-nums py-1.5">{formatInt(a.commits)}</td>
+            )}
+            {showOutput && (
+              <td className="text-right tabular-nums py-1.5">
+                {formatSignedLines(Number(a.linesAdded) - Number(a.linesRemoved))}
+              </td>
+            )}
           </tr>
         ))}
       </tbody>
