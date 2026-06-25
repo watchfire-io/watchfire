@@ -26,6 +26,14 @@ import { InsightsRollupCard } from './InsightsRollupCard'
 import { NeedsAttentionPanel } from './NeedsAttentionPanel'
 import { ExportPill } from '../../components/ExportPill'
 import { useOpenProjectWindows } from '../../hooks/useOpenProjectWindows'
+import { useGlobalInsights } from '../../hooks/useGlobalInsights'
+import {
+  churnByProjectId,
+  readSavedWindow,
+  saveWindow,
+  type InsightsWindow,
+  type ProjectChurn
+} from '../../lib/insights-rollup'
 import { cn } from '../../lib/utils'
 import {
   DASHBOARD_FILTERS,
@@ -90,6 +98,22 @@ export function Dashboard() {
   const openWindows = useOpenProjectWindows()
   const [layout, setLayout] = useState<DashboardLayout>(readSavedLayout)
   const [filter, setFilter] = useState<DashboardFilter>(readSavedFilter)
+
+  // Single fleet-insights fetch shared by the rollup card and the per-card
+  // "shipped" lines (v8 Inferno — mission control). Lifting the window state
+  // here keeps the card churn lines in sync with the rollup's window selector
+  // while avoiding a second gRPC fetch / any per-card recompute.
+  const [insightsWindow, setInsightsWindow] = useState<InsightsWindow>(readSavedWindow)
+  const { insights: globalInsights, loading: insightsLoading, error: insightsError } =
+    useGlobalInsights(insightsWindow)
+  const updateInsightsWindow = (next: InsightsWindow) => {
+    setInsightsWindow(next)
+    saveWindow(next)
+  }
+  const churnByProject = useMemo(
+    () => churnByProjectId(globalInsights),
+    [globalInsights]
+  )
 
   const counts = useMemo(
     () => dashboardCounts(projects, tasksByProjectId, agentStatuses),
@@ -176,7 +200,13 @@ export function Dashboard() {
           <NeedsAttentionPanel />
         </div>
         <div className="mb-4">
-          <InsightsRollupCard />
+          <InsightsRollupCard
+            insights={globalInsights}
+            loading={insightsLoading}
+            error={insightsError}
+            window={insightsWindow}
+            onWindowChange={updateInsightsWindow}
+          />
         </div>
         <div className="mb-3">
           <FilterChips active={filter} counts={counts} onChange={updateFilter} />
@@ -212,6 +242,7 @@ export function Dashboard() {
                       key={p.projectId}
                       project={p}
                       hasWindow={openWindows.has(p.projectId)}
+                      churn={churnByProject.get(p.projectId)}
                     />
                   ))}
                 </div>
@@ -224,6 +255,7 @@ export function Dashboard() {
                       key={p.projectId}
                       project={p}
                       hasWindow={openWindows.has(p.projectId)}
+                      churn={churnByProject.get(p.projectId)}
                     />
                   ))}
                 </div>
@@ -279,7 +311,15 @@ function LayoutToggle({ layout, onChange }: LayoutToggleProps) {
   )
 }
 
-function SortableProjectCard({ project, hasWindow }: { project: Project; hasWindow: boolean }) {
+function SortableProjectCard({
+  project,
+  hasWindow,
+  churn
+}: {
+  project: Project
+  hasWindow: boolean
+  churn?: ProjectChurn
+}) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: project.projectId
   })
@@ -292,12 +332,20 @@ function SortableProjectCard({ project, hasWindow }: { project: Project; hasWind
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <ProjectCard project={project} hasWindow={hasWindow} />
+      <ProjectCard project={project} hasWindow={hasWindow} churn={churn} />
     </div>
   )
 }
 
-function SortableProjectRow({ project, hasWindow }: { project: Project; hasWindow: boolean }) {
+function SortableProjectRow({
+  project,
+  hasWindow,
+  churn
+}: {
+  project: Project
+  hasWindow: boolean
+  churn?: ProjectChurn
+}) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: project.projectId
   })
@@ -310,7 +358,7 @@ function SortableProjectRow({ project, hasWindow }: { project: Project; hasWindo
 
   return (
     <div ref={setNodeRef} style={style} {...attributes} {...listeners}>
-      <ProjectRow project={project} hasWindow={hasWindow} />
+      <ProjectRow project={project} hasWindow={hasWindow} churn={churn} />
     </div>
   )
 }

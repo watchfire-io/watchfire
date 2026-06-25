@@ -758,6 +758,10 @@ message TopProject {
   int32 lines_added = 7;
   int32 lines_removed = 8;
   int32 net_lines = 9;
+  // Completed tasks merged in the window (silent merge or auto-PR). Lets the
+  // mission-control home window show a per-card "shipped" line including merge
+  // count alongside churn. Zero for projects whose tasks lack code metrics.
+  int32 merges = 10;
 }
 
 // GlobalInsights is the cross-project rollup the daemon returns from

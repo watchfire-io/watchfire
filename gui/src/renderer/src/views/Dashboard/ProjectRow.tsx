@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { GitBranch, ChevronRight, ExternalLink, X } from 'lucide-react'
+import { GitBranch, GitMerge, ChevronRight, ExternalLink, X } from 'lucide-react'
 import type { Project } from '../../generated/watchfire_pb'
 import { useProjectsStore } from '../../stores/projects-store'
 import { useAppStore } from '../../stores/app-store'
@@ -11,15 +11,20 @@ import { AgentBadge } from '../../components/AgentBadge'
 import { WildfirePhaseBadge } from '../../components/WildfirePhaseBadge'
 import { Modal } from '../../components/ui/Modal'
 import { cn } from '../../lib/utils'
+import { formatShippedLine, type ProjectChurn } from '../../lib/insights-rollup'
 
 interface ProjectRowProps {
   project: Project
   // True when this project already has its own window open (v8 Inferno —
   // mission control): the action focuses it instead of spawning a duplicate.
   hasWindow?: boolean
+  // Shipped-code rollup over the dashboard insights window (v8 Inferno).
+  // Undefined when the project shipped no code in the window — the row then
+  // omits the "shipped" chip rather than showing zeros.
+  churn?: ProjectChurn
 }
 
-export function ProjectRow({ project, hasWindow = false }: ProjectRowProps) {
+export function ProjectRow({ project, hasWindow = false, churn }: ProjectRowProps) {
   const selectProject = useAppStore((s) => s.selectProject)
   const agentStatus = useProjectsStore((s) => s.agentStatuses[project.projectId])
   const removeProject = useProjectsStore((s) => s.removeProject)
@@ -45,6 +50,9 @@ export function ProjectRow({ project, hasWindow = false }: ProjectRowProps) {
   const running = !!agentStatus?.isRunning
   const isWildfire = running && agentStatus?.mode === 'wildfire'
   const hasFailed = taskCounts.failed > 0
+  // v8 Inferno — compact "shipped" chip from the shared fleet-insights rollup;
+  // omitted when the project shipped no code in the window.
+  const shippedLine = churn ? formatShippedLine(churn) : null
 
   return (
     <>
@@ -113,6 +121,16 @@ export function ProjectRow({ project, hasWindow = false }: ProjectRowProps) {
             <span className="text-[var(--wf-text-muted)]">No tasks yet</span>
           )}
         </div>
+
+        {shippedLine && (
+          <span
+            className="hidden md:flex items-center gap-1 shrink-0 text-[11px] text-[var(--wf-text-muted)] tabular-nums"
+            title={`Shipped in the selected insights window · ${churn?.commits ?? 0} commit${churn?.commits === 1 ? '' : 's'}`}
+          >
+            <GitMerge size={11} className="shrink-0 text-[var(--wf-success)]" />
+            {shippedLine}
+          </span>
+        )}
 
         <button
           onClick={(e) => { e.stopPropagation(); window.watchfire.openProjectWindow(project.projectId) }}

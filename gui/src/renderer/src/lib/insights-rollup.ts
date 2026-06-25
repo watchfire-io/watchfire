@@ -125,6 +125,55 @@ export function codeCoverageNote(
   return `Code stats based on ${covered} of ${total} tasks`
 }
 
+/** ProjectChurn is the per-project shipped-code slice the mission-control
+ *  card "shipped" line reads. Derived from a fleet rollup's top-projects rows
+ *  so the home window needs only the single global insights fetch — no
+ *  per-card recompute. */
+export interface ProjectChurn {
+  linesAdded: number
+  linesRemoved: number
+  netLines: number
+  commits: number
+  merges: number
+}
+
+/** churnByProjectId indexes a fleet rollup's top-projects rows by project id,
+ *  keeping only projects that actually shipped code in the window (added,
+ *  removed, or merges). Projects with no code signal are omitted entirely so
+ *  the caller can degrade gracefully (no `+0 / −0` noise) rather than render a
+ *  zeroed line. Returns an empty map for a null/absent rollup. */
+export function churnByProjectId(
+  insights: { topProjects: ReadonlyArray<GlobalInsights['topProjects'][number]> } | null
+): Map<string, ProjectChurn> {
+  const map = new Map<string, ProjectChurn>()
+  if (!insights) return map
+  for (const p of insights.topProjects) {
+    const added = Number(p.linesAdded)
+    const removed = Number(p.linesRemoved)
+    const merges = Number(p.merges)
+    if (added <= 0 && removed <= 0 && merges <= 0) continue
+    map.set(p.projectId, {
+      linesAdded: added,
+      linesRemoved: removed,
+      netLines: Number(p.netLines),
+      commits: Number(p.commits),
+      merges
+    })
+  }
+  return map
+}
+
+/** formatShippedLine renders the compact per-card "shipped" summary
+ *  ("+412 / −97 · 3 merges"). The merge clause is dropped when no task merged
+ *  in the window so a churn-only project still reads cleanly. */
+export function formatShippedLine(churn: ProjectChurn): string {
+  const pair = formatLinesPair(churn.linesAdded, churn.linesRemoved)
+  if (churn.merges > 0) {
+    return `${pair} · ${churn.merges} merge${churn.merges === 1 ? '' : 's'}`
+  }
+  return pair
+}
+
 /** ChurnCell is the per-day sizing the code-churn-by-day chart reads —
  *  parallel to DayCell but stacking added (up) over removed so the bar height
  *  reflects total churn for the day. */

@@ -323,3 +323,68 @@ test('hasCodeData gates the code section honestly', () => {
   assert.equal(hasCodeData({ totalCommits: 0, totalLinesAdded: 0, totalLinesRemoved: 0, tasksMerged: 2 }), true)
   assert.equal(hasCodeData({ totalCommits: 0, totalLinesAdded: 5, totalLinesRemoved: 0, tasksMerged: 0 }), true)
 })
+
+// --- v8.0 Inferno per-card "shipped" line (mirror of lib/insights-rollup) ---
+
+function churnByProjectId(insights) {
+  const map = new Map()
+  if (!insights) return map
+  for (const p of insights.topProjects) {
+    const added = Number(p.linesAdded)
+    const removed = Number(p.linesRemoved)
+    const merges = Number(p.merges)
+    if (added <= 0 && removed <= 0 && merges <= 0) continue
+    map.set(p.projectId, {
+      linesAdded: added,
+      linesRemoved: removed,
+      netLines: Number(p.netLines),
+      commits: Number(p.commits),
+      merges
+    })
+  }
+  return map
+}
+
+function formatShippedLine(churn) {
+  const pair = formatLinesPair(churn.linesAdded, churn.linesRemoved)
+  if (churn.merges > 0) {
+    return `${pair} · ${churn.merges} merge${churn.merges === 1 ? '' : 's'}`
+  }
+  return pair
+}
+
+test('churnByProjectId indexes only projects that shipped code', () => {
+  const map = churnByProjectId({
+    topProjects: [
+      { projectId: 'a', linesAdded: 412, linesRemoved: 97, netLines: 315, commits: 8, merges: 3 },
+      { projectId: 'b', linesAdded: 0, linesRemoved: 0, netLines: 0, commits: 0, merges: 0 },
+      { projectId: 'c', linesAdded: 0, linesRemoved: 0, netLines: 0, commits: 0, merges: 2 }
+    ]
+  })
+  assert.equal(map.size, 2, 'zero-everywhere project b is omitted')
+  assert.deepEqual(map.get('a'), { linesAdded: 412, linesRemoved: 97, netLines: 315, commits: 8, merges: 3 })
+  assert.ok(map.has('c'), 'a merge with no line churn still counts as shipped')
+  assert.equal(map.has('b'), false)
+})
+
+test('churnByProjectId returns an empty map for a null rollup', () => {
+  assert.equal(churnByProjectId(null).size, 0)
+})
+
+test('formatShippedLine renders churn with pluralized merge count', () => {
+  assert.equal(
+    formatShippedLine({ linesAdded: 412, linesRemoved: 97, netLines: 315, commits: 8, merges: 3 }),
+    '+412 / −97 · 3 merges'
+  )
+  assert.equal(
+    formatShippedLine({ linesAdded: 10, linesRemoved: 2, netLines: 8, commits: 1, merges: 1 }),
+    '+10 / −2 · 1 merge'
+  )
+})
+
+test('formatShippedLine drops the merge clause when nothing merged', () => {
+  assert.equal(
+    formatShippedLine({ linesAdded: 30, linesRemoved: 4, netLines: 26, commits: 2, merges: 0 }),
+    '+30 / −4'
+  )
+})

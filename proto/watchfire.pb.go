@@ -5451,10 +5451,14 @@ type TopProject struct {
 	// v8.0 Inferno — per-project shipped-code totals over the window, so the
 	// fleet rollup can rank projects by net lines / churn rather than only by
 	// completed-task count. Zero for projects whose tasks lack code metrics.
-	Commits       int32 `protobuf:"varint,6,opt,name=commits,proto3" json:"commits,omitempty"`
-	LinesAdded    int32 `protobuf:"varint,7,opt,name=lines_added,json=linesAdded,proto3" json:"lines_added,omitempty"`
-	LinesRemoved  int32 `protobuf:"varint,8,opt,name=lines_removed,json=linesRemoved,proto3" json:"lines_removed,omitempty"`
-	NetLines      int32 `protobuf:"varint,9,opt,name=net_lines,json=netLines,proto3" json:"net_lines,omitempty"`
+	Commits      int32 `protobuf:"varint,6,opt,name=commits,proto3" json:"commits,omitempty"`
+	LinesAdded   int32 `protobuf:"varint,7,opt,name=lines_added,json=linesAdded,proto3" json:"lines_added,omitempty"`
+	LinesRemoved int32 `protobuf:"varint,8,opt,name=lines_removed,json=linesRemoved,proto3" json:"lines_removed,omitempty"`
+	NetLines     int32 `protobuf:"varint,9,opt,name=net_lines,json=netLines,proto3" json:"net_lines,omitempty"`
+	// Completed tasks merged in the window (silent merge or auto-PR). Lets the
+	// mission-control home window show a per-card "shipped" line including merge
+	// count alongside churn. Zero for projects whose tasks lack code metrics.
+	Merges        int32 `protobuf:"varint,10,opt,name=merges,proto3" json:"merges,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5548,6 +5552,13 @@ func (x *TopProject) GetLinesRemoved() int32 {
 func (x *TopProject) GetNetLines() int32 {
 	if x != nil {
 		return x.NetLines
+	}
+	return 0
+}
+
+func (x *TopProject) GetMerges() int32 {
+	if x != nil {
+		return x.Merges
 	}
 	return 0
 }
@@ -8842,7 +8853,7 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\vlines_added\x18\t \x01(\x05R\n" +
 	"linesAdded\x12#\n" +
 	"\rlines_removed\x18\n" +
-	" \x01(\x05R\flinesRemoved\"\xa9\x02\n" +
+	" \x01(\x05R\flinesRemoved\"\xc1\x02\n" +
 	"\n" +
 	"TopProject\x12\x1d\n" +
 	"\n" +
@@ -8855,7 +8866,9 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\vlines_added\x18\a \x01(\x05R\n" +
 	"linesAdded\x12#\n" +
 	"\rlines_removed\x18\b \x01(\x05R\flinesRemoved\x12\x1b\n" +
-	"\tnet_lines\x18\t \x01(\x05R\bnetLines\"\xf2\x06\n" +
+	"\tnet_lines\x18\t \x01(\x05R\bnetLines\x12\x16\n" +
+	"\x06merges\x18\n" +
+	" \x01(\x05R\x06merges\"\xf2\x06\n" +
 	"\x0eGlobalInsights\x12\x1f\n" +
 	"\vtasks_total\x18\x01 \x01(\x05R\n" +
 	"tasksTotal\x12'\n" +
