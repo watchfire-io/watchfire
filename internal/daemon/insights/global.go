@@ -71,6 +71,13 @@ type GlobalTopProject struct {
 	ProjectColor string  `json:"project_color"`
 	Count        int     `json:"count"`
 	SuccessRate  float64 `json:"success_rate"`
+
+	// v8.0 Inferno — per-project shipped-code totals over the window so the
+	// fleet rollup can rank/compare projects by churn, not only task count.
+	Commits      int `json:"commits"`
+	LinesAdded   int `json:"lines_added"`
+	LinesRemoved int `json:"lines_removed"`
+	NetLines     int `json:"net_lines"`
 }
 
 // GlobalAgentRow rolls one backend agent across every project in the window.
@@ -204,6 +211,9 @@ func ComputeGlobalInsightsForTasks(
 			commitsByAgent[agent] += cf.commits
 			linesAddedByAgent[agent] += cf.linesAdded
 			linesRemovedByAgent[agent] += cf.linesRemoved
+			tally.commits += cf.commits
+			tally.linesAdded += cf.linesAdded
+			tally.linesRemoved += cf.linesRemoved
 		}
 		if tally.count > 0 {
 			perProject = append(perProject, tally)
@@ -305,11 +315,14 @@ func buildAgentRows(
 }
 
 type rollupProjTally struct {
-	entry     models.ProjectEntry
-	color     string
-	count     int
-	succeeded int
-	failed    int
+	entry        models.ProjectEntry
+	color        string
+	count        int
+	succeeded    int
+	failed       int
+	commits      int
+	linesAdded   int
+	linesRemoved int
 }
 
 func pickTopProjects(rows []rollupProjTally) []GlobalTopProject {
@@ -336,6 +349,10 @@ func pickTopProjects(rows []rollupProjTally) []GlobalTopProject {
 			ProjectColor: r.color,
 			Count:        r.count,
 			SuccessRate:  rate,
+			Commits:      r.commits,
+			LinesAdded:   r.linesAdded,
+			LinesRemoved: r.linesRemoved,
+			NetLines:     r.linesAdded - r.linesRemoved,
 		})
 	}
 	return out

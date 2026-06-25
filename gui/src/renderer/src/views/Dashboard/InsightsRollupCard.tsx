@@ -13,11 +13,17 @@ import { useGlobalInsights } from '../../hooks/useGlobalInsights'
 import {
   agentSegmentWidths,
   classifyRollup,
+  codeCoverageNote,
   dayBarHeights,
   formatCost,
   formatDuration,
+  formatInt,
+  formatLinesPair,
   formatPercent,
+  formatSignedLines,
+  hasCodeData,
   INSIGHTS_WINDOWS,
+  mergeRate,
   readSavedWindow,
   saveWindow,
   successRate,
@@ -177,9 +183,16 @@ function RollupBody({ insights }: RollupBodyProps) {
         />
       </div>
 
+      <ShippedKpis insights={insights} />
+
       <DayStackedBar buckets={insights.tasksByDay} />
 
       <TopProjectsPills
+        projects={insights.topProjects}
+        onPick={(projectId) => selectProject(projectId)}
+      />
+
+      <TopProjectsByChurn
         projects={insights.topProjects}
         onPick={(projectId) => selectProject(projectId)}
       />
@@ -189,14 +202,52 @@ function RollupBody({ insights }: RollupBodyProps) {
   )
 }
 
+// ShippedKpis — v8.0 Inferno fleet code-output strip. Renders commit volume,
+// net-line delta and merge rate beneath the task KPIs, with an honest
+// coverage caption. Hidden entirely when no task in the window carried code
+// metrics (a fleet of pre-v8.0 tasks).
+function ShippedKpis({ insights }: { insights: GlobalInsights }) {
+  const coverage = useMemo(
+    () => codeCoverageNote(insights.metricsMissingCode, insights.tasksTotal),
+    [insights]
+  )
+  const mergePct = useMemo(
+    () => formatPercent(mergeRate(insights.tasksMerged, insights.tasksTotal)),
+    [insights]
+  )
+
+  if (!hasCodeData(insights)) return null
+
+  return (
+    <div aria-label="Shipped code" className="space-y-1">
+      <div className="grid grid-cols-3 gap-2">
+        <KpiCell label="Commits" value={formatInt(insights.totalCommits)} />
+        <KpiCell
+          label="Net lines"
+          value={formatSignedLines(insights.netLines)}
+          sub={formatLinesPair(insights.totalLinesAdded, insights.totalLinesRemoved)}
+        />
+        <KpiCell label="Merge rate" value={mergePct} />
+      </div>
+      {coverage && (
+        <p className="text-[10px] text-[var(--wf-text-muted)] flex items-center gap-1">
+          <AlertTriangle size={10} className="text-[var(--wf-warning)]" />
+          {coverage}
+        </p>
+      )}
+    </div>
+  )
+}
+
 interface KpiCellProps {
   label: string
   value: string
   warn?: boolean
   warnHint?: string
+  sub?: string
 }
 
-function KpiCell({ label, value, warn, warnHint }: KpiCellProps) {
+function KpiCell({ label, value, warn, warnHint, sub }: KpiCellProps) {
   return (
     <div className="rounded-[var(--wf-radius-sm)] bg-[var(--wf-bg-elevated)] px-3 py-2">
       <div className="text-[10px] uppercase tracking-wide text-[var(--wf-text-muted)]">
@@ -210,6 +261,11 @@ function KpiCell({ label, value, warn, warnHint }: KpiCellProps) {
           </span>
         )}
       </div>
+      {sub && (
+        <div className="text-[9px] tabular-nums text-[var(--wf-text-muted)] mt-0.5 truncate">
+          {sub}
+        </div>
+      )}
     </div>
   )
 }
@@ -294,12 +350,72 @@ function TopProjectsPills({ projects, onPick }: TopProjectsPillsProps) {
   )
 }
 
+interface TopProjectsByChurnProps {
+  projects: GlobalInsights['topProjects']
+  onPick: (projectId: string) => void
+}
+
+// TopProjectsByChurn — v8.0 Inferno. Re-ranks the surfaced top projects by
+// net lines shipped so the fleet view answers "who shipped the most code?",
+// not only "who closed the most tasks?". Hidden when no project carried code
+// metrics in the window.
+function TopProjectsByChurn({ projects, onPick }: TopProjectsByChurnProps) {
+  const ranked = useMemo(() => {
+    return projects
+      .filter((p) => Number(p.linesAdded) > 0 || Number(p.linesRemoved) > 0)
+      .slice()
+      .sort((a, b) => Number(b.netLines) - Number(a.netLines))
+  }, [projects])
+
+  if (ranked.length === 0) return null
+
+  return (
+    <div className="flex flex-wrap gap-1.5" aria-label="Top projects by churn">
+      <span className="text-[10px] uppercase tracking-wide text-[var(--wf-text-muted)] self-center pr-1">
+        Churn
+      </span>
+      {ranked.map((p) => (
+        <button
+          key={p.projectId}
+          type="button"
+          onClick={() => onPick(p.projectId)}
+          title={`+${Number(p.linesAdded)} / −${Number(p.linesRemoved)} · ${Number(p.commits)} commits`}
+          className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] bg-[var(--wf-bg-elevated)] hover:bg-[var(--wf-bg-tertiary,var(--wf-bg-elevated))] text-[var(--wf-text-secondary)] hover:text-[var(--wf-text-primary)] transition-colors"
+        >
+          <span
+            aria-hidden="true"
+            className="inline-block w-2 h-2 rounded-full"
+            style={{ backgroundColor: p.projectColor || 'var(--wf-fire)' }}
+          />
+          <span className="font-medium">{p.projectName}</span>
+          <span className="text-[var(--wf-text-muted)] tabular-nums">
+            {formatSignedLines(p.netLines)}
+          </span>
+        </button>
+      ))}
+    </div>
+  )
+}
+
 interface AgentStackedBarProps {
   agents: GlobalInsights['agentBreakdown']
 }
 
 function AgentStackedBar({ agents }: AgentStackedBarProps) {
   const segments = useMemo(() => agentSegmentWidths(agents), [agents])
+  // Per-agent net-line lookup so the legend can compare output, not just
+  // task share. Only surfaced when some agent shipped code.
+  const netByAgent = useMemo(() => {
+    const map = new Map<string, number>()
+    let any = false
+    for (const a of agents) {
+      const net = Number(a.linesAdded) - Number(a.linesRemoved)
+      if (Number(a.linesAdded) > 0 || Number(a.linesRemoved) > 0) any = true
+      map.set(a.agent, net)
+    }
+    return any ? map : null
+  }, [agents])
+
   if (segments.length === 0) {
     return null
   }
@@ -324,6 +440,11 @@ function AgentStackedBar({ agents }: AgentStackedBarProps) {
             />
             <span className="text-[var(--wf-text-secondary)] font-medium">{seg.agent}</span>
             <span className="tabular-nums">{seg.count}</span>
+            {netByAgent && (
+              <span className="tabular-nums text-[var(--wf-text-muted)]">
+                · {formatSignedLines(netByAgent.get(seg.agent) ?? 0)}
+              </span>
+            )}
           </span>
         ))}
       </div>

@@ -5231,11 +5231,16 @@ func (x *GetGlobalInsightsRequest) GetWindowEnd() *timestamppb.Timestamp {
 // DayBucket — one calendar day's task counts. Used by both per-project and
 // fleet rollups to render stacked bars / sparklines.
 type DayBucket struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Date          string                 `protobuf:"bytes,1,opt,name=date,proto3" json:"date,omitempty"`    // YYYY-MM-DD (local zone)
-	Count         int32                  `protobuf:"varint,2,opt,name=count,proto3" json:"count,omitempty"` // succeeded + failed
-	Succeeded     int32                  `protobuf:"varint,3,opt,name=succeeded,proto3" json:"succeeded,omitempty"`
-	Failed        int32                  `protobuf:"varint,4,opt,name=failed,proto3" json:"failed,omitempty"`
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	Date      string                 `protobuf:"bytes,1,opt,name=date,proto3" json:"date,omitempty"`    // YYYY-MM-DD (local zone)
+	Count     int32                  `protobuf:"varint,2,opt,name=count,proto3" json:"count,omitempty"` // succeeded + failed
+	Succeeded int32                  `protobuf:"varint,3,opt,name=succeeded,proto3" json:"succeeded,omitempty"`
+	Failed    int32                  `protobuf:"varint,4,opt,name=failed,proto3" json:"failed,omitempty"`
+	// v8.0 Inferno — code churn for the day, for a churn-by-day chart drawn
+	// next to the tasks-by-day bars. Zero on days whose tasks lack code
+	// metrics (pre-v8.0 captures).
+	LinesAdded    int32 `protobuf:"varint,5,opt,name=lines_added,json=linesAdded,proto3" json:"lines_added,omitempty"`
+	LinesRemoved  int32 `protobuf:"varint,6,opt,name=lines_removed,json=linesRemoved,proto3" json:"lines_removed,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5298,6 +5303,20 @@ func (x *DayBucket) GetFailed() int32 {
 	return 0
 }
 
+func (x *DayBucket) GetLinesAdded() int32 {
+	if x != nil {
+		return x.LinesAdded
+	}
+	return 0
+}
+
+func (x *DayBucket) GetLinesRemoved() int32 {
+	if x != nil {
+		return x.LinesRemoved
+	}
+	return 0
+}
+
 // AgentBreakdown — one row per backend agent that touched tasks in the
 // window. Field set is shared between the per-project and global rollups
 // so the same renderer code works for both surfaces.
@@ -5310,8 +5329,13 @@ type AgentBreakdown struct {
 	TotalTokensIn  int64                  `protobuf:"varint,5,opt,name=total_tokens_in,json=totalTokensIn,proto3" json:"total_tokens_in,omitempty"`
 	TotalTokensOut int64                  `protobuf:"varint,6,opt,name=total_tokens_out,json=totalTokensOut,proto3" json:"total_tokens_out,omitempty"`
 	TotalCostUsd   float64                `protobuf:"fixed64,7,opt,name=total_cost_usd,json=totalCostUsd,proto3" json:"total_cost_usd,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	// v8.0 Inferno — output-per-agent, so agents are comparable on shipped
+	// code, not just task count. Zero for tasks lacking code metrics.
+	Commits       int32 `protobuf:"varint,8,opt,name=commits,proto3" json:"commits,omitempty"`
+	LinesAdded    int32 `protobuf:"varint,9,opt,name=lines_added,json=linesAdded,proto3" json:"lines_added,omitempty"`
+	LinesRemoved  int32 `protobuf:"varint,10,opt,name=lines_removed,json=linesRemoved,proto3" json:"lines_removed,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *AgentBreakdown) Reset() {
@@ -5393,16 +5417,44 @@ func (x *AgentBreakdown) GetTotalCostUsd() float64 {
 	return 0
 }
 
+func (x *AgentBreakdown) GetCommits() int32 {
+	if x != nil {
+		return x.Commits
+	}
+	return 0
+}
+
+func (x *AgentBreakdown) GetLinesAdded() int32 {
+	if x != nil {
+		return x.LinesAdded
+	}
+	return 0
+}
+
+func (x *AgentBreakdown) GetLinesRemoved() int32 {
+	if x != nil {
+		return x.LinesRemoved
+	}
+	return 0
+}
+
 // TopProject — one row of the fleet rollup's top-projects pill list,
 // sorted by completed-task count descending. The dashboard renders these
 // as clickable pills that route to each project's InsightsTab.
 type TopProject struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	ProjectId     string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
-	ProjectName   string                 `protobuf:"bytes,2,opt,name=project_name,json=projectName,proto3" json:"project_name,omitempty"`
-	ProjectColor  string                 `protobuf:"bytes,3,opt,name=project_color,json=projectColor,proto3" json:"project_color,omitempty"`
-	Count         int32                  `protobuf:"varint,4,opt,name=count,proto3" json:"count,omitempty"`
-	SuccessRate   float64                `protobuf:"fixed64,5,opt,name=success_rate,json=successRate,proto3" json:"success_rate,omitempty"`
+	state        protoimpl.MessageState `protogen:"open.v1"`
+	ProjectId    string                 `protobuf:"bytes,1,opt,name=project_id,json=projectId,proto3" json:"project_id,omitempty"`
+	ProjectName  string                 `protobuf:"bytes,2,opt,name=project_name,json=projectName,proto3" json:"project_name,omitempty"`
+	ProjectColor string                 `protobuf:"bytes,3,opt,name=project_color,json=projectColor,proto3" json:"project_color,omitempty"`
+	Count        int32                  `protobuf:"varint,4,opt,name=count,proto3" json:"count,omitempty"`
+	SuccessRate  float64                `protobuf:"fixed64,5,opt,name=success_rate,json=successRate,proto3" json:"success_rate,omitempty"`
+	// v8.0 Inferno — per-project shipped-code totals over the window, so the
+	// fleet rollup can rank projects by net lines / churn rather than only by
+	// completed-task count. Zero for projects whose tasks lack code metrics.
+	Commits       int32 `protobuf:"varint,6,opt,name=commits,proto3" json:"commits,omitempty"`
+	LinesAdded    int32 `protobuf:"varint,7,opt,name=lines_added,json=linesAdded,proto3" json:"lines_added,omitempty"`
+	LinesRemoved  int32 `protobuf:"varint,8,opt,name=lines_removed,json=linesRemoved,proto3" json:"lines_removed,omitempty"`
+	NetLines      int32 `protobuf:"varint,9,opt,name=net_lines,json=netLines,proto3" json:"net_lines,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5472,6 +5524,34 @@ func (x *TopProject) GetSuccessRate() float64 {
 	return 0
 }
 
+func (x *TopProject) GetCommits() int32 {
+	if x != nil {
+		return x.Commits
+	}
+	return 0
+}
+
+func (x *TopProject) GetLinesAdded() int32 {
+	if x != nil {
+		return x.LinesAdded
+	}
+	return 0
+}
+
+func (x *TopProject) GetLinesRemoved() int32 {
+	if x != nil {
+		return x.LinesRemoved
+	}
+	return 0
+}
+
+func (x *TopProject) GetNetLines() int32 {
+	if x != nil {
+		return x.NetLines
+	}
+	return 0
+}
+
 // GlobalInsights is the cross-project rollup the daemon returns from
 // `GetGlobalInsights`. Sums every per-project metric over the window;
 // `tasks_missing_cost` surfaces a partial-data caveat when not every
@@ -5489,8 +5569,20 @@ type GlobalInsights struct {
 	TasksMissingCost int32                  `protobuf:"varint,9,opt,name=tasks_missing_cost,json=tasksMissingCost,proto3" json:"tasks_missing_cost,omitempty"`
 	WindowStart      *timestamppb.Timestamp `protobuf:"bytes,10,opt,name=window_start,json=windowStart,proto3" json:"window_start,omitempty"`
 	WindowEnd        *timestamppb.Timestamp `protobuf:"bytes,11,opt,name=window_end,json=windowEnd,proto3" json:"window_end,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// v8.0 Inferno — fleet-wide shipped-code rollup. `metrics_missing_code`
+	// counts completed tasks with no code metrics so the GUI can honestly say
+	// "based on N of M tasks". Older cached payloads without these fields read
+	// them as zero.
+	TotalCommits       int32 `protobuf:"varint,12,opt,name=total_commits,json=totalCommits,proto3" json:"total_commits,omitempty"`
+	TotalFilesChanged  int32 `protobuf:"varint,13,opt,name=total_files_changed,json=totalFilesChanged,proto3" json:"total_files_changed,omitempty"`
+	TotalLinesAdded    int32 `protobuf:"varint,14,opt,name=total_lines_added,json=totalLinesAdded,proto3" json:"total_lines_added,omitempty"`
+	TotalLinesRemoved  int32 `protobuf:"varint,15,opt,name=total_lines_removed,json=totalLinesRemoved,proto3" json:"total_lines_removed,omitempty"`
+	NetLines           int32 `protobuf:"varint,16,opt,name=net_lines,json=netLines,proto3" json:"net_lines,omitempty"`
+	TasksMerged        int32 `protobuf:"varint,17,opt,name=tasks_merged,json=tasksMerged,proto3" json:"tasks_merged,omitempty"`
+	TasksViaPr         int32 `protobuf:"varint,18,opt,name=tasks_via_pr,json=tasksViaPr,proto3" json:"tasks_via_pr,omitempty"`
+	MetricsMissingCode int32 `protobuf:"varint,19,opt,name=metrics_missing_code,json=metricsMissingCode,proto3" json:"metrics_missing_code,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *GlobalInsights) Reset() {
@@ -5600,6 +5692,62 @@ func (x *GlobalInsights) GetWindowEnd() *timestamppb.Timestamp {
 	return nil
 }
 
+func (x *GlobalInsights) GetTotalCommits() int32 {
+	if x != nil {
+		return x.TotalCommits
+	}
+	return 0
+}
+
+func (x *GlobalInsights) GetTotalFilesChanged() int32 {
+	if x != nil {
+		return x.TotalFilesChanged
+	}
+	return 0
+}
+
+func (x *GlobalInsights) GetTotalLinesAdded() int32 {
+	if x != nil {
+		return x.TotalLinesAdded
+	}
+	return 0
+}
+
+func (x *GlobalInsights) GetTotalLinesRemoved() int32 {
+	if x != nil {
+		return x.TotalLinesRemoved
+	}
+	return 0
+}
+
+func (x *GlobalInsights) GetNetLines() int32 {
+	if x != nil {
+		return x.NetLines
+	}
+	return 0
+}
+
+func (x *GlobalInsights) GetTasksMerged() int32 {
+	if x != nil {
+		return x.TasksMerged
+	}
+	return 0
+}
+
+func (x *GlobalInsights) GetTasksViaPr() int32 {
+	if x != nil {
+		return x.TasksViaPr
+	}
+	return 0
+}
+
+func (x *GlobalInsights) GetMetricsMissingCode() int32 {
+	if x != nil {
+		return x.MetricsMissingCode
+	}
+	return 0
+}
+
 // GetProjectInsightsRequest scopes a per-project insights query. Both
 // window bounds are optional — leaving them unset queries "all time".
 type GetProjectInsightsRequest struct {
@@ -5690,8 +5838,19 @@ type ProjectInsights struct {
 	TasksMissingCost int32                  `protobuf:"varint,12,opt,name=tasks_missing_cost,json=tasksMissingCost,proto3" json:"tasks_missing_cost,omitempty"`
 	WindowStart      *timestamppb.Timestamp `protobuf:"bytes,13,opt,name=window_start,json=windowStart,proto3" json:"window_start,omitempty"`
 	WindowEnd        *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=window_end,json=windowEnd,proto3" json:"window_end,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// v8.0 Inferno — per-project shipped-code rollup. Mirrors GlobalInsights;
+	// `metrics_missing_code` drives the "based on N of M tasks" coverage note
+	// in the Insights tab. Older cached payloads read these as zero.
+	TotalCommits       int32 `protobuf:"varint,15,opt,name=total_commits,json=totalCommits,proto3" json:"total_commits,omitempty"`
+	TotalFilesChanged  int32 `protobuf:"varint,16,opt,name=total_files_changed,json=totalFilesChanged,proto3" json:"total_files_changed,omitempty"`
+	TotalLinesAdded    int32 `protobuf:"varint,17,opt,name=total_lines_added,json=totalLinesAdded,proto3" json:"total_lines_added,omitempty"`
+	TotalLinesRemoved  int32 `protobuf:"varint,18,opt,name=total_lines_removed,json=totalLinesRemoved,proto3" json:"total_lines_removed,omitempty"`
+	NetLines           int32 `protobuf:"varint,19,opt,name=net_lines,json=netLines,proto3" json:"net_lines,omitempty"`
+	TasksMerged        int32 `protobuf:"varint,20,opt,name=tasks_merged,json=tasksMerged,proto3" json:"tasks_merged,omitempty"`
+	TasksViaPr         int32 `protobuf:"varint,21,opt,name=tasks_via_pr,json=tasksViaPr,proto3" json:"tasks_via_pr,omitempty"`
+	MetricsMissingCode int32 `protobuf:"varint,22,opt,name=metrics_missing_code,json=metricsMissingCode,proto3" json:"metrics_missing_code,omitempty"`
+	unknownFields      protoimpl.UnknownFields
+	sizeCache          protoimpl.SizeCache
 }
 
 func (x *ProjectInsights) Reset() {
@@ -5820,6 +5979,62 @@ func (x *ProjectInsights) GetWindowEnd() *timestamppb.Timestamp {
 		return x.WindowEnd
 	}
 	return nil
+}
+
+func (x *ProjectInsights) GetTotalCommits() int32 {
+	if x != nil {
+		return x.TotalCommits
+	}
+	return 0
+}
+
+func (x *ProjectInsights) GetTotalFilesChanged() int32 {
+	if x != nil {
+		return x.TotalFilesChanged
+	}
+	return 0
+}
+
+func (x *ProjectInsights) GetTotalLinesAdded() int32 {
+	if x != nil {
+		return x.TotalLinesAdded
+	}
+	return 0
+}
+
+func (x *ProjectInsights) GetTotalLinesRemoved() int32 {
+	if x != nil {
+		return x.TotalLinesRemoved
+	}
+	return 0
+}
+
+func (x *ProjectInsights) GetNetLines() int32 {
+	if x != nil {
+		return x.NetLines
+	}
+	return 0
+}
+
+func (x *ProjectInsights) GetTasksMerged() int32 {
+	if x != nil {
+		return x.TasksMerged
+	}
+	return 0
+}
+
+func (x *ProjectInsights) GetTasksViaPr() int32 {
+	if x != nil {
+		return x.TasksViaPr
+	}
+	return 0
+}
+
+func (x *ProjectInsights) GetMetricsMissingCode() int32 {
+	if x != nil {
+		return x.MetricsMissingCode
+	}
+	return 0
 }
 
 // GetTaskDiffRequest names a task whose diff the daemon should compute
@@ -8606,12 +8821,15 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\x12=\n" +
 	"\fwindow_start\x18\x02 \x01(\v2\x1a.google.protobuf.TimestampR\vwindowStart\x129\n" +
 	"\n" +
-	"window_end\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\twindowEnd\"k\n" +
+	"window_end\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\twindowEnd\"\xb1\x01\n" +
 	"\tDayBucket\x12\x12\n" +
 	"\x04date\x18\x01 \x01(\tR\x04date\x12\x14\n" +
 	"\x05count\x18\x02 \x01(\x05R\x05count\x12\x1c\n" +
 	"\tsucceeded\x18\x03 \x01(\x05R\tsucceeded\x12\x16\n" +
-	"\x06failed\x18\x04 \x01(\x05R\x06failed\"\xff\x01\n" +
+	"\x06failed\x18\x04 \x01(\x05R\x06failed\x12\x1f\n" +
+	"\vlines_added\x18\x05 \x01(\x05R\n" +
+	"linesAdded\x12#\n" +
+	"\rlines_removed\x18\x06 \x01(\x05R\flinesRemoved\"\xdf\x02\n" +
 	"\x0eAgentBreakdown\x12\x14\n" +
 	"\x05agent\x18\x01 \x01(\tR\x05agent\x12\x14\n" +
 	"\x05count\x18\x02 \x01(\x05R\x05count\x12!\n" +
@@ -8619,7 +8837,12 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\x0favg_duration_ms\x18\x04 \x01(\x03R\ravgDurationMs\x12&\n" +
 	"\x0ftotal_tokens_in\x18\x05 \x01(\x03R\rtotalTokensIn\x12(\n" +
 	"\x10total_tokens_out\x18\x06 \x01(\x03R\x0etotalTokensOut\x12$\n" +
-	"\x0etotal_cost_usd\x18\a \x01(\x01R\ftotalCostUsd\"\xac\x01\n" +
+	"\x0etotal_cost_usd\x18\a \x01(\x01R\ftotalCostUsd\x12\x18\n" +
+	"\acommits\x18\b \x01(\x05R\acommits\x12\x1f\n" +
+	"\vlines_added\x18\t \x01(\x05R\n" +
+	"linesAdded\x12#\n" +
+	"\rlines_removed\x18\n" +
+	" \x01(\x05R\flinesRemoved\"\xa9\x02\n" +
 	"\n" +
 	"TopProject\x12\x1d\n" +
 	"\n" +
@@ -8627,7 +8850,12 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\fproject_name\x18\x02 \x01(\tR\vprojectName\x12#\n" +
 	"\rproject_color\x18\x03 \x01(\tR\fprojectColor\x12\x14\n" +
 	"\x05count\x18\x04 \x01(\x05R\x05count\x12!\n" +
-	"\fsuccess_rate\x18\x05 \x01(\x01R\vsuccessRate\"\xad\x04\n" +
+	"\fsuccess_rate\x18\x05 \x01(\x01R\vsuccessRate\x12\x18\n" +
+	"\acommits\x18\x06 \x01(\x05R\acommits\x12\x1f\n" +
+	"\vlines_added\x18\a \x01(\x05R\n" +
+	"linesAdded\x12#\n" +
+	"\rlines_removed\x18\b \x01(\x05R\flinesRemoved\x12\x1b\n" +
+	"\tnet_lines\x18\t \x01(\x05R\bnetLines\"\xf2\x06\n" +
 	"\x0eGlobalInsights\x12\x1f\n" +
 	"\vtasks_total\x18\x01 \x01(\x05R\n" +
 	"tasksTotal\x12'\n" +
@@ -8643,14 +8871,23 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\fwindow_start\x18\n" +
 	" \x01(\v2\x1a.google.protobuf.TimestampR\vwindowStart\x129\n" +
 	"\n" +
-	"window_end\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\twindowEnd\"\xe0\x01\n" +
+	"window_end\x18\v \x01(\v2\x1a.google.protobuf.TimestampR\twindowEnd\x12#\n" +
+	"\rtotal_commits\x18\f \x01(\x05R\ftotalCommits\x12.\n" +
+	"\x13total_files_changed\x18\r \x01(\x05R\x11totalFilesChanged\x12*\n" +
+	"\x11total_lines_added\x18\x0e \x01(\x05R\x0ftotalLinesAdded\x12.\n" +
+	"\x13total_lines_removed\x18\x0f \x01(\x05R\x11totalLinesRemoved\x12\x1b\n" +
+	"\tnet_lines\x18\x10 \x01(\x05R\bnetLines\x12!\n" +
+	"\ftasks_merged\x18\x11 \x01(\x05R\vtasksMerged\x12 \n" +
+	"\ftasks_via_pr\x18\x12 \x01(\x05R\n" +
+	"tasksViaPr\x120\n" +
+	"\x14metrics_missing_code\x18\x13 \x01(\x05R\x12metricsMissingCode\"\xe0\x01\n" +
 	"\x19GetProjectInsightsRequest\x12*\n" +
 	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x02 \x01(\tR\tprojectId\x12=\n" +
 	"\fwindow_start\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\vwindowStart\x129\n" +
 	"\n" +
-	"window_end\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\twindowEnd\"\x8b\x05\n" +
+	"window_end\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\twindowEnd\"\xd0\a\n" +
 	"\x0fProjectInsights\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x1f\n" +
@@ -8670,7 +8907,16 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\x12tasks_missing_cost\x18\f \x01(\x05R\x10tasksMissingCost\x12=\n" +
 	"\fwindow_start\x18\r \x01(\v2\x1a.google.protobuf.TimestampR\vwindowStart\x129\n" +
 	"\n" +
-	"window_end\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\twindowEnd\"\x80\x01\n" +
+	"window_end\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\twindowEnd\x12#\n" +
+	"\rtotal_commits\x18\x0f \x01(\x05R\ftotalCommits\x12.\n" +
+	"\x13total_files_changed\x18\x10 \x01(\x05R\x11totalFilesChanged\x12*\n" +
+	"\x11total_lines_added\x18\x11 \x01(\x05R\x0ftotalLinesAdded\x12.\n" +
+	"\x13total_lines_removed\x18\x12 \x01(\x05R\x11totalLinesRemoved\x12\x1b\n" +
+	"\tnet_lines\x18\x13 \x01(\x05R\bnetLines\x12!\n" +
+	"\ftasks_merged\x18\x14 \x01(\x05R\vtasksMerged\x12 \n" +
+	"\ftasks_via_pr\x18\x15 \x01(\x05R\n" +
+	"tasksViaPr\x120\n" +
+	"\x14metrics_missing_code\x18\x16 \x01(\x05R\x12metricsMissingCode\"\x80\x01\n" +
 	"\x12GetTaskDiffRequest\x12*\n" +
 	"\x04meta\x18\x01 \x01(\v2\x16.watchfire.RequestMetaR\x04meta\x12\x1d\n" +
 	"\n" +

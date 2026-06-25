@@ -194,6 +194,19 @@ func TestComputeGlobalInsights_CodeOutputRollup(t *testing.T) {
 	if cx := byAgent["codex"]; cx.Commits != 1 || cx.LinesAdded != 40 || cx.LinesRemoved != 40 {
 		t.Errorf("codex row = %d/%d/%d, want 1/40/40", cx.Commits, cx.LinesAdded, cx.LinesRemoved)
 	}
+
+	// Top-project rows carry per-project churn so the fleet view can rank by
+	// net lines, not only task count.
+	byProject := map[string]GlobalTopProject{}
+	for _, p := range g.TopProjects {
+		byProject[p.ProjectID] = p
+	}
+	if a := byProject["proj-a"]; a.Commits != 2 || a.LinesAdded != 80 || a.LinesRemoved != 10 || a.NetLines != 70 {
+		t.Errorf("proj-a top row = %d/%d/%d/%d, want 2/80/10/70", a.Commits, a.LinesAdded, a.LinesRemoved, a.NetLines)
+	}
+	if b := byProject["proj-b"]; b.NetLines != 0 || b.LinesAdded != 40 {
+		t.Errorf("proj-b top row net/added = %d/%d, want 0/40", b.NetLines, b.LinesAdded)
+	}
 }
 
 func TestComputeGlobalInsights_RespectsWindow(t *testing.T) {

@@ -204,6 +204,15 @@ func globalInsightsToProto(g *insights.GlobalInsights) *pb.GlobalInsights {
 		TotalDurationMs:  g.TotalDurationMs,
 		TotalCostUsd:     g.TotalCostUSD,
 		TasksMissingCost: int32(g.TasksMissingCost),
+		// v8.0 Inferno — shipped-code rollup.
+		TotalCommits:       int32(g.TotalCommits),
+		TotalFilesChanged:  int32(g.TotalFilesChanged),
+		TotalLinesAdded:    int32(g.TotalLinesAdded),
+		TotalLinesRemoved:  int32(g.TotalLinesRemoved),
+		NetLines:           int32(g.NetLines),
+		TasksMerged:        int32(g.TasksMerged),
+		TasksViaPr:         int32(g.TasksViaPR),
+		MetricsMissingCode: int32(g.MetricsMissingCode),
 	}
 	if !g.WindowStart.IsZero() {
 		out.WindowStart = timestamppb.New(g.WindowStart)
@@ -214,10 +223,12 @@ func globalInsightsToProto(g *insights.GlobalInsights) *pb.GlobalInsights {
 	out.TasksByDay = make([]*pb.DayBucket, 0, len(g.TasksByDay))
 	for _, b := range g.TasksByDay {
 		out.TasksByDay = append(out.TasksByDay, &pb.DayBucket{
-			Date:      b.Date,
-			Count:     int32(b.Count),
-			Succeeded: int32(b.Succeeded),
-			Failed:    int32(b.Failed),
+			Date:         b.Date,
+			Count:        int32(b.Count),
+			Succeeded:    int32(b.Succeeded),
+			Failed:       int32(b.Failed),
+			LinesAdded:   int32(b.LinesAdded),
+			LinesRemoved: int32(b.LinesRemoved),
 		})
 	}
 	out.TopProjects = make([]*pb.TopProject, 0, len(g.TopProjects))
@@ -228,6 +239,10 @@ func globalInsightsToProto(g *insights.GlobalInsights) *pb.GlobalInsights {
 			ProjectColor: p.ProjectColor,
 			Count:        int32(p.Count),
 			SuccessRate:  p.SuccessRate,
+			Commits:      int32(p.Commits),
+			LinesAdded:   int32(p.LinesAdded),
+			LinesRemoved: int32(p.LinesRemoved),
+			NetLines:     int32(p.NetLines),
 		})
 	}
 	out.AgentBreakdown = make([]*pb.AgentBreakdown, 0, len(g.AgentBreakdown))
@@ -240,6 +255,9 @@ func globalInsightsToProto(g *insights.GlobalInsights) *pb.GlobalInsights {
 			TotalTokensIn:  a.TotalTokensIn,
 			TotalTokensOut: a.TotalTokensOut,
 			TotalCostUsd:   a.TotalCostUSD,
+			Commits:        int32(a.Commits),
+			LinesAdded:     int32(a.LinesAdded),
+			LinesRemoved:   int32(a.LinesRemoved),
 		})
 	}
 	return out
@@ -263,6 +281,15 @@ func projectInsightsToProto(p *insights.ProjectInsights) *pb.ProjectInsights {
 		P95DurationMs:    p.P95DurationMs,
 		TotalCostUsd:     p.TotalCostUSD,
 		TasksMissingCost: int32(p.TasksMissingCost),
+		// v8.0 Inferno — shipped-code rollup.
+		TotalCommits:       int32(p.TotalCommits),
+		TotalFilesChanged:  int32(p.TotalFilesChanged),
+		TotalLinesAdded:    int32(p.TotalLinesAdded),
+		TotalLinesRemoved:  int32(p.TotalLinesRemoved),
+		NetLines:           int32(p.NetLines),
+		TasksMerged:        int32(p.TasksMerged),
+		TasksViaPr:         int32(p.TasksViaPR),
+		MetricsMissingCode: int32(p.MetricsMissingCode),
 	}
 	if !p.WindowStart.IsZero() {
 		out.WindowStart = timestamppb.New(p.WindowStart)
@@ -273,10 +300,12 @@ func projectInsightsToProto(p *insights.ProjectInsights) *pb.ProjectInsights {
 	out.TasksByDay = make([]*pb.DayBucket, 0, len(p.TasksByDay))
 	for _, b := range p.TasksByDay {
 		out.TasksByDay = append(out.TasksByDay, &pb.DayBucket{
-			Date:      b.Date,
-			Count:     int32(b.Count),
-			Succeeded: int32(b.Succeeded),
-			Failed:    int32(b.Failed),
+			Date:         b.Date,
+			Count:        int32(b.Count),
+			Succeeded:    int32(b.Succeeded),
+			Failed:       int32(b.Failed),
+			LinesAdded:   int32(b.LinesAdded),
+			LinesRemoved: int32(b.LinesRemoved),
 		})
 	}
 	out.AgentBreakdown = make([]*pb.AgentBreakdown, 0, len(p.AgentBreakdown))
@@ -289,6 +318,9 @@ func projectInsightsToProto(p *insights.ProjectInsights) *pb.ProjectInsights {
 			TotalTokensIn:  a.TotalTokensIn,
 			TotalTokensOut: a.TotalTokensOut,
 			TotalCostUsd:   a.TotalCostUSD,
+			Commits:        int32(a.Commits),
+			LinesAdded:     int32(a.LinesAdded),
+			LinesRemoved:   int32(a.LinesRemoved),
 		})
 	}
 	return out

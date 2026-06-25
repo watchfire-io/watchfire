@@ -714,6 +714,12 @@ message DayBucket {
   int32 count = 2;       // succeeded + failed
   int32 succeeded = 3;
   int32 failed = 4;
+
+  // v8.0 Inferno — code churn for the day, for a churn-by-day chart drawn
+  // next to the tasks-by-day bars. Zero on days whose tasks lack code
+  // metrics (pre-v8.0 captures).
+  int32 lines_added = 5;
+  int32 lines_removed = 6;
 }
 
 // AgentBreakdown — one row per backend agent that touched tasks in the
@@ -727,6 +733,12 @@ message AgentBreakdown {
   int64 total_tokens_in = 5;
   int64 total_tokens_out = 6;
   double total_cost_usd = 7;
+
+  // v8.0 Inferno — output-per-agent, so agents are comparable on shipped
+  // code, not just task count. Zero for tasks lacking code metrics.
+  int32 commits = 8;
+  int32 lines_added = 9;
+  int32 lines_removed = 10;
 }
 
 // TopProject — one row of the fleet rollup's top-projects pill list,
@@ -738,6 +750,14 @@ message TopProject {
   string project_color = 3;
   int32 count = 4;
   double success_rate = 5;
+
+  // v8.0 Inferno — per-project shipped-code totals over the window, so the
+  // fleet rollup can rank projects by net lines / churn rather than only by
+  // completed-task count. Zero for projects whose tasks lack code metrics.
+  int32 commits = 6;
+  int32 lines_added = 7;
+  int32 lines_removed = 8;
+  int32 net_lines = 9;
 }
 
 // GlobalInsights is the cross-project rollup the daemon returns from
@@ -756,6 +776,19 @@ message GlobalInsights {
   int32 tasks_missing_cost = 9;
   google.protobuf.Timestamp window_start = 10;
   google.protobuf.Timestamp window_end = 11;
+
+  // v8.0 Inferno — fleet-wide shipped-code rollup. `metrics_missing_code`
+  // counts completed tasks with no code metrics so the GUI can honestly say
+  // "based on N of M tasks". Older cached payloads without these fields read
+  // them as zero.
+  int32 total_commits = 12;
+  int32 total_files_changed = 13;
+  int32 total_lines_added = 14;
+  int32 total_lines_removed = 15;
+  int32 net_lines = 16;
+  int32 tasks_merged = 17;
+  int32 tasks_via_pr = 18;
+  int32 metrics_missing_code = 19;
 }
 
 // GetProjectInsightsRequest scopes a per-project insights query. Both
@@ -786,6 +819,18 @@ message ProjectInsights {
   int32 tasks_missing_cost = 12;
   google.protobuf.Timestamp window_start = 13;
   google.protobuf.Timestamp window_end = 14;
+
+  // v8.0 Inferno — per-project shipped-code rollup. Mirrors GlobalInsights;
+  // `metrics_missing_code` drives the "based on N of M tasks" coverage note
+  // in the Insights tab. Older cached payloads read these as zero.
+  int32 total_commits = 15;
+  int32 total_files_changed = 16;
+  int32 total_lines_added = 17;
+  int32 total_lines_removed = 18;
+  int32 net_lines = 19;
+  int32 tasks_merged = 20;
+  int32 tasks_via_pr = 21;
+  int32 metrics_missing_code = 22;
 }
 
 // GetTaskDiffRequest names a task whose diff the daemon should compute

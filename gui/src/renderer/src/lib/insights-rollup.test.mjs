@@ -209,3 +209,117 @@ test('window selector preset boundaries: 7d / 30d / 90d / all', () => {
   assert.ok(r30.start.getTime() > r90.start.getTime())
   assert.deepEqual(rAll, {})
 })
+
+// --- v8.0 Inferno code-output helpers (mirror of lib/insights-rollup) ------
+
+function formatInt(value) {
+  const n = typeof value === 'bigint' ? Number(value) : value
+  if (!Number.isFinite(n)) return '0'
+  return Math.round(n).toLocaleString()
+}
+
+function formatSignedLines(value) {
+  const n = typeof value === 'bigint' ? Number(value) : value
+  if (!Number.isFinite(n) || n === 0) return '0'
+  if (n > 0) return `+${Math.round(n).toLocaleString()}`
+  return `−${Math.round(Math.abs(n)).toLocaleString()}`
+}
+
+function formatLinesPair(added, removed) {
+  const a = typeof added === 'bigint' ? Number(added) : added
+  const r = typeof removed === 'bigint' ? Number(removed) : removed
+  return `+${Math.round(a).toLocaleString()} / −${Math.round(r).toLocaleString()}`
+}
+
+function mergeRate(merged, total) {
+  const m = typeof merged === 'bigint' ? Number(merged) : merged
+  const t = typeof total === 'bigint' ? Number(total) : total
+  if (t <= 0) return 0
+  return m / t
+}
+
+function codeCoverageNote(missingCode, tasksTotal) {
+  const missing = typeof missingCode === 'bigint' ? Number(missingCode) : missingCode
+  const total = typeof tasksTotal === 'bigint' ? Number(tasksTotal) : tasksTotal
+  if (total <= 0 || missing <= 0) return null
+  const covered = Math.max(0, total - missing)
+  return `Code stats based on ${covered} of ${total} tasks`
+}
+
+function churnBarHeights(buckets, maxHeightPx) {
+  if (buckets.length === 0) return []
+  const rows = buckets.map((b) => ({
+    date: b.date,
+    added: typeof b.linesAdded === 'bigint' ? Number(b.linesAdded) : b.linesAdded,
+    removed: typeof b.linesRemoved === 'bigint' ? Number(b.linesRemoved) : b.linesRemoved
+  }))
+  const peak = rows.reduce((m, r) => Math.max(m, r.added + r.removed), 0)
+  if (peak <= 0) return rows.map((r) => ({ date: r.date, addedHeight: 0, removedHeight: 0, added: 0, removed: 0 }))
+  return rows.map((r) => ({
+    date: r.date,
+    addedHeight: Math.round((r.added / peak) * maxHeightPx),
+    removedHeight: Math.round((r.removed / peak) * maxHeightPx),
+    added: r.added,
+    removed: r.removed
+  }))
+}
+
+function hasCodeData(insights) {
+  const n = (v) => (typeof v === 'bigint' ? Number(v) : v)
+  return (
+    n(insights.totalCommits) > 0 ||
+    n(insights.totalLinesAdded) > 0 ||
+    n(insights.totalLinesRemoved) > 0 ||
+    n(insights.tasksMerged) > 0
+  )
+}
+
+test('formatInt groups thousands and tolerates bigint', () => {
+  assert.equal(formatInt(1234), '1,234')
+  assert.equal(formatInt(0), '0')
+  assert.equal(formatInt(42n), '42')
+})
+
+test('formatSignedLines uses real sign glyphs; zero is bare', () => {
+  assert.equal(formatSignedLines(412), '+412')
+  assert.equal(formatSignedLines(-97), '−97')
+  assert.equal(formatSignedLines(0), '0')
+})
+
+test('formatLinesPair renders the +added / −removed churn pair', () => {
+  assert.equal(formatLinesPair(412, 97), '+412 / −97')
+})
+
+test('mergeRate is a ratio in [0,1], 0 when no tasks', () => {
+  assert.equal(mergeRate(3, 4), 0.75)
+  assert.equal(mergeRate(0, 0), 0)
+  assert.equal(formatPercent(mergeRate(3, 4)), '75%')
+})
+
+test('codeCoverageNote only fires when some tasks lack code data', () => {
+  assert.equal(codeCoverageNote(0, 10), null)
+  assert.equal(codeCoverageNote(3, 0), null)
+  assert.equal(codeCoverageNote(3, 10), 'Code stats based on 7 of 10 tasks')
+})
+
+test('churn bars scale to the busiest day total churn', () => {
+  const buckets = [
+    { date: 'd1', linesAdded: 10, linesRemoved: 5 },
+    { date: 'd2', linesAdded: 80, linesRemoved: 20 } // peak = 100
+  ]
+  const cells = churnBarHeights(buckets, 64)
+  const totals = cells.map((c) => c.addedHeight + c.removedHeight)
+  assert.ok(Math.max(...totals) <= 64)
+  assert.ok(Math.max(...totals) >= 60, 'busiest day reaches near the cap')
+})
+
+test('churn bars collapse to zero height with no churn', () => {
+  const cells = churnBarHeights([{ date: 'd1', linesAdded: 0, linesRemoved: 0 }], 64)
+  assert.deepEqual(cells, [{ date: 'd1', addedHeight: 0, removedHeight: 0, added: 0, removed: 0 }])
+})
+
+test('hasCodeData gates the code section honestly', () => {
+  assert.equal(hasCodeData({ totalCommits: 0, totalLinesAdded: 0, totalLinesRemoved: 0, tasksMerged: 0 }), false)
+  assert.equal(hasCodeData({ totalCommits: 0, totalLinesAdded: 0, totalLinesRemoved: 0, tasksMerged: 2 }), true)
+  assert.equal(hasCodeData({ totalCommits: 0, totalLinesAdded: 5, totalLinesRemoved: 0, tasksMerged: 0 }), true)
+})
