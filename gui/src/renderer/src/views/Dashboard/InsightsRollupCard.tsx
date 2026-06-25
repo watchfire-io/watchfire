@@ -6,10 +6,9 @@
 // element has a fixed footprint so nothing reflows when the window
 // selector flips between 7d / 30d / 90d / All.
 
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 import { AlertTriangle, Sparkles } from 'lucide-react'
 import { useAppStore } from '../../stores/app-store'
-import { useGlobalInsights } from '../../hooks/useGlobalInsights'
 import {
   agentSegmentWidths,
   classifyRollup,
@@ -24,8 +23,6 @@ import {
   hasCodeData,
   INSIGHTS_WINDOWS,
   mergeRate,
-  readSavedWindow,
-  saveWindow,
   successRate,
   type InsightsWindow
 } from '../../lib/insights-rollup'
@@ -56,15 +53,24 @@ const WINDOW_LABEL: Record<InsightsWindow, string> = {
   all: 'All'
 }
 
-export function InsightsRollupCard() {
-  const [window, setWindow] = useState<InsightsWindow>(readSavedWindow)
-  const { insights, loading, error } = useGlobalInsights(window)
+interface InsightsRollupCardProps {
+  insights: GlobalInsights | null
+  loading: boolean
+  error: Error | null
+  window: InsightsWindow
+  onWindowChange: (next: InsightsWindow) => void
+}
 
-  const updateWindow = (next: InsightsWindow) => {
-    setWindow(next)
-    saveWindow(next)
-  }
-
+// The fleet-insights fetch + window state is lifted to Dashboard so the
+// rollup card and the per-card "shipped" lines share one query (v8 Inferno —
+// mission control). This component is now purely presentational.
+export function InsightsRollupCard({
+  insights,
+  loading,
+  error,
+  window,
+  onWindowChange
+}: InsightsRollupCardProps) {
   const state = classifyRollup(insights, loading)
 
   return (
@@ -79,7 +85,7 @@ export function InsightsRollupCard() {
             Fleet insights
           </h3>
         </div>
-        <WindowSelector value={window} onChange={updateWindow} />
+        <WindowSelector value={window} onChange={onWindowChange} />
       </header>
 
       {error ? (

@@ -243,6 +243,7 @@ func globalInsightsToProto(g *insights.GlobalInsights) *pb.GlobalInsights {
 			LinesAdded:   int32(p.LinesAdded),
 			LinesRemoved: int32(p.LinesRemoved),
 			NetLines:     int32(p.NetLines),
+			Merges:       int32(p.Merges),
 		})
 	}
 	out.AgentBreakdown = make([]*pb.AgentBreakdown, 0, len(g.AgentBreakdown))

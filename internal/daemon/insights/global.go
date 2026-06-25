@@ -78,6 +78,9 @@ type GlobalTopProject struct {
 	LinesAdded   int `json:"lines_added"`
 	LinesRemoved int `json:"lines_removed"`
 	NetLines     int `json:"net_lines"`
+	// Merges — completed tasks merged in the window (silent merge or auto-PR),
+	// so the mission-control per-card "shipped" line can show a merge count.
+	Merges int `json:"merges"`
 }
 
 // GlobalAgentRow rolls one backend agent across every project in the window.
@@ -202,6 +205,7 @@ func ComputeGlobalInsightsForTasks(
 			g.TotalLinesRemoved += cf.linesRemoved
 			if cf.merged {
 				g.TasksMerged++
+				tally.merges++
 			}
 			if cf.viaPR {
 				g.TasksViaPR++
@@ -323,6 +327,7 @@ type rollupProjTally struct {
 	commits      int
 	linesAdded   int
 	linesRemoved int
+	merges       int
 }
 
 func pickTopProjects(rows []rollupProjTally) []GlobalTopProject {
@@ -353,6 +358,7 @@ func pickTopProjects(rows []rollupProjTally) []GlobalTopProject {
 			LinesAdded:   r.linesAdded,
 			LinesRemoved: r.linesRemoved,
 			NetLines:     r.linesAdded - r.linesRemoved,
+			Merges:       r.merges,
 		})
 	}
 	return out

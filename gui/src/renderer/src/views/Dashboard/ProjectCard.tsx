@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Activity, AlertTriangle, Clock, ExternalLink, Flame, Folder, GitBranch, ChevronRight, CheckCircle2, Code2, ListTodo, Terminal, X } from 'lucide-react'
+import { Activity, AlertTriangle, Clock, ExternalLink, Flame, Folder, GitBranch, GitMerge, ChevronRight, CheckCircle2, Code2, ListTodo, Terminal, X } from 'lucide-react'
 import type { Project } from '../../generated/watchfire_pb'
 import { useProjectsStore } from '../../stores/projects-store'
 import { useAppStore } from '../../stores/app-store'
@@ -13,6 +13,7 @@ import { AgentBadge } from '../../components/AgentBadge'
 import { WildfirePhaseBadge } from '../../components/WildfirePhaseBadge'
 import { Modal } from '../../components/ui/Modal'
 import { useAgentPreview } from '../../hooks/useAgentPreview'
+import { formatShippedLine, type ProjectChurn } from '../../lib/insights-rollup'
 
 const STALE_THRESHOLD_MS = 30 * 60 * 1000
 const SHELL_PULSE_WINDOW_MS = 2000
@@ -32,9 +33,13 @@ interface ProjectCardProps {
   // True when this project already has its own window open, so the card
   // focuses it instead of spawning a duplicate (v8 Inferno — mission control).
   hasWindow?: boolean
+  // Shipped-code rollup for this project over the dashboard insights window
+  // (v8 Inferno — mission control). Undefined when the project shipped no code
+  // in the window, in which case the card omits the "shipped" line entirely.
+  churn?: ProjectChurn
 }
 
-export function ProjectCard({ project, hasWindow = false }: ProjectCardProps) {
+export function ProjectCard({ project, hasWindow = false, churn }: ProjectCardProps) {
   const selectProject = useAppStore((s) => s.selectProject)
   const agentStatus = useProjectsStore((s) => s.agentStatuses[project.projectId])
   const removeProject = useProjectsStore((s) => s.removeProject)
@@ -90,6 +95,10 @@ export function ProjectCard({ project, hasWindow = false }: ProjectCardProps) {
   // Find next upcoming task
   const nextTask = tasks?.find((t) => t.status === 'draft' && !t.deletedAt)
   const runningTaskTitle = isAgentRunning ? agentStatus?.taskTitle?.trim() : ''
+
+  // v8 Inferno — compact "shipped" line from the shared fleet-insights rollup.
+  // Omitted when the project shipped no code in the window (churn undefined).
+  const shippedLine = churn ? formatShippedLine(churn) : null
 
   // Most recent activity: latest non-deleted task updated_at.
   // When the agent is running we always show "Active now", so the agent's
@@ -274,6 +283,15 @@ export function ProjectCard({ project, hasWindow = false }: ProjectCardProps) {
               Next: {nextTask.title}
             </p>
           ) : null}
+          {shippedLine && (
+            <p
+              className="flex items-center gap-1 text-[11px] text-[var(--wf-text-muted)] mt-1.5 tabular-nums"
+              title={`Shipped in the selected insights window · ${churn?.commits ?? 0} commit${churn?.commits === 1 ? '' : 's'}`}
+            >
+              <GitMerge size={11} className="shrink-0 text-[var(--wf-success)]" />
+              <span className="truncate">{shippedLine}</span>
+            </p>
+          )}
           {isAgentRunning && ptyPreview && (
             <p className="font-mono text-[10px] text-[var(--wf-text-muted)] mt-2 truncate">
               {ptyPreview}
