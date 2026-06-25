@@ -36,6 +36,19 @@ type GlobalInsights struct {
 	TotalDurationMs  int64   `json:"total_duration_ms"`
 	TotalCostUSD     float64 `json:"total_cost_usd"`
 	TasksMissingCost int     `json:"tasks_missing_cost"`
+
+	// v8.0 Inferno — fleet-wide shipped-code rollup (task 0115). Mirrors
+	// ProjectInsights: tasks lacking code metrics contribute zeros and
+	// are tallied in MetricsMissingCode. Cached JSON without these keys
+	// reads them as zero.
+	TotalCommits       int `json:"total_commits"`
+	TotalFilesChanged  int `json:"total_files_changed"`
+	TotalLinesAdded    int `json:"total_lines_added"`
+	TotalLinesRemoved  int `json:"total_lines_removed"`
+	NetLines           int `json:"net_lines"`
+	TasksMerged        int `json:"tasks_merged"`
+	TasksViaPR         int `json:"tasks_via_pr"`
+	MetricsMissingCode int `json:"metrics_missing_code"`
 }
 
 // GlobalDayBucket — one calendar-day worth of completed-task counts.
@@ -44,6 +57,10 @@ type GlobalDayBucket struct {
 	Count     int    `json:"count"`
 	Succeeded int    `json:"succeeded"`
 	Failed    int    `json:"failed"`
+
+	// v8.0 Inferno — code churn for the day (task 0115).
+	LinesAdded   int `json:"lines_added"`
+	LinesRemoved int `json:"lines_removed"`
 }
 
 // GlobalTopProject is one row of the top-projects pill list. Sorted by
@@ -65,6 +82,11 @@ type GlobalAgentRow struct {
 	TotalTokensIn  int64   `json:"total_tokens_in"`
 	TotalTokensOut int64   `json:"total_tokens_out"`
 	TotalCostUSD   float64 `json:"total_cost_usd"`
+
+	// v8.0 Inferno — output-per-agent across the fleet (task 0115).
+	Commits      int `json:"commits"`
+	LinesAdded   int `json:"lines_added"`
+	LinesRemoved int `json:"lines_removed"`
 }
 
 // MaxTopProjects caps the rollup pill list. The dashboard renders a single
@@ -93,20 +115,31 @@ func LoadGlobalInsights(windowStart, windowEnd time.Time) (*GlobalInsights, erro
 // ComputeGlobalInsightsForTasks is the testable seam — it takes a
 // pre-fetched per-project task slice keyed by ProjectEntry, so unit tests
 // don't have to write tasks to disk.
+//
+// metricsFor resolves a task's `<n>.metrics.yaml` record for the v8.0
+// code-output rollup; it may be nil (no rollup) or return nil for a task
+// without a metrics file. Either way the task is counted in
+// MetricsMissingCode and contributes zero code output.
 func ComputeGlobalInsightsForTasks(
 	windowStart, windowEnd time.Time,
 	projects []models.ProjectEntry,
 	tasksFor func(p models.ProjectEntry) []*models.Task,
 	colorFor func(p models.ProjectEntry) string,
+	metricsFor func(p models.ProjectEntry, t *models.Task) *models.TaskMetrics,
 ) *GlobalInsights {
 	g := &GlobalInsights{WindowStart: windowStart, WindowEnd: windowEnd}
 
 	// Aggregate counters.
 	dayDone := map[string]int{}
 	dayFailed := map[string]int{}
+	dayLinesAdded := map[string]int{}
+	dayLinesRemoved := map[string]int{}
 	durationsByAgent := map[string][]int64{}
 	doneByAgent := map[string]int{}
 	failedByAgent := map[string]int{}
+	commitsByAgent := map[string]int{}
+	linesAddedByAgent := map[string]int{}
+	linesRemovedByAgent := map[string]int{}
 
 	var perProject []rollupProjTally
 
@@ -146,14 +179,43 @@ func ComputeGlobalInsightsForTasks(
 					durationsByAgent[agent] = append(durationsByAgent[agent], ms)
 				}
 			}
+
+			// v8.0 code-output rollup — tolerant of missing metrics.
+			var m *models.TaskMetrics
+			if metricsFor != nil {
+				m = metricsFor(entry, t)
+			}
+			cf := codeFieldsFrom(m)
+			if !cf.hasCode {
+				g.MetricsMissingCode++
+			}
+			g.TotalCommits += cf.commits
+			g.TotalFilesChanged += cf.filesChanged
+			g.TotalLinesAdded += cf.linesAdded
+			g.TotalLinesRemoved += cf.linesRemoved
+			if cf.merged {
+				g.TasksMerged++
+			}
+			if cf.viaPR {
+				g.TasksViaPR++
+			}
+			dayLinesAdded[key] += cf.linesAdded
+			dayLinesRemoved[key] += cf.linesRemoved
+			commitsByAgent[agent] += cf.commits
+			linesAddedByAgent[agent] += cf.linesAdded
+			linesRemovedByAgent[agent] += cf.linesRemoved
 		}
 		if tally.count > 0 {
 			perProject = append(perProject, tally)
 		}
 	}
 
-	g.TasksByDay = mergeDayBuckets(dayDone, dayFailed)
-	g.AgentBreakdown = buildAgentRows(doneByAgent, failedByAgent, durationsByAgent)
+	g.NetLines = g.TotalLinesAdded - g.TotalLinesRemoved
+	g.TasksByDay = mergeDayBuckets(dayDone, dayFailed, dayLinesAdded, dayLinesRemoved)
+	g.AgentBreakdown = buildAgentRows(
+		doneByAgent, failedByAgent, durationsByAgent,
+		commitsByAgent, linesAddedByAgent, linesRemovedByAgent,
+	)
 	g.TopProjects = pickTopProjects(perProject)
 
 	return g
@@ -182,27 +244,43 @@ func computeGlobalInsights(windowStart, windowEnd time.Time) (*GlobalInsights, e
 		}
 		return proj.Color
 	}
+	metricsFor := func(p models.ProjectEntry, t *models.Task) *models.TaskMetrics {
+		if t == nil {
+			return nil
+		}
+		m, merr := config.ReadMetrics(p.Path, t.TaskNumber)
+		if merr != nil {
+			return nil // tolerate a malformed/unreadable metrics file as "missing"
+		}
+		return m
+	}
 
-	return ComputeGlobalInsightsForTasks(windowStart, windowEnd, index.Projects, tasksFor, colorFor), nil
+	return ComputeGlobalInsightsForTasks(windowStart, windowEnd, index.Projects, tasksFor, colorFor, metricsFor), nil
 }
 
-func mergeDayBuckets(dayDone, dayFailed map[string]int) []GlobalDayBucket {
-	keys := unionKeys(dayDone, dayFailed)
+func mergeDayBuckets(dayDone, dayFailed, dayLinesAdded, dayLinesRemoved map[string]int) []GlobalDayBucket {
+	keys := unionKeys(dayDone, dayFailed, dayLinesAdded, dayLinesRemoved)
 	sort.Strings(keys)
 	out := make([]GlobalDayBucket, 0, len(keys))
 	for _, k := range keys {
 		s, f := dayDone[k], dayFailed[k]
 		out = append(out, GlobalDayBucket{
-			Date:      k,
-			Count:     s + f,
-			Succeeded: s,
-			Failed:    f,
+			Date:         k,
+			Count:        s + f,
+			Succeeded:    s,
+			Failed:       f,
+			LinesAdded:   dayLinesAdded[k],
+			LinesRemoved: dayLinesRemoved[k],
 		})
 	}
 	return out
 }
 
-func buildAgentRows(done, failed map[string]int, durations map[string][]int64) []GlobalAgentRow {
+func buildAgentRows(
+	done, failed map[string]int,
+	durations map[string][]int64,
+	commits, linesAdded, linesRemoved map[string]int,
+) []GlobalAgentRow {
 	all := unionKeys(done, failed)
 	out := make([]GlobalAgentRow, 0, len(all))
 	for _, k := range all {
@@ -212,6 +290,9 @@ func buildAgentRows(done, failed map[string]int, durations map[string][]int64) [
 			row.SuccessRate = float64(done[k]) / float64(count)
 		}
 		row.AvgDurationMs = averageInt64(durations[k])
+		row.Commits = commits[k]
+		row.LinesAdded = linesAdded[k]
+		row.LinesRemoved = linesRemoved[k]
 		out = append(out, row)
 	}
 	sort.Slice(out, func(i, j int) bool {
