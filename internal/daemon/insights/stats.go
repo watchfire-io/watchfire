@@ -161,6 +161,44 @@ func agentKey(s string) string {
 	return s
 }
 
+// codeFields holds the per-task shipped-code numbers pulled from a v8.0
+// TaskMetrics record (task 0114). hasCode reports whether the record
+// carried any code-output signal — it drives the MetricsMissingCode
+// honesty counter (mirror of TasksMissingCost). A nil metrics record (no
+// `<n>.metrics.yaml`, or one written before v8.0) yields all-zero fields
+// and hasCode=false, so missing data contributes zeros and is counted,
+// never panics.
+type codeFields struct {
+	commits      int
+	filesChanged int
+	linesAdded   int
+	linesRemoved int
+	merged       bool
+	viaPR        bool
+	hasCode      bool
+}
+
+func codeFieldsFrom(m *models.TaskMetrics) codeFields {
+	if m == nil {
+		return codeFields{}
+	}
+	c := codeFields{
+		commits:      m.Commits,
+		filesChanged: m.FilesChanged,
+		linesAdded:   m.LinesAdded,
+		linesRemoved: m.LinesRemoved,
+		merged:       m.Merged,
+		viaPR:        m.MergeKind == models.MergeKindAutoPR,
+	}
+	// A v8.0 capture always stamps `merged` (true for the merged path),
+	// so a merged record with a genuinely empty diff still counts as
+	// "has code data". Pre-v8.0 files have none of these set → hasCode
+	// stays false and the task is counted as missing.
+	c.hasCode = c.commits != 0 || c.filesChanged != 0 || c.linesAdded != 0 ||
+		c.linesRemoved != 0 || c.merged
+	return c
+}
+
 func averageInt64(xs []int64) int64 {
 	if len(xs) == 0 {
 		return 0

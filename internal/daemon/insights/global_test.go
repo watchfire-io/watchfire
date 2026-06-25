@@ -13,6 +13,21 @@ import (
 func boolPtr(b bool) *bool { return &b }
 func timePtr(t time.Time) *time.Time { return &t }
 
+// makeMetrics builds a v8.0 code-output metrics record for a task.
+func makeMetrics(num int, agent string, commits, files, added, removed int, merged bool, kind models.MergeKind) *models.TaskMetrics {
+	return &models.TaskMetrics{
+		TaskNumber:   num,
+		Agent:        agent,
+		Commits:      commits,
+		FilesChanged: files,
+		LinesAdded:   added,
+		LinesRemoved: removed,
+		NetLines:     added - removed,
+		Merged:       merged,
+		MergeKind:    kind,
+	}
+}
+
 // makeTask builds a "done" task ready to feed the aggregator.
 func makeTask(num int, agent string, success bool, started, completed time.Time) *models.Task {
 	return &models.Task{
@@ -53,6 +68,7 @@ func TestComputeGlobalInsights_FleetTotalsAndTopProjects(t *testing.T) {
 		projects,
 		func(p models.ProjectEntry) []*models.Task { return tasksByProject[p.ProjectID] },
 		func(p models.ProjectEntry) string { return colors[p.ProjectID] },
+		nil,
 	)
 
 	if g.TasksTotal != 4 {
@@ -113,6 +129,73 @@ func TestComputeGlobalInsights_FleetTotalsAndTopProjects(t *testing.T) {
 	}
 }
 
+func TestComputeGlobalInsights_CodeOutputRollup(t *testing.T) {
+	t.Parallel()
+	day := func(d int) time.Time { return time.Date(2026, 5, d, 12, 0, 0, 0, time.UTC) }
+
+	projects := []models.ProjectEntry{
+		{ProjectID: "proj-a", Name: "alpha"},
+		{ProjectID: "proj-b", Name: "bravo"},
+	}
+	tasksByProject := map[string][]*models.Task{
+		"proj-a": {
+			makeTask(1, "claude-code", true, day(2).Add(-10*time.Minute), day(2)),
+			makeTask(2, "claude-code", true, day(3).Add(-5*time.Minute), day(3)), // no metrics
+		},
+		"proj-b": {
+			makeTask(1, "codex", true, day(2).Add(-3*time.Minute), day(2)),
+		},
+	}
+	metricsByProject := map[string]map[int]*models.TaskMetrics{
+		"proj-a": {1: makeMetrics(1, "claude-code", 2, 3, 80, 10, true, models.MergeKindSilent)},
+		"proj-b": {1: makeMetrics(1, "codex", 1, 1, 40, 40, true, models.MergeKindAutoPR)},
+	}
+
+	g := ComputeGlobalInsightsForTasks(
+		day(1), day(30),
+		projects,
+		func(p models.ProjectEntry) []*models.Task { return tasksByProject[p.ProjectID] },
+		func(_ models.ProjectEntry) string { return "" },
+		func(p models.ProjectEntry, t *models.Task) *models.TaskMetrics {
+			return metricsByProject[p.ProjectID][t.TaskNumber]
+		},
+	)
+
+	if g.TotalCommits != 3 {
+		t.Errorf("TotalCommits = %d, want 3", g.TotalCommits)
+	}
+	if g.TotalFilesChanged != 4 {
+		t.Errorf("TotalFilesChanged = %d, want 4", g.TotalFilesChanged)
+	}
+	if g.TotalLinesAdded != 120 || g.TotalLinesRemoved != 50 {
+		t.Errorf("lines added/removed = %d/%d, want 120/50", g.TotalLinesAdded, g.TotalLinesRemoved)
+	}
+	if g.NetLines != 70 {
+		t.Errorf("NetLines = %d, want 70", g.NetLines)
+	}
+	if g.TasksMerged != 2 {
+		t.Errorf("TasksMerged = %d, want 2", g.TasksMerged)
+	}
+	if g.TasksViaPR != 1 {
+		t.Errorf("TasksViaPR = %d, want 1", g.TasksViaPR)
+	}
+	if g.MetricsMissingCode != 1 {
+		t.Errorf("MetricsMissingCode = %d, want 1 (proj-a task 2 has no metrics)", g.MetricsMissingCode)
+	}
+
+	// Agent rows carry commits + lines across the fleet.
+	byAgent := map[string]GlobalAgentRow{}
+	for _, r := range g.AgentBreakdown {
+		byAgent[r.Agent] = r
+	}
+	if cc := byAgent["claude-code"]; cc.Commits != 2 || cc.LinesAdded != 80 || cc.LinesRemoved != 10 {
+		t.Errorf("claude-code row = %d/%d/%d, want 2/80/10", cc.Commits, cc.LinesAdded, cc.LinesRemoved)
+	}
+	if cx := byAgent["codex"]; cx.Commits != 1 || cx.LinesAdded != 40 || cx.LinesRemoved != 40 {
+		t.Errorf("codex row = %d/%d/%d, want 1/40/40", cx.Commits, cx.LinesAdded, cx.LinesRemoved)
+	}
+}
+
 func TestComputeGlobalInsights_RespectsWindow(t *testing.T) {
 	t.Parallel()
 	in := time.Date(2026, 5, 5, 12, 0, 0, 0, time.UTC)
@@ -131,6 +214,7 @@ func TestComputeGlobalInsights_RespectsWindow(t *testing.T) {
 		projects,
 		func(p models.ProjectEntry) []*models.Task { return tasksByProject[p.ProjectID] },
 		func(_ models.ProjectEntry) string { return "" },
+		nil,
 	)
 	if g.TasksTotal != 1 {
 		t.Errorf("TasksTotal = %d, want 1 (other task is outside window)", g.TasksTotal)
@@ -160,6 +244,7 @@ func TestComputeGlobalInsights_TopProjectsCappedAt5(t *testing.T) {
 		projects,
 		func(p models.ProjectEntry) []*models.Task { return tasksByProject[p.ProjectID] },
 		func(_ models.ProjectEntry) string { return "" },
+		nil,
 	)
 	if got, want := len(g.TopProjects), MaxTopProjects; got != want {
 		t.Errorf("TopProjects len = %d, want %d", got, want)
