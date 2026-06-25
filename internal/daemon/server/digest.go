@@ -248,12 +248,20 @@ func renderDigestMarkdown(windowStart, windowEnd time.Time) (body, summary strin
 	index, _ := config.LoadProjectsIndex()
 
 	type projectStats struct {
-		Name      string
-		Done      int
-		Failed    int
-		InFlight  int
-		Created   int
+		Name         string
+		Done         int
+		Failed       int
+		InFlight     int
+		Created      int
 		FailedTitles []string
+
+		// v8.0 Inferno — shipped-code rollup for the week, summed from each
+		// completed-in-window task's <n>.metrics.yaml. Tolerant of missing
+		// files (older tasks contribute zeros).
+		Commits      int
+		LinesAdded   int
+		LinesRemoved int
+		Merges       int
 	}
 
 	var projects []projectStats
@@ -261,6 +269,7 @@ func renderDigestMarkdown(windowStart, windowEnd time.Time) (body, summary strin
 	totalFailed := 0
 	totalCreated := 0
 	totalInFlight := 0
+	var codeCommits, codeLinesAdded, codeLinesRemoved, codeMerges int
 
 	if index != nil {
 		for _, entry := range index.Projects {
@@ -286,6 +295,15 @@ func renderDigestMarkdown(windowStart, windowEnd time.Time) (body, summary strin
 							ps.FailedTitles = append(ps.FailedTitles, t.Title)
 						}
 					}
+					// Code output — best-effort read of the per-task metrics.
+					if m, merr := config.ReadMetrics(entry.Path, t.TaskNumber); merr == nil && m != nil {
+						ps.Commits += m.Commits
+						ps.LinesAdded += m.LinesAdded
+						ps.LinesRemoved += m.LinesRemoved
+						if m.Merged {
+							ps.Merges++
+						}
+					}
 				}
 				if t.Status == models.TaskStatusReady || t.Status == models.TaskStatusDraft {
 					ps.InFlight++
@@ -295,6 +313,10 @@ func renderDigestMarkdown(windowStart, windowEnd time.Time) (body, summary strin
 			totalFailed += ps.Failed
 			totalCreated += ps.Created
 			totalInFlight += ps.InFlight
+			codeCommits += ps.Commits
+			codeLinesAdded += ps.LinesAdded
+			codeLinesRemoved += ps.LinesRemoved
+			codeMerges += ps.Merges
 			projects = append(projects, ps)
 		}
 	}
@@ -315,6 +337,44 @@ func renderDigestMarkdown(windowStart, windowEnd time.Time) (body, summary strin
 	fmt.Fprintf(&b, "- **%d** task%s created\n", totalCreated, plural(totalCreated))
 	fmt.Fprintf(&b, "- **%d** task%s currently in flight\n", totalInFlight, plural(totalInFlight))
 	fmt.Fprintf(&b, "- Across **%d** project%s\n\n", len(projects), plural(len(projects)))
+
+	// Code output — what the agents actually shipped this week. Rank
+	// projects by net churn (added − removed) for the "top by churn" line.
+	netLines := codeLinesAdded - codeLinesRemoved
+	type churnRow struct {
+		name string
+		net  int
+	}
+	churn := make([]churnRow, 0, len(projects))
+	for _, p := range projects {
+		net := p.LinesAdded - p.LinesRemoved
+		if net != 0 || p.Commits != 0 || p.Merges != 0 {
+			churn = append(churn, churnRow{name: p.Name, net: net})
+		}
+	}
+	sort.Slice(churn, func(i, j int) bool {
+		if churn[i].net != churn[j].net {
+			return churn[i].net > churn[j].net
+		}
+		return strings.ToLower(churn[i].name) < strings.ToLower(churn[j].name)
+	})
+
+	fmt.Fprintf(&b, "## Code output\n\n")
+	fmt.Fprintf(&b, "- **%d** commit%s · **%d** merge%s\n",
+		codeCommits, plural(codeCommits), codeMerges, plural(codeMerges))
+	fmt.Fprintf(&b, "- **+%d / −%d** lines (net %s)\n",
+		codeLinesAdded, codeLinesRemoved, signedInt(netLines))
+	if len(churn) > 0 {
+		top := make([]string, 0, 3)
+		for i, c := range churn {
+			if i >= 3 {
+				break
+			}
+			top = append(top, fmt.Sprintf("%s (%s)", c.name, signedInt(c.net)))
+		}
+		fmt.Fprintf(&b, "- Top by churn: %s\n", strings.Join(top, " · "))
+	}
+	b.WriteString("\n")
 
 	if len(projects) > 0 {
 		fmt.Fprintf(&b, "## By project\n\n")
@@ -345,4 +405,17 @@ func plural(n int) string {
 		return ""
 	}
 	return "s"
+}
+
+// signedInt renders a signed net figure: "+412", "−97", or "0". Uses a real
+// minus sign (U+2212) to match the +/− line labels in the digest body.
+func signedInt(n int) string {
+	switch {
+	case n > 0:
+		return fmt.Sprintf("+%d", n)
+	case n < 0:
+		return fmt.Sprintf("−%d", -n)
+	default:
+		return "0"
+	}
 }

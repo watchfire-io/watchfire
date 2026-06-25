@@ -38,6 +38,8 @@ func templateFuncs() template.FuncMap {
 		"successCell":   successCell,
 		"defaultStr":    defaultStr,
 		"windowLabel":   windowLabel,
+		"netLabel":      netLabel,
+		"yesNo":         yesNo,
 	}
 }
 
@@ -134,6 +136,26 @@ func defaultStr(s, fallback string) string {
 		return fallback
 	}
 	return s
+}
+
+// netLabel renders a signed net-lines figure: "+412", "−97", or "0". Uses a
+// real minus sign (U+2212) to match the +Lines / −Lines column labels.
+func netLabel(n int) string {
+	switch {
+	case n > 0:
+		return fmt.Sprintf("+%d", n)
+	case n < 0:
+		return fmt.Sprintf("−%d", -n)
+	default:
+		return "0"
+	}
+}
+
+func yesNo(b bool) string {
+	if b {
+		return "yes"
+	}
+	return "no"
 }
 
 func windowLabel(start, end time.Time) string {

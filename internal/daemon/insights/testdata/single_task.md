@@ -15,6 +15,18 @@ _Project: **watchfire** · `watchfire-pid`_
 | Duration | 1h 42m |
 | Branch | `watchfire/0059` |
 
+## Code output
+
+| Metric | Value |
+| --- | --- |
+| Commits | 4 |
+| Files changed | 11 |
+| Lines added | +412 |
+| Lines removed | −97 |
+| Net lines | +315 |
+| Merged | yes |
+| Merge kind | `silent` |
+
 ## Prompt (excerpt)
 
 Implement ExportReport RPC, render CSV + Markdown reports for single-task / project / global scopes.

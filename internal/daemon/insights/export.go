@@ -115,10 +115,11 @@ func LoadSingleTaskData(singleTaskID string) (SingleTaskData, error) {
 	if t == nil {
 		return SingleTaskData{}, fmt.Errorf("insights: task #%d not found in project %q", taskNumber, projectID)
 	}
-	return singleTaskFromTask(projectID, projectName, t), nil
+	m := readMetricsBestEffort(projectPath, t)
+	return singleTaskFromTask(projectID, projectName, t, m), nil
 }
 
-func singleTaskFromTask(projectID, projectName string, t *models.Task) SingleTaskData {
+func singleTaskFromTask(projectID, projectName string, t *models.Task, m *models.TaskMetrics) SingleTaskData {
 	d := SingleTaskData{
 		ProjectID:      projectID,
 		ProjectName:    projectName,
@@ -136,6 +137,18 @@ func singleTaskFromTask(projectID, projectName string, t *models.Task) SingleTas
 	}
 	if t.StartedAt != nil && t.CompletedAt != nil {
 		d.DurationSec = int64(t.CompletedAt.Sub(*t.StartedAt).Seconds())
+	}
+	// v8.0 — shipped-code stats, tolerant of a missing metrics file.
+	cf := codeFieldsFrom(m)
+	d.Commits = cf.commits
+	d.FilesChanged = cf.filesChanged
+	d.LinesAdded = cf.linesAdded
+	d.LinesRemoved = cf.linesRemoved
+	d.NetLines = cf.linesAdded - cf.linesRemoved
+	d.Merged = cf.merged
+	d.HasCode = cf.hasCode
+	if m != nil {
+		d.MergeKind = string(m.MergeKind)
 	}
 	return d
 }
@@ -165,11 +178,17 @@ func LoadProjectData(projectID string, windowStart, windowEnd time.Time) (Projec
 	if err != nil {
 		return ProjectData{}, fmt.Errorf("insights: load tasks for %q: %w", projectID, err)
 	}
-	pd := buildProjectData(projectID, projectName, tasks, windowStart, windowEnd)
+	metricsFor := func(t *models.Task) *models.TaskMetrics {
+		return readMetricsBestEffort(projectPath, t)
+	}
+	pd := buildProjectData(projectID, projectName, tasks, windowStart, windowEnd, metricsFor)
 	return pd, nil
 }
 
-func buildProjectData(projectID, projectName string, tasks []*models.Task, windowStart, windowEnd time.Time) ProjectData {
+// buildProjectData aggregates a task list into a ProjectData. metricsFor
+// resolves a task's `<n>.metrics.yaml` for the v8.0 code-output rollup; it
+// may be nil (no code rollup) or return nil for a task without metrics.
+func buildProjectData(projectID, projectName string, tasks []*models.Task, windowStart, windowEnd time.Time, metricsFor func(t *models.Task) *models.TaskMetrics) ProjectData {
 	pd := ProjectData{
 		ProjectID:   projectID,
 		ProjectName: projectName,
@@ -181,12 +200,31 @@ func buildProjectData(projectID, projectName string, tasks []*models.Task, windo
 		if t == nil || t.IsDeleted() {
 			continue
 		}
-		stats.add(t)
+		var m *models.TaskMetrics
+		if metricsFor != nil {
+			m = metricsFor(t)
+		}
+		stats.add(t, m)
 	}
 	pd.KPIs = stats.kpis()
+	pd.Code = stats.codeOutput()
 	pd.Daily = stats.daily()
 	pd.Agents = stats.agents()
 	return pd
+}
+
+// readMetricsBestEffort loads a task's metrics record, tolerating a nil task,
+// a missing file, or a malformed file as "no metrics" (nil) so the code-output
+// rollup degrades to zeros rather than failing the whole export.
+func readMetricsBestEffort(projectPath string, t *models.Task) *models.TaskMetrics {
+	if t == nil {
+		return nil
+	}
+	m, err := config.ReadMetrics(projectPath, t.TaskNumber)
+	if err != nil {
+		return nil
+	}
+	return m
 }
 
 // LoadGlobalData walks every registered project and rolls up a fleet
@@ -213,7 +251,8 @@ func LoadGlobalData(windowStart, windowEnd time.Time) (GlobalData, error) {
 			if t == nil || t.IsDeleted() {
 				continue
 			}
-			stats.add(t)
+			m := readMetricsBestEffort(entry.Path, t)
+			stats.add(t, m)
 			if t.Status == models.TaskStatusDone && t.CompletedAt != nil &&
 				inWindow(*t.CompletedAt, windowStart, windowEnd) {
 				if t.Success != nil && *t.Success {
@@ -221,12 +260,22 @@ func LoadGlobalData(windowStart, windowEnd time.Time) (GlobalData, error) {
 				} else {
 					ps.failed++
 				}
+				// Per-project shipped-code tally for the top-projects churn
+				// columns; tolerant of missing metrics (all-zero fields).
+				cf := codeFieldsFrom(m)
+				ps.commits += cf.commits
+				ps.linesAdded += cf.linesAdded
+				ps.linesRemoved += cf.linesRemoved
+				if cf.merged {
+					ps.merges++
+				}
 			}
 		}
 		per = append(per, ps)
 	}
 	gd.ProjectCount = len(index.Projects)
 	gd.KPIs = stats.kpis()
+	gd.Code = stats.codeOutput()
 	gd.Daily = stats.daily()
 	gd.Agents = stats.agents()
 	gd.TopProjects = topProjectsFrom(per)
@@ -238,8 +287,10 @@ func LoadGlobalData(windowStart, windowEnd time.Time) (GlobalData, error) {
 // concrete type instead of an anonymous struct (which Go's type system
 // won't unify across call sites).
 type projectCount struct {
-	id, name     string
-	done, failed int
+	id, name                          string
+	done, failed                      int
+	commits, linesAdded, linesRemoved int
+	merges                            int
 }
 
 func topProjectsFrom(rows []projectCount) []ProjectSummary {
@@ -250,10 +301,15 @@ func topProjectsFrom(rows []projectCount) []ProjectSummary {
 			continue
 		}
 		out = append(out, ProjectSummary{
-			ProjectID:   r.id,
-			ProjectName: r.name,
-			Done:        r.done,
-			Failed:      r.failed,
+			ProjectID:    r.id,
+			ProjectName:  r.name,
+			Done:         r.done,
+			Failed:       r.failed,
+			Commits:      r.commits,
+			LinesAdded:   r.linesAdded,
+			LinesRemoved: r.linesRemoved,
+			NetLines:     r.linesAdded - r.linesRemoved,
+			Merges:       r.merges,
 		})
 	}
 	return out

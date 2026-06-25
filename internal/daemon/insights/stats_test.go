@@ -32,8 +32,8 @@ func TestBuildProjectData(t *testing.T) {
 		// Out-of-window completion — KPIs ignore it but in-flight is N/A
 		// because it's done.
 		{TaskNumber: 3, Status: models.TaskStatusDone, Success: bptr(true), Agent: "claude-code",
-			CreatedAt: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
-			StartedAt: timePtr(time.Date(2026, 1, 1, 1, 0, 0, 0, time.UTC)),
+			CreatedAt:   time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+			StartedAt:   timePtr(time.Date(2026, 1, 1, 1, 0, 0, 0, time.UTC)),
 			CompletedAt: timePtr(time.Date(2026, 1, 1, 2, 0, 0, 0, time.UTC))},
 		// In-flight ready — instantaneous, contributes to TotalInFlight only.
 		{TaskNumber: 4, Status: models.TaskStatusReady, Agent: "claude-code", CreatedAt: mkTime(30, 12)},
@@ -48,7 +48,7 @@ func TestBuildProjectData(t *testing.T) {
 			DeletedAt:   timePtr(mkTime(30, 12))},
 	}
 
-	pd := buildProjectData("p", "Project", tasks, windowStart, windowEnd)
+	pd := buildProjectData("p", "Project", tasks, windowStart, windowEnd, nil)
 
 	// Tasks 1 + 5 succeeded in window → TotalDone == 2; task 2 failed in
 	// window → TotalFailed == 1; task 3 is out of window; task 6 soft-
@@ -81,5 +81,66 @@ func TestBuildProjectData(t *testing.T) {
 	// Daily buckets — one row per day with activity.
 	if len(pd.Daily) == 0 {
 		t.Fatal("Daily empty")
+	}
+}
+
+// TestBuildProjectDataCodeOutput verifies the v8.0 code-output rollup: per-task
+// metrics flow into ProjectData.Code totals + per-agent churn, completed tasks
+// without metrics are counted as missing, and out-of-window tasks are ignored.
+func TestBuildProjectDataCodeOutput(t *testing.T) {
+	windowEnd := time.Date(2026, 5, 2, 23, 59, 59, 0, time.UTC)
+	windowStart := windowEnd.AddDate(0, 0, -7)
+
+	mk := func(day, hour int) time.Time { return time.Date(2026, 4, day, hour, 0, 0, 0, time.UTC) }
+	tp := func(t time.Time) *time.Time { return &t }
+	bp := func(b bool) *bool { return &b }
+
+	tasks := []*models.Task{
+		{TaskNumber: 1, Status: models.TaskStatusDone, Success: bp(true), Agent: "claude-code",
+			CreatedAt: mk(28, 8), StartedAt: tp(mk(28, 9)), CompletedAt: tp(mk(28, 10))},
+		{TaskNumber: 2, Status: models.TaskStatusDone, Success: bp(true), Agent: "codex",
+			CreatedAt: mk(29, 8), StartedAt: tp(mk(29, 9)), CompletedAt: tp(mk(29, 10))},
+		// Completed-in-window but no metrics → counted in MetricsMissingCode.
+		{TaskNumber: 3, Status: models.TaskStatusDone, Success: bp(true), Agent: "claude-code",
+			CreatedAt: mk(30, 8), StartedAt: tp(mk(30, 9)), CompletedAt: tp(mk(30, 10))},
+	}
+
+	metrics := map[int]*models.TaskMetrics{
+		1: {Commits: 3, FilesChanged: 7, LinesAdded: 200, LinesRemoved: 50, Merged: true, MergeKind: models.MergeKindSilent},
+		2: {Commits: 1, FilesChanged: 2, LinesAdded: 40, LinesRemoved: 10, Merged: true, MergeKind: models.MergeKindAutoPR},
+	}
+	metricsFor := func(t *models.Task) *models.TaskMetrics { return metrics[t.TaskNumber] }
+
+	pd := buildProjectData("p", "Project", tasks, windowStart, windowEnd, metricsFor)
+
+	if pd.Code.TotalCommits != 4 {
+		t.Errorf("TotalCommits = %d want 4", pd.Code.TotalCommits)
+	}
+	if pd.Code.TotalLinesAdded != 240 || pd.Code.TotalLinesRemoved != 60 {
+		t.Errorf("lines = +%d/-%d want +240/-60", pd.Code.TotalLinesAdded, pd.Code.TotalLinesRemoved)
+	}
+	if pd.Code.NetLines != 180 {
+		t.Errorf("NetLines = %d want 180", pd.Code.NetLines)
+	}
+	if pd.Code.TasksMerged != 2 {
+		t.Errorf("TasksMerged = %d want 2", pd.Code.TasksMerged)
+	}
+	if pd.Code.TasksViaPR != 1 {
+		t.Errorf("TasksViaPR = %d want 1", pd.Code.TasksViaPR)
+	}
+	if pd.Code.MetricsMissingCode != 1 {
+		t.Errorf("MetricsMissingCode = %d want 1 (task 3 has no metrics)", pd.Code.MetricsMissingCode)
+	}
+
+	// Per-agent churn: claude-code shipped task 1 (task 3 has no code), codex task 2.
+	byAgent := map[string]AgentBreakdown{}
+	for _, a := range pd.Agents {
+		byAgent[a.Agent] = a
+	}
+	if got := byAgent["claude-code"]; got.Commits != 3 || got.LinesAdded != 200 {
+		t.Errorf("claude-code churn = %+v want commits=3 lines_added=200", got)
+	}
+	if got := byAgent["codex"]; got.Commits != 1 || got.LinesAdded != 40 {
+		t.Errorf("codex churn = %+v want commits=1 lines_added=40", got)
 	}
 }

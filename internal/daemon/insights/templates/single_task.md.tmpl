@@ -18,6 +18,24 @@ _Project: **{{.ProjectName}}** · `{{.ProjectID}}`_
 
 > **Failure reason:** {{.FailureReason}}
 {{- end}}
+
+## Code output
+
+{{- if .HasCode}}
+
+| Metric | Value |
+| --- | --- |
+| Commits | {{.Commits}} |
+| Files changed | {{.FilesChanged}} |
+| Lines added | +{{.LinesAdded}} |
+| Lines removed | −{{.LinesRemoved}} |
+| Net lines | {{netLabel .NetLines}} |
+| Merged | {{yesNo .Merged}} |
+| Merge kind | `{{defaultStr .MergeKind "—"}}` |
+{{- else}}
+
+_No code-output metrics captured for this task._
+{{- end}}
 {{- if .Prompt}}
 
 ## Prompt (excerpt)

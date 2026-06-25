@@ -11,6 +11,13 @@ _Across **3** projects._
 - **5** tasks currently in flight
 - Average completion time: **1h 25m**
 
+## Code output
+
+- **27** commits across **82** file changes
+- **+2140 / −560** lines (net +1580)
+- **8** tasks merged · **1** via PR
+- _2 completed tasks without code metrics (excluded from the totals above)._
+
 ## Daily breakdown
 
 | Date | Done | Failed | Created |
@@ -22,16 +29,16 @@ _Across **3** projects._
 
 ## Top projects
 
-| Project | Done | Failed |
-| --- | --- | --- |
-| watchfire | 4 | 2 |
-| blog | 3 | 0 |
-| infra | 2 | 1 |
+| Project | Done | Failed | Commits | +Lines | −Lines | Net | Merges |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| watchfire | 4 | 2 | 12 | 980 | 210 | +770 | 3 |
+| blog | 3 | 0 | 9 | 760 | 180 | +580 | 3 |
+| infra | 2 | 1 | 6 | 400 | 170 | +230 | 2 |
 
 ## Agent breakdown
 
-| Agent | Tasks | Done | Failed | Avg duration |
-| --- | --- | --- | --- | --- |
-| `claude-code` | 8 | 6 | 2 | 1h 30m |
-| `codex` | 3 | 2 | 1 | 1h |
-| `opencode` | 1 | 1 | 0 | 30m |
+| Agent | Tasks | Done | Failed | Avg duration | Commits | +Lines | −Lines |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `claude-code` | 8 | 6 | 2 | 1h 30m | 18 | 1500 | 380 |
+| `codex` | 3 | 2 | 1 | 1h | 7 | 520 | 140 |
+| `opencode` | 1 | 1 | 0 | 30m | 2 | 120 | 40 |

@@ -15,10 +15,15 @@ func renderSingleTaskCSV(d SingleTaskData) ([]byte, error) {
 	var buf strings.Builder
 	buf.WriteString("# section: task\n")
 	w := csv.NewWriter(&buf)
+	// Header order is documented + stable: the v8.0 code-output columns
+	// (commits … merge_kind) are appended after the original columns so
+	// existing parsers that index by position keep working.
 	if err := w.Write([]string{
 		"project_id", "project_name", "task_number", "title", "status",
 		"success", "failure_reason", "agent", "agent_sessions",
 		"started_at", "completed_at", "duration_sec", "worktree_branch",
+		"commits", "files_changed", "lines_added", "lines_removed",
+		"net_lines", "merged", "merge_kind",
 	}); err != nil {
 		return nil, err
 	}
@@ -36,6 +41,13 @@ func renderSingleTaskCSV(d SingleTaskData) ([]byte, error) {
 		timePtrString(d.CompletedAt),
 		fmt.Sprintf("%d", d.DurationSec),
 		d.WorktreeBranch,
+		fmt.Sprintf("%d", d.Commits),
+		fmt.Sprintf("%d", d.FilesChanged),
+		fmt.Sprintf("%d", d.LinesAdded),
+		fmt.Sprintf("%d", d.LinesRemoved),
+		fmt.Sprintf("%d", d.NetLines),
+		fmt.Sprintf("%t", d.Merged),
+		d.MergeKind,
 	}); err != nil {
 		return nil, err
 	}
@@ -80,6 +92,9 @@ func renderProjectCSV(d ProjectData) ([]byte, error) {
 		return nil, err
 	}
 
+	if err := writeCodeSection(&buf, d.Code); err != nil {
+		return nil, err
+	}
 	if err := writeDailySection(&buf, d.Daily); err != nil {
 		return nil, err
 	}
@@ -89,7 +104,7 @@ func renderProjectCSV(d ProjectData) ([]byte, error) {
 	return []byte(buf.String()), nil
 }
 
-// renderGlobalCSV emits four sections: kpis, daily, top_projects, agents.
+// renderGlobalCSV emits five sections: kpis, code, daily, top_projects, agents.
 func renderGlobalCSV(d GlobalData) ([]byte, error) {
 	var buf strings.Builder
 
@@ -118,13 +133,20 @@ func renderGlobalCSV(d GlobalData) ([]byte, error) {
 		return nil, err
 	}
 
+	if err := writeCodeSection(&buf, d.Code); err != nil {
+		return nil, err
+	}
+
 	if err := writeDailySection(&buf, d.Daily); err != nil {
 		return nil, err
 	}
 
 	buf.WriteString("# section: top_projects\n")
 	w = csv.NewWriter(&buf)
-	if err := w.Write([]string{"project_id", "project_name", "done", "failed"}); err != nil {
+	if err := w.Write([]string{
+		"project_id", "project_name", "done", "failed",
+		"commits", "lines_added", "lines_removed", "net_lines", "merges",
+	}); err != nil {
 		return nil, err
 	}
 	for _, p := range d.TopProjects {
@@ -133,6 +155,11 @@ func renderGlobalCSV(d GlobalData) ([]byte, error) {
 			p.ProjectName,
 			fmt.Sprintf("%d", p.Done),
 			fmt.Sprintf("%d", p.Failed),
+			fmt.Sprintf("%d", p.Commits),
+			fmt.Sprintf("%d", p.LinesAdded),
+			fmt.Sprintf("%d", p.LinesRemoved),
+			fmt.Sprintf("%d", p.NetLines),
+			fmt.Sprintf("%d", p.Merges),
 		}); err != nil {
 			return nil, err
 		}
@@ -146,6 +173,35 @@ func renderGlobalCSV(d GlobalData) ([]byte, error) {
 		return nil, err
 	}
 	return []byte(buf.String()), nil
+}
+
+// writeCodeSection emits the v8.0 shipped-code totals as a single-row
+// section, mirroring the kpis section so tooling can pull headline code
+// numbers without summing the per-day / per-agent rows.
+func writeCodeSection(buf *strings.Builder, c CodeOutput) error {
+	buf.WriteString("# section: code\n")
+	w := csv.NewWriter(buf)
+	if err := w.Write([]string{
+		"total_commits", "total_files_changed", "total_lines_added",
+		"total_lines_removed", "net_lines", "tasks_merged", "tasks_via_pr",
+		"metrics_missing_code",
+	}); err != nil {
+		return err
+	}
+	if err := w.Write([]string{
+		fmt.Sprintf("%d", c.TotalCommits),
+		fmt.Sprintf("%d", c.TotalFilesChanged),
+		fmt.Sprintf("%d", c.TotalLinesAdded),
+		fmt.Sprintf("%d", c.TotalLinesRemoved),
+		fmt.Sprintf("%d", c.NetLines),
+		fmt.Sprintf("%d", c.TasksMerged),
+		fmt.Sprintf("%d", c.TasksViaPR),
+		fmt.Sprintf("%d", c.MetricsMissingCode),
+	}); err != nil {
+		return err
+	}
+	w.Flush()
+	return w.Error()
 }
 
 func writeDailySection(buf *strings.Builder, daily []DayBucket) error {
@@ -171,7 +227,10 @@ func writeDailySection(buf *strings.Builder, daily []DayBucket) error {
 func writeAgentsSection(buf *strings.Builder, agents []AgentBreakdown) error {
 	buf.WriteString("# section: agents\n")
 	w := csv.NewWriter(buf)
-	if err := w.Write([]string{"agent", "tasks", "done", "failed", "avg_duration_sec"}); err != nil {
+	if err := w.Write([]string{
+		"agent", "tasks", "done", "failed", "avg_duration_sec",
+		"commits", "lines_added", "lines_removed",
+	}); err != nil {
 		return err
 	}
 	for _, a := range agents {
@@ -181,6 +240,9 @@ func writeAgentsSection(buf *strings.Builder, agents []AgentBreakdown) error {
 			fmt.Sprintf("%d", a.Done),
 			fmt.Sprintf("%d", a.Failed),
 			fmt.Sprintf("%d", a.AvgDurationSec),
+			fmt.Sprintf("%d", a.Commits),
+			fmt.Sprintf("%d", a.LinesAdded),
+			fmt.Sprintf("%d", a.LinesRemoved),
 		}); err != nil {
 			return err
 		}

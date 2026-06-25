@@ -41,6 +41,14 @@ func fixtureSingleTask() SingleTaskData {
 		DurationSec:    int64(completed.Sub(started).Seconds()),
 		WorktreeBranch: "watchfire/0059",
 		Prompt:         "Implement ExportReport RPC, render CSV + Markdown reports for single-task / project / global scopes.",
+		Commits:        4,
+		FilesChanged:   11,
+		LinesAdded:     412,
+		LinesRemoved:   97,
+		NetLines:       315,
+		Merged:         true,
+		MergeKind:      "silent",
+		HasCode:        true,
 	}
 }
 
@@ -61,6 +69,16 @@ func fixtureProject() ProjectData {
 			TotalInFlight:  3,
 			AvgDurationSec: 4500,
 		},
+		Code: CodeOutput{
+			TotalCommits:       12,
+			TotalFilesChanged:  34,
+			TotalLinesAdded:    980,
+			TotalLinesRemoved:  210,
+			NetLines:           770,
+			TasksMerged:        3,
+			TasksViaPR:         1,
+			MetricsMissingCode: 1,
+		},
 		Daily: []DayBucket{
 			{Date: "2026-04-26", Done: 0, Failed: 1, Created: 2},
 			{Date: "2026-04-28", Done: 2, Failed: 0, Created: 3},
@@ -68,8 +86,8 @@ func fixtureProject() ProjectData {
 			{Date: "2026-05-01", Done: 1, Failed: 0, Created: 2},
 		},
 		Agents: []AgentBreakdown{
-			{Agent: "claude-code", Tasks: 4, Done: 3, Failed: 1, AvgDurationSec: 5400},
-			{Agent: "codex", Tasks: 2, Done: 1, Failed: 1, AvgDurationSec: 3000},
+			{Agent: "claude-code", Tasks: 4, Done: 3, Failed: 1, AvgDurationSec: 5400, Commits: 9, LinesAdded: 720, LinesRemoved: 150},
+			{Agent: "codex", Tasks: 2, Done: 1, Failed: 1, AvgDurationSec: 3000, Commits: 3, LinesAdded: 260, LinesRemoved: 60},
 		},
 	}
 }
@@ -89,6 +107,16 @@ func fixtureGlobal() GlobalData {
 			TotalInFlight:  5,
 			AvgDurationSec: 5100,
 		},
+		Code: CodeOutput{
+			TotalCommits:       27,
+			TotalFilesChanged:  82,
+			TotalLinesAdded:    2140,
+			TotalLinesRemoved:  560,
+			NetLines:           1580,
+			TasksMerged:        8,
+			TasksViaPR:         1,
+			MetricsMissingCode: 2,
+		},
 		Daily: []DayBucket{
 			{Date: "2026-04-26", Done: 1, Failed: 1, Created: 4},
 			{Date: "2026-04-28", Done: 4, Failed: 0, Created: 5},
@@ -96,14 +124,14 @@ func fixtureGlobal() GlobalData {
 			{Date: "2026-05-01", Done: 2, Failed: 1, Created: 6},
 		},
 		TopProjects: []ProjectSummary{
-			{ProjectID: "watchfire-pid", ProjectName: "watchfire", Done: 4, Failed: 2},
-			{ProjectID: "blog-pid", ProjectName: "blog", Done: 3, Failed: 0},
-			{ProjectID: "infra-pid", ProjectName: "infra", Done: 2, Failed: 1},
+			{ProjectID: "watchfire-pid", ProjectName: "watchfire", Done: 4, Failed: 2, Commits: 12, LinesAdded: 980, LinesRemoved: 210, NetLines: 770, Merges: 3},
+			{ProjectID: "blog-pid", ProjectName: "blog", Done: 3, Failed: 0, Commits: 9, LinesAdded: 760, LinesRemoved: 180, NetLines: 580, Merges: 3},
+			{ProjectID: "infra-pid", ProjectName: "infra", Done: 2, Failed: 1, Commits: 6, LinesAdded: 400, LinesRemoved: 170, NetLines: 230, Merges: 2},
 		},
 		Agents: []AgentBreakdown{
-			{Agent: "claude-code", Tasks: 8, Done: 6, Failed: 2, AvgDurationSec: 5400},
-			{Agent: "codex", Tasks: 3, Done: 2, Failed: 1, AvgDurationSec: 3600},
-			{Agent: "opencode", Tasks: 1, Done: 1, Failed: 0, AvgDurationSec: 1800},
+			{Agent: "claude-code", Tasks: 8, Done: 6, Failed: 2, AvgDurationSec: 5400, Commits: 18, LinesAdded: 1500, LinesRemoved: 380},
+			{Agent: "codex", Tasks: 3, Done: 2, Failed: 1, AvgDurationSec: 3600, Commits: 7, LinesAdded: 520, LinesRemoved: 140},
+			{Agent: "opencode", Tasks: 1, Done: 1, Failed: 0, AvgDurationSec: 1800, Commits: 2, LinesAdded: 120, LinesRemoved: 40},
 		},
 	}
 }
@@ -214,10 +242,10 @@ func TestFilenames(t *testing.T) {
 // "<project_id>:<task_number>" wire format.
 func TestParseSingleTaskID(t *testing.T) {
 	cases := []struct {
-		in       string
-		wantPID  string
-		wantNum  int
-		wantErr  bool
+		in      string
+		wantPID string
+		wantNum int
+		wantErr bool
 	}{
 		{"watchfire-pid:59", "watchfire-pid", 59, false},
 		{"watchfire-pid", "", 0, true},
