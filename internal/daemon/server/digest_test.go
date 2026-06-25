@@ -3,9 +3,11 @@ package server
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/watchfire-io/watchfire/internal/config"
 	"github.com/watchfire-io/watchfire/internal/daemon/notify"
 	"github.com/watchfire-io/watchfire/internal/models"
 )
@@ -323,6 +325,72 @@ func TestRunnerGatingPassesWithToggleOn(t *testing.T) {
 		}
 	case <-time.After(100 * time.Millisecond):
 		t.Errorf("toggle on should produce emit")
+	}
+}
+
+// TestRenderDigestMarkdownCodeOutput verifies the v8.0 "Code output" block:
+// the digest sums each completed-in-window task's <n>.metrics.yaml code fields
+// into commits / merges / net lines and ranks projects by churn.
+func TestRenderDigestMarkdownCodeOutput(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	windowEnd := time.Now()
+	windowStart := windowEnd.AddDate(0, 0, -7)
+	completed := windowStart.AddDate(0, 0, 1) // inside the window
+	bp := func(b bool) *bool { return &b }
+	tp := func(t time.Time) *time.Time { return &t }
+
+	// Two projects under the index, each with one completed-in-window task + metrics.
+	mkProject := func(id, name string, num int, commits, added, removed int, merged bool) models.ProjectEntry {
+		path := filepath.Join(tmp, "projects", id)
+		task := &models.Task{
+			TaskNumber: num, Title: name + " task", Status: models.TaskStatusDone,
+			Success: bp(true), CreatedAt: completed, StartedAt: tp(completed), CompletedAt: tp(completed),
+		}
+		if err := config.SaveTask(path, task); err != nil {
+			t.Fatalf("save task: %v", err)
+		}
+		m := &models.TaskMetrics{
+			TaskNumber: num, Commits: commits, LinesAdded: added, LinesRemoved: removed,
+			Merged: merged, MergeKind: models.MergeKindSilent,
+		}
+		if err := config.WriteMetrics(path, m); err != nil {
+			t.Fatalf("write metrics: %v", err)
+		}
+		return models.ProjectEntry{ProjectID: id, Name: name, Path: path}
+	}
+
+	index := &models.ProjectsIndex{
+		Version: 1,
+		Projects: []models.ProjectEntry{
+			mkProject("alpha-pid", "alpha", 1, 5, 300, 100, true), // net +200
+			mkProject("beta-pid", "beta", 1, 2, 80, 20, false),    // net +60
+		},
+	}
+	if err := config.SaveProjectsIndex(index); err != nil {
+		t.Fatalf("save index: %v", err)
+	}
+
+	body, _ := renderDigestMarkdown(windowStart, windowEnd)
+
+	if !strings.Contains(body, "## Code output") {
+		t.Fatalf("digest missing Code output section:\n%s", body)
+	}
+	// 7 commits total, 1 merge, +380 / −120 lines (net +260).
+	for _, want := range []string{
+		"**7** commits · **1** merge",
+		"**+380 / −120** lines (net +260)",
+		"Top by churn:",
+		"alpha (+200)",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("digest body missing %q\n--- body ---\n%s", want, body)
+		}
+	}
+	// alpha (net +200) must rank before beta (net +60) in the churn line.
+	if i, j := strings.Index(body, "alpha (+200)"), strings.Index(body, "beta (+60)"); i < 0 || j < 0 || i > j {
+		t.Errorf("churn ranking wrong: alpha should precede beta (i=%d j=%d)", i, j)
 	}
 }
 

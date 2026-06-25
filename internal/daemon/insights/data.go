@@ -48,6 +48,19 @@ type SingleTaskData struct {
 	DurationSec    int64 // CompletedAt - StartedAt; 0 when one of them is missing
 	WorktreeBranch string
 	Prompt         string // First 240 chars of the prompt, for context
+
+	// v8.0 Inferno — code-output stats pulled from the task's
+	// `<n>.metrics.yaml` (task 0114). HasCode reports whether the metrics
+	// file carried any code-output signal; when false the numbers are all
+	// zero and the export renders an em-dash rather than "0".
+	Commits      int
+	FilesChanged int
+	LinesAdded   int
+	LinesRemoved int
+	NetLines     int
+	Merged       bool
+	MergeKind    string // "silent" | "auto_pr" | ""
+	HasCode      bool
 }
 
 // AgentBreakdown row — one per backend agent that touched tasks in the window.
@@ -57,6 +70,12 @@ type AgentBreakdown struct {
 	Failed         int
 	AvgDurationSec int64
 	Tasks          int
+
+	// v8.0 Inferno — shipped-code totals for this agent across the window,
+	// so reports compare output-per-agent, not only task count.
+	Commits      int
+	LinesAdded   int
+	LinesRemoved int
 }
 
 // DayBucket — one calendar-day worth of activity counts.
@@ -76,6 +95,23 @@ type KPIs struct {
 	AvgDurationSec int64
 }
 
+// CodeOutput — the shared "what shipped" totals for ScopeProject +
+// ScopeGlobal reports (v8.0 Inferno, task 0118). Rolled up from the
+// per-task `<n>.metrics.yaml` code fields over completed-in-window tasks.
+// MetricsMissingCode tallies completed tasks whose metrics carried no
+// code signal so the report can honestly caveat "based on N of M tasks"
+// (mirror of KPIs/TasksMissingCost).
+type CodeOutput struct {
+	TotalCommits       int
+	TotalFilesChanged  int
+	TotalLinesAdded    int
+	TotalLinesRemoved  int
+	NetLines           int
+	TasksMerged        int
+	TasksViaPR         int
+	MetricsMissingCode int
+}
+
 // ProjectData covers one project across a window. Used for ScopeProject and
 // embedded inside GlobalData.TopProjects.
 type ProjectData struct {
@@ -85,6 +121,7 @@ type ProjectData struct {
 	WindowEnd   time.Time
 
 	KPIs   KPIs
+	Code   CodeOutput
 	Daily  []DayBucket
 	Agents []AgentBreakdown
 }
@@ -95,6 +132,7 @@ type GlobalData struct {
 	WindowEnd   time.Time
 
 	KPIs         KPIs
+	Code         CodeOutput
 	Daily        []DayBucket
 	TopProjects  []ProjectSummary
 	Agents       []AgentBreakdown
@@ -107,4 +145,12 @@ type ProjectSummary struct {
 	ProjectName string
 	Done        int
 	Failed      int
+
+	// v8.0 Inferno — per-project shipped-code totals over the window so the
+	// fleet report can rank/compare projects by churn, not only task count.
+	Commits      int
+	LinesAdded   int
+	LinesRemoved int
+	NetLines     int
+	Merges       int
 }

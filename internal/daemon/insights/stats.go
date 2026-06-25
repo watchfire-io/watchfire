@@ -30,23 +30,42 @@ type windowStats struct {
 	agentDone     map[string]int
 	agentFailed   map[string]int
 	agentDuration map[string][]int64
+
+	// v8.0 Inferno — code-output rollup over completed-in-window tasks.
+	totalCommits       int
+	totalFilesChanged  int
+	totalLinesAdded    int
+	totalLinesRemoved  int
+	tasksMerged        int
+	tasksViaPR         int
+	metricsMissingCode int
+
+	agentCommits      map[string]int
+	agentLinesAdded   map[string]int
+	agentLinesRemoved map[string]int
 }
 
 func newWindowStats(start, end time.Time) *windowStats {
 	return &windowStats{
-		start:         start,
-		end:           end,
-		dayDone:       map[string]int{},
-		dayFailed:     map[string]int{},
-		dayCreated:    map[string]int{},
-		agentTasks:    map[string]int{},
-		agentDone:     map[string]int{},
-		agentFailed:   map[string]int{},
-		agentDuration: map[string][]int64{},
+		start:             start,
+		end:               end,
+		dayDone:           map[string]int{},
+		dayFailed:         map[string]int{},
+		dayCreated:        map[string]int{},
+		agentTasks:        map[string]int{},
+		agentDone:         map[string]int{},
+		agentFailed:       map[string]int{},
+		agentDuration:     map[string][]int64{},
+		agentCommits:      map[string]int{},
+		agentLinesAdded:   map[string]int{},
+		agentLinesRemoved: map[string]int{},
 	}
 }
 
-func (w *windowStats) add(t *models.Task) {
+// add accumulates one task into the window counters. m is the task's
+// `<n>.metrics.yaml` record (or nil when absent / pre-v8.0); it feeds the
+// code-output rollup and is tolerated as all-zero when missing.
+func (w *windowStats) add(t *models.Task, m *models.TaskMetrics) {
 	// Created — counted only inside the window.
 	if !t.CreatedAt.IsZero() && inWindow(t.CreatedAt, w.start, w.end) {
 		w.totalCreated++
@@ -82,6 +101,26 @@ func (w *windowStats) add(t *models.Task) {
 				w.agentDuration[agent] = append(w.agentDuration[agent], d)
 			}
 		}
+
+		// Code output — tolerant of missing metrics (cf is all-zero,
+		// hasCode=false → counted as missing, contributes zero).
+		cf := codeFieldsFrom(m)
+		if !cf.hasCode {
+			w.metricsMissingCode++
+		}
+		w.totalCommits += cf.commits
+		w.totalFilesChanged += cf.filesChanged
+		w.totalLinesAdded += cf.linesAdded
+		w.totalLinesRemoved += cf.linesRemoved
+		if cf.merged {
+			w.tasksMerged++
+		}
+		if cf.viaPR {
+			w.tasksViaPR++
+		}
+		w.agentCommits[agent] += cf.commits
+		w.agentLinesAdded[agent] += cf.linesAdded
+		w.agentLinesRemoved[agent] += cf.linesRemoved
 	}
 }
 
@@ -92,6 +131,20 @@ func (w *windowStats) kpis() KPIs {
 		TotalCreated:   w.totalCreated,
 		TotalInFlight:  w.totalInFlight,
 		AvgDurationSec: averageInt64(w.durationsSec),
+	}
+}
+
+// codeOutput returns the rolled-up shipped-code totals for the window.
+func (w *windowStats) codeOutput() CodeOutput {
+	return CodeOutput{
+		TotalCommits:       w.totalCommits,
+		TotalFilesChanged:  w.totalFilesChanged,
+		TotalLinesAdded:    w.totalLinesAdded,
+		TotalLinesRemoved:  w.totalLinesRemoved,
+		NetLines:           w.totalLinesAdded - w.totalLinesRemoved,
+		TasksMerged:        w.tasksMerged,
+		TasksViaPR:         w.tasksViaPR,
+		MetricsMissingCode: w.metricsMissingCode,
 	}
 }
 
@@ -124,6 +177,9 @@ func (w *windowStats) agents() []AgentBreakdown {
 			Done:           w.agentDone[name],
 			Failed:         w.agentFailed[name],
 			AvgDurationSec: averageInt64(w.agentDuration[name]),
+			Commits:        w.agentCommits[name],
+			LinesAdded:     w.agentLinesAdded[name],
+			LinesRemoved:   w.agentLinesRemoved[name],
 		})
 	}
 	sort.Slice(out, func(i, j int) bool {

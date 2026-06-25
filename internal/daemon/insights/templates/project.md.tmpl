@@ -11,6 +11,15 @@ _Window: {{windowLabel .WindowStart .WindowEnd}}_
 - **{{.KPIs.TotalInFlight}}** task{{plural .KPIs.TotalInFlight}} currently in flight
 - Average completion time: **{{durationHuman .KPIs.AvgDurationSec}}**
 
+## Code output
+
+- **{{.Code.TotalCommits}}** commit{{plural .Code.TotalCommits}} across **{{.Code.TotalFilesChanged}}** file change{{plural .Code.TotalFilesChanged}}
+- **+{{.Code.TotalLinesAdded}} / −{{.Code.TotalLinesRemoved}}** lines (net {{netLabel .Code.NetLines}})
+- **{{.Code.TasksMerged}}** task{{plural .Code.TasksMerged}} merged · **{{.Code.TasksViaPR}}** via PR
+{{- if .Code.MetricsMissingCode}}
+- _{{.Code.MetricsMissingCode}} completed task{{plural .Code.MetricsMissingCode}} without code metrics (excluded from the totals above)._
+{{- end}}
+
 ## Daily breakdown
 
 | Date | Done | Failed | Created |
@@ -24,11 +33,11 @@ _Window: {{windowLabel .WindowStart .WindowEnd}}_
 
 ## Agent breakdown
 
-| Agent | Tasks | Done | Failed | Avg duration |
-| --- | --- | --- | --- | --- |
+| Agent | Tasks | Done | Failed | Avg duration | Commits | +Lines | −Lines |
+| --- | --- | --- | --- | --- | --- | --- | --- |
 {{- range .Agents}}
-| `{{.Agent}}` | {{.Tasks}} | {{.Done}} | {{.Failed}} | {{durationHuman .AvgDurationSec}} |
+| `{{.Agent}}` | {{.Tasks}} | {{.Done}} | {{.Failed}} | {{durationHuman .AvgDurationSec}} | {{.Commits}} | {{.LinesAdded}} | {{.LinesRemoved}} |
 {{- end}}
 {{- if not .Agents}}
-| _no agent activity in window_ | | | | |
+| _no agent activity in window_ | | | | | | | |
 {{- end}}
