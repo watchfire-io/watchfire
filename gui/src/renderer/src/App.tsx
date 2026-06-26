@@ -9,6 +9,7 @@ import { useFocusStore } from './stores/focus-store'
 import { useNotificationsStore } from './stores/notifications-store'
 import { useDigestStore } from './stores/digest-store'
 import { isHomeWindow } from './lib/window-scope'
+import { MiniMonitor } from './views/MiniMonitor/MiniMonitor'
 import { Sidebar } from './components/Sidebar'
 import { ProjectWindowHeader } from './components/ProjectWindowHeader'
 import { Dashboard } from './views/Dashboard/Dashboard'
@@ -30,6 +31,9 @@ export default function App() {
   // ProjectView full-bleed with no multi-project sidebar; the home window keeps
   // the dashboard + sidebar. v8 "Inferno" Feature 1.
   const isProjectWindow = useAppStore((s) => s.windowScope.kind === 'project')
+  // The always-on-top mini-monitor (v8 Inferno — stretch) renders a single
+  // compact fleet view, bypassing the dashboard/project chrome entirely.
+  const isMonitor = useAppStore((s) => s.windowScope.kind === 'monitor')
   const connected = useAppStore((s) => s.connected)
   const setView = useAppStore((s) => s.setView)
   const startFocus = useFocusStore((s) => s.start)
@@ -132,6 +136,20 @@ export default function App() {
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleKeyDown])
+
+  // The mini-monitor is its own minimal surface — no sidebar, header, or
+  // reconnect overlays. It shows an empty fleet until the daemon connects and
+  // its own poll fills in. Rendered after the hooks above so connection +
+  // shutdown handling stay wired.
+  if (isMonitor) {
+    return daemonShutdown ? (
+      <div className="flex h-screen items-center justify-center bg-[var(--wf-bg-primary)] text-[var(--wf-text-muted)] text-xs px-4 text-center">
+        Daemon shut down.
+      </div>
+    ) : (
+      <MiniMonitor />
+    )
+  }
 
   return (
     <div className="flex h-screen bg-[var(--wf-bg-primary)] text-[var(--wf-text-primary)]">

@@ -63,6 +63,9 @@ interface WatchfireAPI {
   openHomeWindow(): Promise<void>
   openProjectWindow(projectId: string): Promise<void>
 
+  // v8 Inferno (stretch) — open/focus the always-on-top mini-monitor
+  openMonitorWindow(): Promise<void>
+
   // v8 Inferno — mission control: open/focus a project window and route it to a
   // surface (needs-attention click-through), plus the renderer-side receiver.
   focusProjectWindow(projectId: string, target?: string, taskNumber?: number): Promise<void>

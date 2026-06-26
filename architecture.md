@@ -907,6 +907,14 @@ Split layout with tabs:
 
 - **Integrated terminal** — Always-visible footer bar at the bottom of the project view. Clicking it or pressing Cmd+` spawns a shell session via node-pty (runs in Electron main process, not the daemon). Supports up to 5 tabbed sessions per project with resizable panel height. Sessions persist across project switches and panel collapse, and remain accessible when the user returns to the project. They are cleaned up only when the user closes the tab (X button) or quits the app.
 
+#### Mini Monitor (v8 Inferno — stretch)
+
+An always-on-top, floating mini-window that gives a glanceable, ambient view of the whole fleet without keeping the full dashboard in front. Opened from the **Window → Mini Monitor** menu item (Cmd/Ctrl+Shift+M) or the sidebar's "Mini Monitor" button, and persisted/restored by geometry like the other windows.
+
+- **Window**: created by `createMonitorWindow()` in `gui/src/main/windows.ts` as a separate registry entry of `kind: 'monitor'` (singleton). It bypasses the 900×600 `baseWindowOptions` floor (default 320×460, min 240×200), sets `alwaysOnTop: true`, and `setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })` so it floats above other apps and over fullscreen spaces. It is excluded from the Cmd+Shift+]/[ window-cycle. Bounds are saved under the `monitor` key in `window-state.json`.
+- **Scope**: the renderer boots with `?monitor=1`; `lib/window-scope.ts` resolves this to `{ kind: 'monitor' }` (`isMonitorWindow()`). `App.tsx` renders only `views/MiniMonitor/MiniMonitor.tsx` for this scope — no sidebar, header, or reconnect overlays. Like project windows (and unlike the home window), it does **not** subscribe to the daemon notification/focus streams, so it never adds a duplicate OS toast (D1).
+- **Content**: one compact row per project (activity-sorted via `sortProjectsByActivity`): a status dot that pulses when the agent is working, the name, and a one-line status — what the agent is doing, a red needs-attention flag (reusing `useNeedsAttention`), or the ready/idle task counts. Clicking a row opens (or focuses) that project's own window. It owns its own light poll of the project list + agent statuses while open.
+
 #### Global Settings
 
 | Section | Content |

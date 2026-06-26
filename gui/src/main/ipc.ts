@@ -8,6 +8,7 @@ import { installCLI, needsInstall } from './cli-installer'
 import * as ptyManager from './pty-manager'
 import {
   createHomeWindow,
+  createMonitorWindow,
   createProjectWindow,
   getHomeWindow,
   getMostRecentlyFocusedWindow,
@@ -201,6 +202,12 @@ export function setupIpc(): void {
   // repeat call just focuses the existing one (handled inside the registry).
   ipcMain.handle('open-project-window', (_event, projectId: string) => {
     if (typeof projectId === 'string' && projectId) createProjectWindow(projectId)
+  })
+
+  // v8 Inferno (stretch) — open (or focus) the always-on-top mini-monitor.
+  // Singleton, handled inside the registry.
+  ipcMain.handle('open-monitor-window', () => {
+    createMonitorWindow()
   })
 
   // Open (or focus) a project's window and route its renderer to a surface.

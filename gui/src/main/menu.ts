@@ -1,5 +1,5 @@
 import { app, Menu, type MenuItemConstructorOptions } from 'electron'
-import { createHomeWindow, focusAdjacentWindow } from './windows'
+import { createHomeWindow, createMonitorWindow, focusAdjacentWindow } from './windows'
 
 // Build and install the application menu (v8 Inferno — Feature 1).
 //
@@ -8,6 +8,7 @@ import { createHomeWindow, focusAdjacentWindow } from './windows'
 // per-project windows we want discoverable, OS-native shortcuts:
 //   - Cmd/Ctrl+N        → open (or focus) the home / dashboard window, the
 //                         surface where you pick which project to open.
+//   - Cmd/Ctrl+Shift+M  → open (or focus) the always-on-top mini-monitor.
 //   - Cmd/Ctrl+Shift+]  → focus the next window in the registry.
 //   - Cmd/Ctrl+Shift+[  → focus the previous window.
 // The rest of the template is the standard Electron menu so copy/paste,
@@ -80,6 +81,12 @@ export function buildAppMenu(): void {
       submenu: [
         { role: 'minimize' },
         { role: 'zoom' },
+        { type: 'separator' },
+        {
+          label: 'Mini Monitor',
+          accelerator: 'CmdOrCtrl+Shift+M',
+          click: () => createMonitorWindow()
+        },
         { type: 'separator' },
         {
           label: 'Next Window',

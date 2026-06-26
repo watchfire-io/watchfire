@@ -18,7 +18,7 @@ import { destroyForWindow as destroyPtysForWindow } from './pty-manager'
 // plus a "home" (dashboard / mission-control) window. Keyed by `win.id`.
 export interface WfWindow {
   win: BrowserWindow
-  kind: 'home' | 'project'
+  kind: 'home' | 'project' | 'monitor'
   projectId?: string
 }
 
@@ -82,7 +82,11 @@ function baseWindowOptions(title: string): Electron.BrowserWindowConstructorOpti
 // Register a freshly created window in the registry and wire the lifecycle
 // behaviour every window shares (show-on-ready, external-link handling,
 // dev tools, and self-removal from the registry on close).
-function registerWindow(win: BrowserWindow, kind: 'home' | 'project', projectId?: string): void {
+function registerWindow(
+  win: BrowserWindow,
+  kind: 'home' | 'project' | 'monitor',
+  projectId?: string
+): void {
   windows.set(win.id, { win, kind, projectId })
 
   // Track the most-recently-focused window for focus/notification routing.
@@ -154,6 +158,61 @@ export function createHomeWindow(): BrowserWindow {
   registerWindow(win, 'home')
   loadRenderer(win, '')
   return win
+}
+
+// The always-on-top mini-monitor (v8 Inferno — stretch). A small, floating,
+// glanceable fleet status: one compact row per project (status dot, name, what
+// the agent is doing / whether the project needs attention). It deliberately
+// sidesteps `baseWindowOptions` — it must be much smaller than the 900×600
+// floor and it floats above other apps via `alwaysOnTop`. Singleton: a second
+// call focuses the existing monitor. The renderer boots scoped via `?monitor=1`.
+const MONITOR_DEFAULT_BOUNDS = { x: -1, y: -1, width: 320, height: 460 }
+
+export function createMonitorWindow(): BrowserWindow {
+  const existing = getMonitorWindow()
+  if (existing) return focusWindow(existing)
+
+  const savedState = loadWindowState('monitor', MONITOR_DEFAULT_BOUNDS)
+  const usePosition = savedState.x !== -1 && savedState.y !== -1
+
+  const win = new BrowserWindow({
+    width: savedState.width,
+    height: savedState.height,
+    ...(usePosition ? { x: savedState.x, y: savedState.y } : {}),
+    minWidth: 240,
+    minHeight: 200,
+    show: false,
+    title: 'Watchfire Monitor',
+    alwaysOnTop: true,
+    // Keep it visible across spaces and over fullscreen apps so it stays a true
+    // ambient monitor rather than getting buried behind a fullscreen editor.
+    fullscreenable: false,
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 12, y: 12 } }
+      : { frame: true }),
+    backgroundColor: '#16181d',
+    webPreferences: {
+      preload: join(__dirname, '../preload/index.js'),
+      sandbox: false,
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  })
+
+  // Float above other apps' windows, not just Watchfire's own.
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+
+  trackWindowState(win, 'monitor')
+  registerWindow(win, 'monitor')
+  loadRenderer(win, '?monitor=1')
+  return win
+}
+
+export function getMonitorWindow(): BrowserWindow | null {
+  for (const w of windows.values()) {
+    if (w.kind === 'monitor') return w.win
+  }
+  return null
 }
 
 // Open (or focus) the window dedicated to a single project. The renderer boots
@@ -262,9 +321,12 @@ export function getMostRecentlyFocusedWindow(): BrowserWindow | null {
 // Cycle focus across the open windows (v8 Inferno — Cmd+Shift+] / Cmd+Shift+[).
 // `direction` is +1 for next, -1 for previous. Windows are ordered by `win.id`
 // (creation order) for a stable, predictable cycle, and the traversal wraps
-// around. No-op with fewer than two live windows.
+// around. No-op with fewer than two live windows. The always-on-top mini-monitor
+// is excluded — it's an ambient widget that already floats above everything, so
+// cycling into it would just steal focus from the working windows.
 export function focusAdjacentWindow(direction: 1 | -1): void {
   const wins = [...windows.values()]
+    .filter((w) => w.kind !== 'monitor')
     .map((w) => w.win)
     .filter((w) => !w.isDestroyed())
     .sort((a, b) => a.id - b.id)
