@@ -10,18 +10,21 @@ interface WindowBounds {
   height: number
 }
 
-// Keyed window state. `home` holds the dashboard window bounds; `projects`
-// holds per-project window bounds keyed by projectId; `openProjects` lists the
-// project ids whose windows were open at last quit, so they can be restored on
-// relaunch (v8 Inferno D3).
+// Keyed window state. `home` holds the dashboard window bounds; `monitor`
+// holds the always-on-top mini-monitor bounds (v8 Inferno — stretch);
+// `projects` holds per-project window bounds keyed by projectId; `openProjects`
+// lists the project ids whose windows were open at last quit, so they can be
+// restored on relaunch (v8 Inferno D3).
 interface WindowStateFile {
   home?: WindowBounds
+  monitor?: WindowBounds
   projects?: Record<string, WindowBounds>
   openProjects?: string[]
 }
 
-// A window-state key is either the singleton home window or a projectId.
-export type WindowStateKey = 'home' | string
+// A window-state key is the singleton home window, the singleton mini-monitor,
+// or a projectId.
+export type WindowStateKey = 'home' | 'monitor' | string
 
 const STATE_FILE = join(homedir(), '.watchfire', 'window-state.json')
 
@@ -76,17 +79,21 @@ function isOnVisibleDisplay(bounds: WindowBounds): boolean {
 }
 
 function boundsForKey(state: WindowStateFile, key: WindowStateKey): WindowBounds | undefined {
-  return key === 'home' ? state.home : state.projects?.[key]
+  if (key === 'home') return state.home
+  if (key === 'monitor') return state.monitor
+  return state.projects?.[key]
 }
 
-// Load the saved bounds for a given window key ('home' or a projectId),
-// validating that the position is on a visible display. Falls back to defaults.
-export function loadWindowState(key: WindowStateKey): WindowBounds {
+// Load the saved bounds for a given window key ('home', 'monitor', or a
+// projectId), validating that the position is on a visible display. Falls back
+// to `fallback` (default geometry), which the mini-monitor overrides with a
+// smaller default size than the standard windows.
+export function loadWindowState(key: WindowStateKey, fallback: WindowBounds = DEFAULTS): WindowBounds {
   const bounds = boundsForKey(readState(), key)
   if (bounds && bounds.width > 0 && bounds.height > 0 && isOnVisibleDisplay(bounds)) {
     return bounds
   }
-  return { ...DEFAULTS }
+  return { ...fallback }
 }
 
 // Persist the bounds for a given window key, preserving the rest of the state.
@@ -94,6 +101,8 @@ export function saveWindowState(key: WindowStateKey, bounds: WindowBounds): void
   const state = readState()
   if (key === 'home') {
     state.home = bounds
+  } else if (key === 'monitor') {
+    state.monitor = bounds
   } else {
     state.projects = { ...state.projects, [key]: bounds }
   }

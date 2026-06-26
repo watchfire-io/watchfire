@@ -116,6 +116,10 @@ const api = {
   openProjectWindow: (projectId: string): Promise<void> =>
     ipcRenderer.invoke('open-project-window', projectId),
 
+  // v8 Inferno (stretch) — open (or focus) the always-on-top mini-monitor: a
+  // small floating window with a glanceable per-project fleet status.
+  openMonitorWindow: (): Promise<void> => ipcRenderer.invoke('open-monitor-window'),
+
   // v8 Inferno — mission control. Open (or focus) a project's window AND route
   // its renderer to a surface (Tasks tab / a task / just-focus). Used by the
   // home window's needs-attention panel click-through. The main process defers

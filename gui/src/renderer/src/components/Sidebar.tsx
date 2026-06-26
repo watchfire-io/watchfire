@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
-import { LayoutDashboard, Plus, Settings, PanelLeftClose, PanelLeft, Wifi, WifiOff, Trash2, Bell, ExternalLink } from 'lucide-react'
+import { LayoutDashboard, Plus, Settings, PanelLeftClose, PanelLeft, Wifi, WifiOff, Trash2, Bell, ExternalLink, PictureInPicture2 } from 'lucide-react'
 import { useDigestStore } from '../stores/digest-store'
 import { useNotificationsStore } from '../stores/notifications-store'
 import { DndContext, closestCenter, type DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
@@ -161,6 +161,12 @@ export function Sidebar() {
       {/* Footer */}
       <div className="flex flex-col gap-0.5 px-2 py-2 border-t border-[var(--wf-border)]">
         <NotificationCenterButton collapsed={collapsed} />
+        <SidebarItem
+          icon={<PictureInPicture2 size={16} />}
+          label="Mini Monitor"
+          collapsed={collapsed}
+          onClick={() => window.watchfire.openMonitorWindow()}
+        />
         <SidebarItem
           icon={<Settings size={16} />}
           label="Settings"
