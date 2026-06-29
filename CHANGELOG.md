@@ -2,6 +2,46 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Malformed task files no longer vanish silently.** A batch of v8 task files
+  (0101–0121) was invisible in the GUI/TUI and never scheduled because an
+  unquoted `title:` containing a second `: ` (e.g. `title: v8 Inferno — Main:
+  window registry`) is parsed by `gopkg.in/yaml.v3` as a nested mapping and
+  rejected. The v7.2.0 resilience fix in `config.LoadAllTasks` caught the
+  per-file parse error and skipped it so the chain didn't halt — but the task
+  disappeared with only a daemon log line. The loader now collects skipped
+  files (`config.LoadAllTasksWithErrors`) and surfaces them: `watchfire task
+  list` prints a `⚠ N task file(s) failed to load` warning with each file's
+  name + parse error, and the TUI status bar shows a persistent
+  `⚠ N task file(s) failed to load` indicator (fed by the new
+  `TaskService.ListMalformedTasks` RPC).
+
+### Added
+
+- **Validation-on-write for task files (Option A).** `config.ValidateTask`
+  round-trips a task through `yaml.Marshal` → `yaml.Unmarshal` and rejects
+  anything that doesn't survive byte-for-byte; `config.SaveTask` calls it
+  before every write, so any daemon-side task write (TUI/GUI/CLI/RPC) is
+  guaranteed to be loadable. `yaml.Marshal` already quotes scalars correctly,
+  so this formalizes + tests that guarantee.
+- **Malformed-task visibility (Option C).** `config.LoadAllTasksWithErrors` /
+  `config.LoadMalformedTasks`, the `TaskService.ListMalformedTasks` gRPC RPC
+  (`MalformedTask` / `MalformedTaskList` messages), a CLI warning in
+  `watchfire task list`, and a TUI status-bar indicator.
+- **Safer agent task authoring (Option B).** The agent context prompt
+  (`watchfire-prompt.txt`) now steers task creation through `watchfire task
+  add` (the safe, auto-quoting path) and, for direct YAML writes, mandates
+  single-quoting any `title:` containing `: ` — matching the guidance already
+  present in the generate/wildfire-generate prompts.
+
+  Note on auto-repair: the task suggested an optional best-effort auto-repair of
+  malformed files on the watcher event. Because yaml.v3 fails the whole parse
+  for an unquoted-colon title (the struct is never produced), a reliable repair
+  would require fragile line-level heuristics; we chose visibility (Option C)
+  over auto-repair, which is the safer of the two documented alternatives. No
+  `version.json` bump.
+
 ## [8.0.0] Inferno
 
 Inferno is the parallel-workspaces tentpole — the first feature-forward major since v4 "Beacon", aimed squarely at supervising many projects at once. The Electron GUI goes **multi-window**: a main-process window registry replaces the `mainWindow` singleton, opening one independent `BrowserWindow` per project (single-instance lock, per-window state + session restore, `Cmd+N` / window cycling, IPC fan-out, and — critically — per-window PTY routing so integrated-terminal bytes and OS notifications never cross windows). Each project window flips to a **chat-primary layout** (agent terminal as the wide left pane; Tasks/Definition/Insights/Secrets/Trash/Settings as a right reference region). The plain `<textarea>` markdown surfaces become a real **CodeMirror rich editor** (formatting toolbar + source ⇄ split ⇄ preview, closing issue #22), and **wildfire mode lands in the GUI** with a confirm-gated start and a live Execute → Refine → Generate phase indicator. The promoted Dashboard becomes **mission control** — a live home window with per-project wildfire phase, cross-project needs-attention aggregation with click-through, tray-click routing to the right window, and a stretch always-on-top mini-monitor. Finally, **code-output analytics** measure what the agents actually shipped: per-task `<n>.metrics.yaml` captures commits/files/lines/merge-kind, rolled up into project + global Insights, the GUI's KPI cards and churn-by-day chart, mission-control "shipped" lines, and the CSV/Markdown exports + weekly digest. `ARCHITECTURE.md` was updated for the multi-window model; blast radius stays contained to `gui/` and the daemon's metrics/insights plumbing.

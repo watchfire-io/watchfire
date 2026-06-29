@@ -21,6 +21,7 @@ var (
 	styleHint    = lipgloss.NewStyle().Foreground(colorDim)
 	styleCommand = lipgloss.NewStyle().Bold(true).Foreground(colorWhite)
 	styleUpdate  = lipgloss.NewStyle().Bold(true).Foreground(colorOrange)
+	styleWarn    = lipgloss.NewStyle().Bold(true).Foreground(colorOrange)
 )
 
 // Task status badge styles.

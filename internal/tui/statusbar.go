@@ -110,6 +110,13 @@ func renderStatusBar(m *Model, width int) string {
 
 	// Update notice + connection status
 	right := ""
+	// Malformed task files sitting on disk — surface a persistent warning so a
+	// broken task file is visible instead of silently vanishing from the list.
+	if n := len(m.malformedTasks); n > 0 {
+		right += lipgloss.NewStyle().Foreground(colorRed).Bold(true).Render(
+			fmt.Sprintf("⚠ %d task file(s) failed to load", n),
+		) + "  "
+	}
 	if m.updateVersion != "" {
 		right += lipgloss.NewStyle().Foreground(colorYellow).Render(
 			fmt.Sprintf("⬆ v%s available", m.updateVersion),

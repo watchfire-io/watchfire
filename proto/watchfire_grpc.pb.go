@@ -579,6 +579,7 @@ var ProjectService_ServiceDesc = grpc.ServiceDesc{
 
 const (
 	TaskService_ListTasks_FullMethodName           = "/watchfire.TaskService/ListTasks"
+	TaskService_ListMalformedTasks_FullMethodName  = "/watchfire.TaskService/ListMalformedTasks"
 	TaskService_GetTask_FullMethodName             = "/watchfire.TaskService/GetTask"
 	TaskService_CreateTask_FullMethodName          = "/watchfire.TaskService/CreateTask"
 	TaskService_UpdateTask_FullMethodName          = "/watchfire.TaskService/UpdateTask"
@@ -599,6 +600,7 @@ const (
 // TaskService handles task CRUD and bulk operations
 type TaskServiceClient interface {
 	ListTasks(ctx context.Context, in *ListTasksRequest, opts ...grpc.CallOption) (*TaskList, error)
+	ListMalformedTasks(ctx context.Context, in *ListMalformedTasksRequest, opts ...grpc.CallOption) (*MalformedTaskList, error)
 	GetTask(ctx context.Context, in *TaskId, opts ...grpc.CallOption) (*Task, error)
 	CreateTask(ctx context.Context, in *CreateTaskRequest, opts ...grpc.CallOption) (*Task, error)
 	UpdateTask(ctx context.Context, in *UpdateTaskRequest, opts ...grpc.CallOption) (*Task, error)
@@ -624,6 +626,16 @@ func (c *taskServiceClient) ListTasks(ctx context.Context, in *ListTasksRequest,
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(TaskList)
 	err := c.cc.Invoke(ctx, TaskService_ListTasks_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *taskServiceClient) ListMalformedTasks(ctx context.Context, in *ListMalformedTasksRequest, opts ...grpc.CallOption) (*MalformedTaskList, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MalformedTaskList)
+	err := c.cc.Invoke(ctx, TaskService_ListMalformedTasks_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
 	}
@@ -747,6 +759,7 @@ func (c *taskServiceClient) ReorderTasks(ctx context.Context, in *ReorderTasksRe
 // TaskService handles task CRUD and bulk operations
 type TaskServiceServer interface {
 	ListTasks(context.Context, *ListTasksRequest) (*TaskList, error)
+	ListMalformedTasks(context.Context, *ListMalformedTasksRequest) (*MalformedTaskList, error)
 	GetTask(context.Context, *TaskId) (*Task, error)
 	CreateTask(context.Context, *CreateTaskRequest) (*Task, error)
 	UpdateTask(context.Context, *UpdateTaskRequest) (*Task, error)
@@ -770,6 +783,9 @@ type UnimplementedTaskServiceServer struct{}
 
 func (UnimplementedTaskServiceServer) ListTasks(context.Context, *ListTasksRequest) (*TaskList, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListTasks not implemented")
+}
+func (UnimplementedTaskServiceServer) ListMalformedTasks(context.Context, *ListMalformedTasksRequest) (*MalformedTaskList, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListMalformedTasks not implemented")
 }
 func (UnimplementedTaskServiceServer) GetTask(context.Context, *TaskId) (*Task, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetTask not implemented")
@@ -839,6 +855,24 @@ func _TaskService_ListTasks_Handler(srv interface{}, ctx context.Context, dec fu
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
 		return srv.(TaskServiceServer).ListTasks(ctx, req.(*ListTasksRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _TaskService_ListMalformedTasks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMalformedTasksRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TaskServiceServer).ListMalformedTasks(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TaskService_ListMalformedTasks_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TaskServiceServer).ListMalformedTasks(ctx, req.(*ListMalformedTasksRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1051,6 +1085,10 @@ var TaskService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListTasks",
 			Handler:    _TaskService_ListTasks_Handler,
+		},
+		{
+			MethodName: "ListMalformedTasks",
+			Handler:    _TaskService_ListMalformedTasks_Handler,
 		},
 		{
 			MethodName: "GetTask",

@@ -159,6 +159,25 @@ message TaskList {
   repeated Task tasks = 1;
 }
 
+// MalformedTask describes a task YAML file that exists on disk but failed to
+// load (e.g. an agent hand-authored a `title:` with an unquoted `: `). These
+// used to vanish silently; ListMalformedTasks surfaces them so the GUI/TUI can
+// show a non-silent affordance.
+message MalformedTask {
+  int32 task_number = 1;   // parsed from the filename (0 if unparseable)
+  string file_name = 2;    // base name, e.g. "0107.yaml"
+  string error = 3;        // the parse/load error message
+}
+
+message MalformedTaskList {
+  repeated MalformedTask tasks = 1;
+}
+
+message ListMalformedTasksRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+}
+
 message ListTasksRequest {
   RequestMeta meta = 1;
   string project_id = 2;
@@ -502,6 +521,7 @@ message SetProjectIntegrationBindingsRequest {
 // TaskService handles task CRUD and bulk operations
 service TaskService {
   rpc ListTasks(ListTasksRequest) returns (TaskList);
+  rpc ListMalformedTasks(ListMalformedTasksRequest) returns (MalformedTaskList);
   rpc GetTask(TaskId) returns (Task);
   rpc CreateTask(CreateTaskRequest) returns (Task);
   rpc UpdateTask(UpdateTaskRequest) returns (Task);

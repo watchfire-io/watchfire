@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"os"
@@ -8,8 +9,58 @@ import (
 	"strconv"
 	"strings"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/watchfire-io/watchfire/internal/models"
 )
+
+// ValidateTask checks that a task round-trips cleanly through the YAML
+// marshal → unmarshal path the loader uses. A task whose scalars contain
+// YAML-significant characters (a literal `: ` in the title, a leading `-`,
+// embedded quotes, `#`, etc.) must survive serialization and re-loading
+// byte-for-byte; if it doesn't, the file would be silently dropped by
+// LoadAllTasks. SaveTask calls this before writing, so every daemon-side
+// write is guaranteed to be loadable. (Agent-authored files written
+// directly to disk bypass this — those are surfaced via LoadAllTasksWithErrors.)
+func ValidateTask(task *models.Task) error {
+	if task == nil {
+		return fmt.Errorf("validate task: nil task")
+	}
+
+	data, err := yaml.Marshal(task)
+	if err != nil {
+		return fmt.Errorf("validate task #%04d: marshal: %w", task.TaskNumber, err)
+	}
+
+	var reloaded models.Task
+	if err := yaml.Unmarshal(data, &reloaded); err != nil {
+		return fmt.Errorf("validate task #%04d: does not round-trip through the loader: %w", task.TaskNumber, err)
+	}
+
+	// Re-marshal the reloaded copy and compare bytes. This catches any field
+	// (not just the title) that fails to survive the round trip — the cheapest
+	// robust structural-equality check for an arbitrary struct.
+	reData, err := yaml.Marshal(&reloaded)
+	if err != nil {
+		return fmt.Errorf("validate task #%04d: re-marshal: %w", task.TaskNumber, err)
+	}
+	if !bytes.Equal(data, reData) {
+		return fmt.Errorf("validate task #%04d: value changed across a save/load round trip (a scalar like the title may contain unescaped YAML-significant characters)", task.TaskNumber)
+	}
+	return nil
+}
+
+// MalformedTaskFile describes a task YAML file that exists on disk but failed
+// to load (e.g. an agent hand-authored a `title:` with an unquoted `: ` that
+// yaml.v3 parses as a nested mapping). These used to vanish with only a
+// daemon log line; LoadAllTasksWithErrors returns them so the CLI/TUI/GUI can
+// surface a non-silent "N task file(s) failed to load" affordance.
+type MalformedTaskFile struct {
+	TaskNumber int    // parsed from the filename (e.g. 0107.yaml -> 107)
+	FileName   string // base name, e.g. "0107.yaml"
+	Path       string // absolute path on disk
+	Error      string // the parse/load error message
+}
 
 // LoadTask loads a task from its YAML file.
 func LoadTask(projectPath string, taskNumber int) (*models.Task, error) {
@@ -26,8 +77,12 @@ func LoadTask(projectPath string, taskNumber int) (*models.Task, error) {
 	return &task, nil
 }
 
-// SaveTask saves a task to its YAML file.
+// SaveTask saves a task to its YAML file. The task is validated first so a
+// daemon-side write can never produce a file the loader would later drop.
 func SaveTask(projectPath string, task *models.Task) error {
+	if err := ValidateTask(task); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(ProjectTasksDir(projectPath), 0o755); err != nil {
 		return err
 	}
@@ -43,20 +98,41 @@ func DeleteTaskFile(projectPath string, taskNumber int) error {
 	return os.Remove(path)
 }
 
-// LoadAllTasks loads all tasks from a project's tasks directory.
+// LoadAllTasks loads all tasks from a project's tasks directory. Malformed
+// files are skipped (and logged); callers that need to surface them to the
+// user should use LoadAllTasksWithErrors instead.
 func LoadAllTasks(projectPath string) ([]*models.Task, error) {
+	tasks, _, err := LoadAllTasksWithErrors(projectPath)
+	return tasks, err
+}
+
+// LoadAllTasksWithErrors loads all tasks from a project's tasks directory,
+// returning both the tasks that loaded cleanly and a list of files that
+// failed to parse.
+//
+// A single malformed task file (e.g. an agent emitting `started_at: ""` that
+// the strict time decoder rejects, or a `title:` with an unquoted `: ` that
+// yaml.v3 parses as a nested mapping) used to abort the whole list and
+// silently halt wildfire chaining — the chain saw a load error and bailed
+// without surfacing anything to the user. Per-file errors are now logged and
+// skipped so the chain can still pick up the remaining tasks (v7.2.0 fix),
+// AND collected here so the CLI/TUI/GUI can show a non-silent
+// "N task file(s) failed to load" affordance (v8.0 Inferno fix) instead of
+// the file vanishing with only a daemon log line.
+func LoadAllTasksWithErrors(projectPath string) ([]*models.Task, []MalformedTaskFile, error) {
 	tasksDir := ProjectTasksDir(projectPath)
 
 	if !FileExists(tasksDir) {
-		return []*models.Task{}, nil
+		return []*models.Task{}, nil, nil
 	}
 
 	entries, err := os.ReadDir(tasksDir)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var tasks []*models.Task
+	var malformed []MalformedTaskFile
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -67,6 +143,12 @@ func LoadAllTasks(projectPath string) ([]*models.Task, error) {
 			continue
 		}
 
+		// Skip sibling metrics files (`<n>.metrics.yaml`) — they are not
+		// task files and parse into a different struct.
+		if strings.HasSuffix(name, ".metrics.yaml") {
+			continue
+		}
+
 		// Parse task number from filename
 		numStr := strings.TrimSuffix(name, ".yaml")
 		taskNum, err := strconv.Atoi(numStr)
@@ -74,15 +156,15 @@ func LoadAllTasks(projectPath string) ([]*models.Task, error) {
 			continue // Skip invalid filenames
 		}
 
-		// A single malformed task file (e.g. an agent emitting
-		// `started_at: ""` that the strict time decoder rejects) used to
-		// abort the whole list and silently halt wildfire chaining — the
-		// chain saw a load error and bailed without surfacing anything
-		// to the user. Per-file errors are now logged and skipped so the
-		// chain can still pick up the remaining tasks (v7.2.0 fix).
 		task, err := LoadTask(projectPath, taskNum)
 		if err != nil {
 			log.Printf("[task-load] skipping %s in %s: %v", name, tasksDir, err)
+			malformed = append(malformed, MalformedTaskFile{
+				TaskNumber: taskNum,
+				FileName:   name,
+				Path:       TaskFile(projectPath, taskNum),
+				Error:      err.Error(),
+			})
 			continue
 		}
 		if task != nil {
@@ -90,7 +172,15 @@ func LoadAllTasks(projectPath string) ([]*models.Task, error) {
 		}
 	}
 
-	return tasks, nil
+	return tasks, malformed, nil
+}
+
+// LoadMalformedTasks returns only the task files in a project that failed to
+// load. Convenience wrapper over LoadAllTasksWithErrors for callers that just
+// want the malformed set (CLI warning, gRPC ListMalformedTasks).
+func LoadMalformedTasks(projectPath string) ([]MalformedTaskFile, error) {
+	_, malformed, err := LoadAllTasksWithErrors(projectPath)
+	return malformed, err
 }
 
 // LoadActiveTasks loads all non-deleted tasks from a project.

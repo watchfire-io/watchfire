@@ -44,6 +44,32 @@ func (s *taskService) ListTasks(_ context.Context, req *pb.ListTasksRequest) (*p
 	return list, nil
 }
 
+// ListMalformedTasks returns task files that exist on disk but failed to load
+// (e.g. an agent hand-authored a `title:` with an unquoted `: `). These used
+// to be silently dropped with only a daemon log line; surfacing them lets the
+// GUI/TUI show a non-silent "N task file(s) failed to load" affordance.
+func (s *taskService) ListMalformedTasks(_ context.Context, req *pb.ListMalformedTasksRequest) (*pb.MalformedTaskList, error) {
+	projectPath, err := getProjectPath(req.ProjectId)
+	if err != nil {
+		return nil, err
+	}
+
+	malformed, err := s.manager.ListMalformedTasks(projectPath)
+	if err != nil {
+		return nil, err
+	}
+
+	list := &pb.MalformedTaskList{Tasks: make([]*pb.MalformedTask, 0, len(malformed))}
+	for _, mf := range malformed {
+		list.Tasks = append(list.Tasks, &pb.MalformedTask{
+			TaskNumber: int32(mf.TaskNumber),
+			FileName:   mf.FileName,
+			Error:      mf.Error,
+		})
+	}
+	return list, nil
+}
+
 func (s *taskService) GetTask(_ context.Context, req *pb.TaskId) (*pb.Task, error) {
 	projectPath, err := getProjectPath(req.ProjectId)
 	if err != nil {
