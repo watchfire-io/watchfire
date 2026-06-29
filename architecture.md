@@ -10,7 +10,7 @@ Watchfire orchestrates coding agent sessions (starting with Claude Code) based o
 |-----------|--------|------|------|
 | **Daemon** | `watchfired` | Orchestration, PTY management, terminal emulation, git workflows, gRPC server, system tray | Go |
 | **CLI/TUI** | `watchfire` | CLI commands + TUI mode. Project-scoped thin client | Go + Bubbletea |
-| **GUI** | `Watchfire.app` | Multi-project thin client (shows all projects) | Electron |
+| **GUI** | `Watchfire.app` | Multi-window, multi-project thin client (home window + per-project windows) | Electron |
 
 ## Non-Negotiable Tech Choices
 
@@ -257,6 +257,26 @@ The `tray` package calls `notify.Send(title, message)` — the icon is embedded 
 |----------|----------|
 | **Daemon crashes mid-task** | On restart, user must manually restart task. Agent reads worktree to understand state. |
 | **Agent crashes** | Daemon detects PTY exit, stops task |
+
+### Task Metrics & Code-Output Analytics
+
+On every task completion the daemon writes a per-task metrics sidecar next to the task file — `<project>/.watchfire/tasks/<n>.metrics.yaml` (`internal/daemon/metrics/capture.go`, struct `models.TaskMetrics`). Base fields: `task_number`, `project_id`, `agent`, `duration_ms`, `exit_reason` (`completed` | `failed` | `stopped` | `timeout`), `captured_at`, plus per-backend token/cost (`tokens_in`, `tokens_out`, `cost_usd`, all nullable).
+
+**Code-output fields (v8 Inferno).** The task-done merge path (`internal/daemon/agent/taskdone.go`) computes what the agent actually shipped *before* the worktree is cleaned up, and records it onto the same sidecar:
+
+| Field | Source |
+|-------|--------|
+| `commits` | `git rev-list --count <merge-base>..watchfire/<n>` |
+| `files_changed`, `lines_added`, `lines_removed` | the `internal/daemon/diff` package (the same stats used for the Inspect viewer and the auto-PR body) |
+| `net_lines` | `lines_added − lines_removed` |
+| `merged` | `true` when the local silent merge succeeds; `false` for auto-PR (push pending, not merged to default) |
+| `merge_kind` | `silent` or `auto_pr` — the two task-completion paths (see CLAUDE.md task-completion lifecycle) |
+
+Capture is best-effort and backward compatible: metrics files written before v8 have no code fields and read back as zeros.
+
+**Insights rollup.** `internal/daemon/insights` aggregates the sidecars into `ProjectInsights` / `GlobalInsights`. Beyond the task-throughput totals (tasks done/failed, duration, tokens, cost), v8 adds shipped-code totals — `TotalCommits`, `TotalFilesChanged`, `TotalLinesAdded`, `TotalLinesRemoved`, `NetLines`, `TasksMerged`, `TasksViaPR`, and a `MetricsMissingCode` coverage counter (so the UI can honestly say "based on N of M tasks"). Per-day buckets gain `lines_added` / `lines_removed` (a code-churn sparkline alongside tasks-by-day), per-agent rows gain commits/lines (output per agent, not just task count), and the global top-projects list gains commits/lines/net/merges (top by churn).
+
+**Reports & digest.** The CSV/Markdown export (`internal/daemon/insights/csv.go`, `internal/daemon/insights/templates/*.tmpl`, the GUI `useExportReport()` hook, the `Ctrl+e` TUI picker) gains the code-output columns/section, and the weekly digest gains a code-output summary (commits, ±lines, net, merged / via-PR).
 
 ---
 
@@ -838,30 +858,99 @@ Execute (ready tasks) → Refine (draft tasks) → Generate (no tasks left)
 
 ### Overview
 
-The GUI is a multi-project client built with Electron. Unlike the CLI/TUI (project-scoped), the GUI shows all registered projects in one place. It connects to the daemon via gRPC-Web.
+The GUI is a multi-window, multi-project client built with Electron, connected to the daemon via gRPC-Web. v8 "Inferno" replaced the single-window-with-sidebar-navigation model with **independent OS windows**: a persistent **home window** (dashboard / mission control) anchors the set, and each project opens in its **own per-project window** that can live on a separate monitor. An optional always-on-top **mini-monitor** gives an ambient fleet view. A main-process **window registry** tracks every window, and PTY output, lifecycle events, and notification/focus clicks are all routed per-window.
 
-### Layout
+### Multi-Window Model
 
+#### Window registry (main process)
+
+`gui/src/main/windows.ts` holds the registry, keyed by Electron `BrowserWindow.id`:
+
+```ts
+interface WfWindow { win: BrowserWindow; kind: 'home' | 'project' | 'monitor'; projectId?: string }
+const windows = new Map<number, WfWindow>()
 ```
-┌─────────────────────────────────────────────────────────────────┐
-│  Sidebar          │  Main Content                │  Right Panel │
-│                   │                              │  (collapsible)│
-│  - Logo/version   │  Dashboard OR Project View   │              │
-│  - Dashboard      │                              │  - Chat      │
-│  - Projects list  │                              │  - Branches  │
-│  - Add Project    │                              │  - Logs      │
-│  - Settings       │                              │              │
-└─────────────────────────────────────────────────────────────────┘
+
+- `kind: 'home'` — dashboard / mission-control singleton.
+- `kind: 'project'` — one window per project (carries `projectId`).
+- `kind: 'monitor'` — always-on-top mini-monitor singleton.
+
+A module-level `lastFocusedId` tracks the most-recently-focused window (via a `win.on('focus')` listener) for tray/notification fallback routing. Accessors: `getProjectWindow(projectId)`, `getHomeWindow()`, `getMonitorWindow()`, `allWindows()`, `getOpenProjectWindowIds()`.
+
+#### Window creation
+
+| Function | Behavior |
+|----------|----------|
+| `createHomeWindow()` | Dashboard / mission control. Singleton — focuses the existing window if open. Restores bounds via `loadWindowState('home')` (default 1280×800). Renderer loaded with no query (home scope). |
+| `createProjectWindow(projectId)` | One window per project — focuses the existing one if already open. Title = project name (from `projects.yaml`, fallback `Watchfire`). Renderer loaded with `?project=<id>` so it boots straight into the project (no dashboard flash). Records the project in `openProjects[]` for session restore; removed on close. |
+| `createMonitorWindow()` | Always-on-top mini-monitor singleton. Sets `alwaysOnTop: true` + `setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })`; small (default 320×460, min 240×200). Renderer loaded with `?monitor=1`. Excluded from the window-cycle shortcut. |
+
+`restoreOpenProjectWindows()` runs at startup to reopen the project windows that were open at last quit, validating each id against `projects.yaml` (stale ids skipped, so deleted projects aren't resurrected).
+
+#### Per-window PTY routing
+
+The integrated terminal's PTYs run in the Electron main process (`gui/src/main/pty-manager.ts`, node-pty) — not the daemon. Each session is keyed to the window that created it:
+
+```ts
+interface PtySession { pty: IPty; id: string; windowId: number }
+const sessions = new Map<string, PtySession>()   // keyed by session UUID
 ```
+
+- `pty-create` resolves the originating window via `BrowserWindow.fromWebContents(ev.sender)`; output (`pty-output` / `pty-exit`) is sent back **only** to that window's `webContents`.
+- On window close, `destroyForWindow(windowId)` kills only that window's sessions; other windows' terminals persist. `window-all-closed` / `before-quit` tear down everything.
+
+#### Window state & session restore
+
+`gui/src/main/window-state.ts` persists geometry to `~/.watchfire/window-state.json`:
+
+```ts
+interface WindowStateFile {
+  home?: WindowBounds                      // singleton dashboard
+  monitor?: WindowBounds                   // singleton mini-monitor
+  projects?: Record<string, WindowBounds>  // keyed by projectId
+  openProjects?: string[]                  // reopened on relaunch
+}
+```
+
+- Saves are debounced (500ms) on resize/move/close.
+- `isOnVisibleDisplay(bounds)` discards off-screen bounds (e.g. an unplugged monitor) so a window never restores out of view.
+- The pre-v8 flat `{x, y, width, height}` shape (single home window) is migrated to `{ home: bounds }` on read.
+
+#### Single-instance lock
+
+`app.requestSingleInstanceLock()` (`gui/src/main/index.ts`) ensures a single GUI process. A second launch quits immediately; the running instance receives `second-instance` and opens/focuses the home window. (Two GUI processes would each run a daemon watcher and double-merge worktrees.)
+
+#### IPC fan-out & routing
+
+| Event | Routing |
+|-------|---------|
+| `daemon-ready`, `daemon-shutdown`, the four `update-*` events, `project-windows-changed` | `broadcast(...)` in `windows.ts` — sent to every window in the registry |
+| Notification click (TASK_FAILED, RUN_COMPLETE) | Open/focus the project's **own** window via `createProjectWindow(projectId)`, then send `notifications:click` (deferred to `did-finish-load` if the window is still loading) |
+| Notification click (WEEKLY_DIGEST) | Surface the home window (global event) |
+| Tray focus event (`DaemonService.SubscribeFocusEvents`) | Project events → `focusProjectWindow(projectId, target, taskNumber)` (open/focus, route to tab/task); global/digest → home window |
+
+**Single-notifier election (decision D1).** With N windows subscribed to the daemon's notification stream, only the **home window** plays the sound and fires the OS toast — guarded by `isHomeWindow()` in both the notifications store's `start()` and `App.tsx`. The home window is likewise the sole subscriber to the tray focus stream (`startFocus()` gated on `isHomeWindow()`), so a single event never fans out into N toasts or N focus attempts. Project and monitor windows skip these streams entirely.
+
+#### Renderer boot-scoping
+
+`gui/src/renderer/src/lib/window-scope.ts` derives the scope from the URL the main process set when creating the window:
+
+```ts
+type WindowScope = { kind: 'home' } | { kind: 'project'; projectId: string } | { kind: 'monitor' }
+```
+
+`?monitor=1` → monitor, `?project=<id>` → project, no query → home. The app-store reads this **once** at boot (`windowScope`), so a project window pre-selects its project and renders `ProjectView` full-bleed — no sidebar project list, no dashboard flash. `isHomeWindow()` / `isMonitorWindow()` gate window-specific behaviour (e.g. the single-notifier election).
 
 ### Views
 
-#### Dashboard
+#### Home Window — Dashboard / Mission Control
 
-Overview of all projects:
-- Project cards showing: name, status dot, task counts (Draft/Ready/Done), active task
-- "Add Project" button
-- Click card → opens Project View
+The home window is the cross-window monitor: "what's running everywhere, and what needs me?" It hosts the dashboard (and a denser row view) over all registered projects, the sidebar, and global Settings.
+
+- Project cards/rows reuse the Beacon Glance treatment: status dot, task counts (Draft/Ready/Done), current task, per-card live PTY preview, elapsed timers, last-activity timestamp, needs-attention treatment, auto-sort by activity — plus a wildfire phase badge when a project is looping (see Wildfire below).
+- "Open in new window" (context menu / modifier-click) on each card and sidebar row → `createProjectWindow(projectId)`; a plain click also opens the project's window.
+- Needs-attention aggregates across all projects (auth/rate-limit issues, TASK_FAILED) with click-through that opens/focuses the relevant project window. The system tray's Needs-attention / Working / Idle sections route clicks the same way.
+- "Add Project" button.
 
 #### Add Project Wizard (3 steps)
 
@@ -879,33 +968,61 @@ Overview of all projects:
   - Auto-start tasks
 
 **Step 3 — Project Definition:**
-- Markdown editor for project context
+- Rich markdown editor for project context (the shared `MarkdownEditor`, see below)
 - Skip option
 
-#### Project View
+#### Project View (per-project window)
 
-Split layout with tabs:
+Each project window is one project's cockpit. v8 flipped the layout to **chat-primary** — the agent is the work surface, the rest is reference:
 
-**Left/Center Tabs:**
+```
+┌───────────────────────────────────────────────────────────────┐
+│  Chat / Agent terminal (LEFT, primary)  ║  Reference (RIGHT)   │
+│  ┌ Chat | Branches | Logs ┐             ║  ┌ Tasks | Defn |    │
+│                                         ║    Insights | Secrets│
+│  > live agent output...                 ║    | Trash | Settings│
+│                                         ║  resizable / hideable │
+├───────────────────────────────────────────────────────────────┤
+│  Integrated terminal (bottom, Cmd+`)                          │
+└───────────────────────────────────────────────────────────────┘
+```
+
+**Left pane (primary, wide)** — the agent **Chat / terminal** streamed from the daemon, with **Branches** and **Logs** as sibling tabs (`views/ProjectView/RightPanel.tsx`; the component name is historical — it now renders on the left).
+
+| Tab | Content |
+|-----|---------|
+| **Chat** | Agent terminal streamed from daemon (gRPC-Web `SubscribeScreen`). User can type input. Mode badge + wildfire control in the header. |
+| **Branches** | List of worktrees/branches with status, actions |
+| **Logs** | Past session logs per task |
+
+**Right region (reference, resizable & hideable)** — a tabbed panel (`REF_TABS`). Width persists in `localStorage` (`wf-right-panel-width`, ~560px default) via a drag divider.
 
 | Tab | Content |
 |-----|---------|
 | **Tasks** | Grouped by status (Draft, Ready, Done). Search, filters. Add task button. Status transition buttons. |
-| **Definitions** | Markdown editor for project definition |
+| **Definition** | Rich markdown editor for the project definition (see below) |
+| **Insights** | Per-project analytics: task throughput + code-output (commits, net lines, files, merge rate, code-churn-by-day, per-agent output) |
+| **Secrets** | `.watchfire/secrets/instructions.md` editor |
 | **Trash** | Soft-deleted tasks. Restore, permanent delete, empty trash. |
 | **Settings** | Git config, automation toggles, project color |
 
-**Right Panel (collapsible, adjustable width):**
+**Focus chat:** the header toggle (`Maximize2`/`Minimize2`) and double-clicking the divider **hide the right reference region** so chat goes full-width — there is **no side-swap toggle** (chat-left is the only layout; decision in the v8 spec). Per-project focus state persists in `wf-chat-focus-<projectId>`. A tray focus-request for Tasks reveals the reference region if it was collapsed.
 
-| Tab | Content |
-|-----|---------|
-| **Chat** | Agent terminal streamed from daemon. User can type input. |
-| **Branches** | List of worktrees/branches with status, actions |
-| **Logs** | Past session logs per task |
+**Bottom panel (footer bar, expands upward):**
 
-**Bottom Panel (footer bar, expands upward):**
+- **Integrated terminal** — Always-visible footer bar at the bottom of the project view. Clicking it or pressing Cmd+` spawns a shell session via node-pty (runs in the Electron main process, not the daemon). Supports up to 5 tabbed sessions per project with resizable panel height. Per-window PTY routing (above) keys each session to its window. Sessions persist across panel collapse and are cleaned up when the user closes the tab (X button) or closes the window.
 
-- **Integrated terminal** — Always-visible footer bar at the bottom of the project view. Clicking it or pressing Cmd+` spawns a shell session via node-pty (runs in Electron main process, not the daemon). Supports up to 5 tabbed sessions per project with resizable panel height. Sessions persist across project switches and panel collapse, and remain accessible when the user returns to the project. They are cleaned up only when the user closes the tab (X button) or quits the app.
+#### Wildfire (GUI)
+
+Autonomous wildfire mode (Execute → Refine → Generate) runs in the GUI (v8 Inferno — parity with the TUI/daemon). It reuses the existing gRPC surface — `StartAgent` with `mode = "wildfire"` and the `AgentStatus.wildfire_phase` field (`"execute" | "refine" | "generate" | ""`) — so no new RPC was needed.
+
+- **`views/ProjectView/WildfireControl.tsx`** — a start control in the ProjectView, a **confirm-before-start modal** ("Start Wildfire?" — autonomous, runs unattended, spends tokens continuously), a live phase indicator, the current task number, and a stop control.
+- **`components/WildfirePhaseBadge.tsx`** — an Execute → Refine → Generate stepper (a flame icon pulses on the active phase), plus a `compact` single-line variant ("Wildfire · Execute" / "Idle") for space-constrained surfaces.
+- **Mission control:** the home window's project cards (`Dashboard/ProjectCard.tsx`) and rows (`Dashboard/ProjectRow.tsx`) render the compact badge, so you can see which projects are looping and where.
+
+#### Rich Markdown Editor
+
+`components/ui/MarkdownEditor.tsx` is the standard editing surface for all markdown / long-text fields (closes issue #22). It is built on **CodeMirror 6** (`@codemirror/lang-markdown`) and is **source + preview, not WYSIWYG** — deliberately, so exact markdown/whitespace round-trips cleanly into the daemon-written YAML block scalars (`prompt`, `acceptance_criteria`, project `definition`). It offers three view modes (edit / split / preview), a formatting toolbar (bold, italic, inline code, link, heading, bullet list), and `Cmd/Ctrl+B` / `Cmd/Ctrl+I` shortcuts. Surfaces: the project definition (`DefinitionTab.tsx`), the Add Project wizard's definition step (`AddProject/StepDefinition.tsx`), and the task modal's `prompt` + `acceptance_criteria` fields (`TasksTab/TaskModal.tsx`). Each swap preserves the surface's existing save semantics (DefinitionTab's debounced autosave, the wizard's value plumbing + Skip path, the modal's create/update flow); short fields like the task title stay plain inputs.
 
 #### Mini Monitor (v8 Inferno — stretch)
 
@@ -934,23 +1051,22 @@ An always-on-top, floating mini-window that gives a glanceable, ambient view of 
 | `done` (success: true) | Done | Green indicator |
 | `done` (success: false) | Failed | Red indicator |
 
-### v1 Scope
+### Scope
 
 **Included:**
-- Dashboard with project cards
+- Multi-window model: home window (dashboard / mission control) + independent per-project windows + optional mini-monitor (window registry, per-window PTY routing, `window-state.json` + session restore, single-instance lock)
+- Home window dashboard with Glance project cards/rows + cross-project needs-attention + tray click-through
 - Add Project wizard
-- Project View (Tasks, Definitions, Trash, Settings)
-- Right panel (Chat, Branches, Logs)
+- Chat-primary Project View (Chat/Branches/Logs left; Tasks/Definition/Insights/Secrets/Trash/Settings right; integrated terminal footer)
+- Wildfire mode in the GUI (control + confirm modal + Execute/Refine/Generate phase indicator)
+- Rich markdown editor (`MarkdownEditor`) across definition, wizard, and task fields
+- Per-project + global Insights (task throughput + code-output) with CSV/Markdown export
+- OS notifications + sounds (single-notifier election) + system tray sections
 - Global Settings (Defaults, Appearance, Claude CLI, Updates)
-- Sidebar navigation
 
 **Excluded (future):**
-- Notifications
-- Generate Tasks button
-- Auto-fill Definitions
+- Generate Tasks / Auto-fill Definitions buttons in the GUI (available via TUI/CLI)
 - Branch mode toggle (always "new branch per task")
-- Create PR on completion
-- Wildfire mode in GUI
 
 ---
 
@@ -986,7 +1102,8 @@ An always-on-top, floating mini-window that gives a glanceable, ambient view of 
 └── .watchfire/             # Gitignored
     ├── project.yaml        # Project definition
     ├── tasks/
-    │   └── 0001.yaml       # Task files (4-digit padded task_number)
+    │   ├── 0001.yaml        # Task files (4-digit padded task_number)
+    │   └── 0001.metrics.yaml # Per-task metrics sidecar (duration, tokens, cost, code-output)
     ├── memory.md            # Persistent project knowledge across agent sessions
     ├── secrets/
     │   └── instructions.md # Agent-readable instructions for external services/credentials
