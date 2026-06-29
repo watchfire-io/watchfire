@@ -113,7 +113,15 @@ When you complete a task:
 
 ## Creating Tasks (Autonomous)
 
-You can create new tasks by writing YAML files to `.watchfire/tasks/`:
+**Preferred:** create tasks with the CLI so the YAML is always written through
+the safe (auto-quoting) code path — never hand-author task YAML when you can
+avoid it:
+
+```
+watchfire task add   # interactive
+```
+
+If you must write a YAML file directly to `.watchfire/tasks/`:
 
 1. Find the highest existing task number in `.watchfire/tasks/`
 2. Create `{next_number}.yaml` with the task schema
@@ -122,6 +130,17 @@ You can create new tasks by writing YAML files to `.watchfire/tasks/`:
    `completed_at`, `updated_at`, `deleted_at`). The daemon fills them in
    automatically. Writing an empty-string timestamp like `started_at: ""`
    makes the YAML parser reject the file.
+5. **ALWAYS single-quote the `title:` value** and double any literal single
+   quotes inside it. Titles often contain colons, em-dashes, double quotes, or
+   apostrophes, and an unquoted scalar with a literal `: ` (colon-space) is
+   parsed as a nested mapping and rejected with `mapping values are not
+   allowed in this context` — the task then silently fails to load. Correct:
+       title: 'Add /pricing — costs, plans, FAQ'
+       title: 'Operator''s guide: reading the daemon logs'
+   Wrong (silently dropped):
+       title: Add /pricing: costs, plans, FAQ
+   For multi-line `prompt:` / `acceptance_criteria:`, use a block scalar
+   (`|` then an indented body) — that form is colon-safe.
 
 ## What You Should NOT Do
 

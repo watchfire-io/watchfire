@@ -88,6 +88,13 @@ func (m *Manager) ListTasks(projectPath string, opts ListOptions) ([]*models.Tas
 	return tasks, nil
 }
 
+// ListMalformedTasks returns the task files in a project that exist on disk
+// but failed to parse — files that LoadAllTasks silently skips. The GUI/TUI
+// surface these so a broken task file is visible instead of just vanishing.
+func (m *Manager) ListMalformedTasks(projectPath string) ([]config.MalformedTaskFile, error) {
+	return config.LoadMalformedTasks(projectPath)
+}
+
 // GetTask retrieves a task by number.
 func (m *Manager) GetTask(projectPath string, taskNumber int) (*models.Task, error) {
 	task, err := config.LoadTask(projectPath, taskNumber)

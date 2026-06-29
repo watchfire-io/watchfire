@@ -106,6 +106,7 @@ func runTaskList(cmd *cobra.Command, args []string) error {
 
 	if len(tasks) == 0 {
 		fmt.Println(styleHint.Render("No tasks. Run 'watchfire task add' to create one."))
+		printMalformedTaskWarning(projectPath)
 		return nil
 	}
 
@@ -125,7 +126,27 @@ func runTaskList(cmd *cobra.Command, args []string) error {
 	printTaskGroup(badgeReady.Render("Ready"), groups[models.TaskStatusReady])
 	printTaskGroup(badgeDone.Render("Done"), groups[models.TaskStatusDone])
 
+	printMalformedTaskWarning(projectPath)
+
 	return nil
+}
+
+// printMalformedTaskWarning surfaces any task files that exist on disk but
+// failed to load (e.g. an unquoted `title:` with a literal `: `). Without this
+// the file would be silently invisible — the loader drops it with only a
+// daemon log line. Best-effort: a scan error is itself just a hint.
+func printMalformedTaskWarning(projectPath string) {
+	malformed, err := config.LoadMalformedTasks(projectPath)
+	if err != nil || len(malformed) == 0 {
+		return
+	}
+
+	fmt.Println()
+	fmt.Println(styleWarn.Render(fmt.Sprintf("⚠ %d task file(s) failed to load and are NOT scheduled:", len(malformed))))
+	for _, mf := range malformed {
+		fmt.Printf("  %s  %s\n", styleHint.Render(mf.FileName), mf.Error)
+	}
+	fmt.Println(styleHint.Render("  Fix the YAML (single-quote any title containing ': '), or recreate via 'watchfire task add'."))
 }
 
 func runTaskListDeleted(projectPath string) error {

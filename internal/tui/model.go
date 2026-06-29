@@ -53,6 +53,11 @@ type Model struct {
 	err       error
 	showSaved bool
 
+	// malformedTasks holds task files that exist on disk but failed to load
+	// (ListMalformedTasks). Surfaced as a status-bar warning so a broken task
+	// file is visible instead of silently vanishing from the list.
+	malformedTasks []*pb.MalformedTask
+
 	// Child components
 	taskList           *TaskList
 	terminal           *Terminal

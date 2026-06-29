@@ -64,7 +64,18 @@ func loadTasksCmd(conn *grpc.ClientConn, projectID string) tea.Cmd {
 		if err != nil {
 			return ErrorMsg{Err: fmt.Errorf("failed to load tasks: %w", err)}
 		}
-		return TasksLoadedMsg{Tasks: resp.Tasks}
+
+		// Best-effort: also fetch task files that failed to parse so the
+		// status bar can warn about them. A failure here must not block the
+		// task list, so the error is swallowed.
+		var malformed []*pb.MalformedTask
+		if mresp, merr := client.ListMalformedTasks(ctx, &pb.ListMalformedTasksRequest{
+			ProjectId: projectID,
+		}); merr == nil {
+			malformed = mresp.Tasks
+		}
+
+		return TasksLoadedMsg{Tasks: resp.Tasks, Malformed: malformed}
 	}
 }
 

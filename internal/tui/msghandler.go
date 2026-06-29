@@ -126,6 +126,7 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 			return true, nil
 		}
 		m.tasks = msg.Tasks
+		m.malformedTasks = msg.Malformed
 		m.taskList.SetTasks(msg.Tasks)
 		m.taskList.SetAgentStatus(m.agentStatus)
 		return true, nil

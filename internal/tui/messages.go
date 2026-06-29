@@ -19,9 +19,12 @@ type ProjectLoadedMsg struct {
 	Project *pb.Project
 }
 
-// TasksLoadedMsg carries task list from ListTasks RPC.
+// TasksLoadedMsg carries task list from ListTasks RPC, plus any task files
+// that failed to load (ListMalformedTasks) so the status bar can warn that a
+// broken task file is sitting on disk instead of silently dropping it.
 type TasksLoadedMsg struct {
-	Tasks []*pb.Task
+	Tasks     []*pb.Task
+	Malformed []*pb.MalformedTask
 }
 
 // AgentStatusMsg carries agent status from GetAgentStatus RPC.
