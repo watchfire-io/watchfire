@@ -22,11 +22,11 @@ import (
 
 // API endpoints. Overridable for tests.
 var (
-	APIBase            = "https://discord.com/api/v10"
-	CreateMessageURL   = APIBase + "/channels/%s/messages"
-	BotInfoURL         = APIBase + "/users/@me"
-	GuildCommandsURL   = APIBase + "/applications/%s/guilds/%s/commands"
-	GlobalCommandsURL  = APIBase + "/applications/%s/commands"
+	APIBase           = "https://discord.com/api/v10"
+	CreateMessageURL  = APIBase + "/channels/%s/messages"
+	BotInfoURL        = APIBase + "/users/@me"
+	GuildCommandsURL  = APIBase + "/applications/%s/guilds/%s/commands"
+	GlobalCommandsURL = APIBase + "/applications/%s/commands"
 )
 
 // Client wraps an http.Client with Discord REST helpers. Stateless.

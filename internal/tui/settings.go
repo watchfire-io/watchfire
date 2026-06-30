@@ -152,8 +152,8 @@ type SettingsForm struct {
 	cursor int // index into rows; always in the active section's range when paneFields focused
 
 	// Sidebar nav.
-	pane         settingsPaneFocus
-	activeSec    settingsSectionID
+	pane          settingsPaneFocus
+	activeSec     settingsSectionID
 	sidebarCursor int
 
 	editing bool
@@ -184,10 +184,10 @@ func NewSettingsForm() *SettingsForm {
 	si.Placeholder = "Search settings"
 
 	return &SettingsForm{
-		input:        ti,
-		searchInput:  si,
-		pane:         settingsPaneSidebar,
-		activeSec:    sectionGeneral,
+		input:         ti,
+		searchInput:   si,
+		pane:          settingsPaneSidebar,
+		activeSec:     sectionGeneral,
 		sidebarCursor: 0,
 	}
 }

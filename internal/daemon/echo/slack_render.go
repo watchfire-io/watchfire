@@ -12,7 +12,7 @@ import (
 //
 //   - "header"   → Block Kit `header` block with `plain_text`.
 //   - "section"  → Block Kit `section` block with `plain_text` (or
-//                  `mrkdwn` when Block.Markdown is true).
+//     `mrkdwn` when Block.Markdown is true).
 //   - "context"  → Block Kit `context` block with one `mrkdwn` element.
 //   - "divider"  → Block Kit `divider` block.
 //   - resp.Ephemeral → `response_type: "ephemeral"`.

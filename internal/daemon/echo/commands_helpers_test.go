@@ -77,10 +77,10 @@ func TestFormatDuration(t *testing.T) {
 // and the empty-string short-circuit.
 func TestParseTaskRef(t *testing.T) {
 	cases := []struct {
-		in     string
-		num    int
-		id     string
-		ok     bool
+		in  string
+		num int
+		id  string
+		ok  bool
 	}{
 		{"", 0, "", false},
 		{"5", 5, "", true},

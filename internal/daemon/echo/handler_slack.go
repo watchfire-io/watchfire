@@ -20,7 +20,7 @@ import (
 // button-click loop without a 4xx because Slack still validates the
 // signature.
 const (
-	slackActionRetry = "watchfire_retry"
+	slackActionRetry  = "watchfire_retry"
 	slackActionCancel = "watchfire_cancel"
 	slackActionView   = "watchfire_view" // pure URL link; never round-trips back to Watchfire
 )
@@ -73,8 +73,8 @@ type SlackHandlerConfig struct {
 	// RefundOnReplay is the per-IP rate-limit refund hook the parent
 	// Server wires when the limiter is enabled. nil = no-op (Slack
 	// retries still hit the LRU cache; they just don't get budget back).
-	RefundOnReplay       func(r *http.Request)
-	Logger               *log.Logger
+	RefundOnReplay func(r *http.Request)
+	Logger         *log.Logger
 }
 
 // NewSlackInteractivityHandler returns the http.Handler that lives at
@@ -107,13 +107,13 @@ type slackHandler struct{ cfg SlackHandlerConfig }
 // https://api.slack.com/reference/interaction-payloads/block-actions
 // https://api.slack.com/reference/interaction-payloads/views
 type slackInteraction struct {
-	Type      string             `json:"type"`
-	Team      slackTeam          `json:"team"`
-	User      slackUser          `json:"user"`
-	TriggerID string             `json:"trigger_id"`
-	ResponseURL string           `json:"response_url"`
-	Actions   []slackAction      `json:"actions"`
-	View      *slackView         `json:"view"`
+	Type        string        `json:"type"`
+	Team        slackTeam     `json:"team"`
+	User        slackUser     `json:"user"`
+	TriggerID   string        `json:"trigger_id"`
+	ResponseURL string        `json:"response_url"`
+	Actions     []slackAction `json:"actions"`
+	View        *slackView    `json:"view"`
 }
 
 type slackTeam struct {
@@ -133,11 +133,11 @@ type slackAction struct {
 }
 
 type slackView struct {
-	ID              string                  `json:"id"`
-	CallbackID      string                  `json:"callback_id"`
-	PrivateMetadata string                  `json:"private_metadata"`
-	State           slackViewState          `json:"state"`
-	Hash            string                  `json:"hash"`
+	ID              string         `json:"id"`
+	CallbackID      string         `json:"callback_id"`
+	PrivateMetadata string         `json:"private_metadata"`
+	State           slackViewState `json:"state"`
+	Hash            string         `json:"hash"`
 }
 
 type slackViewState struct {
@@ -145,8 +145,8 @@ type slackViewState struct {
 }
 
 type slackViewElement struct {
-	Type     string `json:"type"`
-	Value    string `json:"value"`
+	Type           string `json:"type"`
+	Value          string `json:"value"`
 	SelectedOption *struct {
 		Value string `json:"value"`
 	} `json:"selected_option,omitempty"`

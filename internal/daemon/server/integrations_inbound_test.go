@@ -19,9 +19,9 @@ type fakeInboundProvider struct {
 	restartHits int
 }
 
-func (f *fakeInboundProvider) EchoServer() *echo.Server               { return f.srv }
-func (f *fakeInboundProvider) DiscordRegistrar() *discord.Registrar   { return f.registrar }
-func (f *fakeInboundProvider) restartEchoServer()                     { f.restartHits++ }
+func (f *fakeInboundProvider) EchoServer() *echo.Server             { return f.srv }
+func (f *fakeInboundProvider) DiscordRegistrar() *discord.Registrar { return f.registrar }
+func (f *fakeInboundProvider) restartEchoServer()                   { f.restartHits++ }
 
 // TestSaveInboundConfigRoundTrip: SaveInboundConfig persists the listen
 // address + public URL + per-provider secrets, scrubs plaintext secrets

@@ -15,9 +15,9 @@ import (
 // project tree on disk.
 type fakeFlusher struct {
 	projects []models.ProjectEntry
-	origins  map[string]string         // path -> origin URL
-	tasks    map[string]*models.Task   // path -> task
-	saved    map[string]*models.Task   // captured saves
+	origins  map[string]string       // path -> origin URL
+	tasks    map[string]*models.Task // path -> task
+	saved    map[string]*models.Task // captured saves
 }
 
 func newFakeFlusher() *fakeFlusher {

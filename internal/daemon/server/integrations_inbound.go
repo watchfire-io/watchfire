@@ -26,14 +26,14 @@ import (
 // shared token, one Bitbucket HMAC secret) so we don't need the per-
 // integration ID suffix the v7.0 outbound flow uses.
 const (
-	inboundSecretKeyGitHub             = "watchfire.echo.github_secret"
-	inboundSecretKeySlack              = "watchfire.echo.slack_secret"
-	inboundSecretKeyDiscordPubKey      = "watchfire.echo.discord_public_key"
-	inboundSecretKeyDiscordBotToken    = "watchfire.echo.discord_bot_token"
-	inboundSecretKeyGitLab             = "watchfire.echo.gitlab_secret"
-	inboundSecretKeyBitbucket          = "watchfire.echo.bitbucket_secret"
-	inboundSecretKeySlackClientSecret  = "watchfire.echo.slack_client_secret"
-	inboundSecretKeySlackBotToken      = "watchfire.echo.slack_bot_token"
+	inboundSecretKeyGitHub              = "watchfire.echo.github_secret"
+	inboundSecretKeySlack               = "watchfire.echo.slack_secret"
+	inboundSecretKeyDiscordPubKey       = "watchfire.echo.discord_public_key"
+	inboundSecretKeyDiscordBotToken     = "watchfire.echo.discord_bot_token"
+	inboundSecretKeyGitLab              = "watchfire.echo.gitlab_secret"
+	inboundSecretKeyBitbucket           = "watchfire.echo.bitbucket_secret"
+	inboundSecretKeySlackClientSecret   = "watchfire.echo.slack_client_secret"
+	inboundSecretKeySlackBotToken       = "watchfire.echo.slack_bot_token"
 	inboundSecretKeyDiscordClientSecret = "watchfire.echo.discord_client_secret"
 )
 

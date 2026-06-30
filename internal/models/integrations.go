@@ -127,14 +127,14 @@ const (
 // drives both directions (v7.0 outbound `gh --hostname` + v8.x inbound
 // route registration).
 type InboundConfig struct {
-	ListenAddr           string `yaml:"listen_addr,omitempty" json:"listen_addr,omitempty"`
-	PublicURL            string `yaml:"public_url,omitempty" json:"public_url,omitempty"`
-	GitHubSecretRef      string `yaml:"github_secret_ref,omitempty" json:"github_secret_ref,omitempty"`
-	SlackSecretRef       string `yaml:"slack_secret_ref,omitempty" json:"slack_secret_ref,omitempty"`
-	DiscordPublicKeyRef  string `yaml:"discord_public_key_ref,omitempty" json:"discord_public_key_ref,omitempty"`
-	DiscordAppID         string `yaml:"discord_app_id,omitempty" json:"discord_app_id,omitempty"`
-	DiscordBotTokenRef   string `yaml:"discord_bot_token_ref,omitempty" json:"discord_bot_token_ref,omitempty"`
-	Disabled             bool   `yaml:"disabled,omitempty" json:"disabled,omitempty"`
+	ListenAddr          string `yaml:"listen_addr,omitempty" json:"listen_addr,omitempty"`
+	PublicURL           string `yaml:"public_url,omitempty" json:"public_url,omitempty"`
+	GitHubSecretRef     string `yaml:"github_secret_ref,omitempty" json:"github_secret_ref,omitempty"`
+	SlackSecretRef      string `yaml:"slack_secret_ref,omitempty" json:"slack_secret_ref,omitempty"`
+	DiscordPublicKeyRef string `yaml:"discord_public_key_ref,omitempty" json:"discord_public_key_ref,omitempty"`
+	DiscordAppID        string `yaml:"discord_app_id,omitempty" json:"discord_app_id,omitempty"`
+	DiscordBotTokenRef  string `yaml:"discord_bot_token_ref,omitempty" json:"discord_bot_token_ref,omitempty"`
+	Disabled            bool   `yaml:"disabled,omitempty" json:"disabled,omitempty"`
 
 	// RateLimitPerMin is the v8.x per-IP token-bucket budget applied
 	// across all `/echo/*` routes. 0 disables the limiter; negative
@@ -203,11 +203,11 @@ type InboundConfig struct {
 	// The Ed25519 public key (DiscordPublicKeyRef) is unchanged — Discord
 	// signs interactions with a per-application key independent of the
 	// bot token, so OAuth does not replace public-key verification.
-	DiscordClientID        string `yaml:"discord_client_id,omitempty" json:"discord_client_id,omitempty"`
-	DiscordClientSecretRef string `yaml:"discord_client_secret_ref,omitempty" json:"discord_client_secret_ref,omitempty"`
-	DiscordBotUsername     string `yaml:"discord_bot_username,omitempty" json:"discord_bot_username,omitempty"`
+	DiscordClientID         string `yaml:"discord_client_id,omitempty" json:"discord_client_id,omitempty"`
+	DiscordClientSecretRef  string `yaml:"discord_client_secret_ref,omitempty" json:"discord_client_secret_ref,omitempty"`
+	DiscordBotUsername      string `yaml:"discord_bot_username,omitempty" json:"discord_bot_username,omitempty"`
 	DiscordBotDiscriminator string `yaml:"discord_bot_discriminator,omitempty" json:"discord_bot_discriminator,omitempty"`
-	DiscordDefaultChannel  string `yaml:"discord_default_channel,omitempty" json:"discord_default_channel,omitempty"`
+	DiscordDefaultChannel   string `yaml:"discord_default_channel,omitempty" json:"discord_default_channel,omitempty"`
 }
 
 // EffectiveGitHost returns the GitHost value with empty defaulting to

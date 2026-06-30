@@ -30,8 +30,8 @@ const (
 //
 // https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-response-object-interaction-callback-type
 const (
-	discordResponsePong                       = 1
-	discordResponseChannelMessageWithSource   = 4
+	discordResponsePong                     = 1
+	discordResponseChannelMessageWithSource = 4
 )
 
 // discordEphemeralFlag is bit 6 (64) in the message-flags bitfield,
@@ -56,11 +56,11 @@ const discordEphemeralFlag = 64
 // the parent Server when the limiter is enabled. nil = no-op (disables
 // the legitimate-retry refund without breaking the handler).
 type DiscordHandlerConfig struct {
-	ResolvePublicKey   func() (ed25519.PublicKey, error)
-	Idempotency        *Cache
-	CommandContextFor  func(guildID, userID string) CommandContext
-	RefundOnReplay     func(r *http.Request)
-	Logger             *log.Logger
+	ResolvePublicKey  func() (ed25519.PublicKey, error)
+	Idempotency       *Cache
+	CommandContextFor func(guildID, userID string) CommandContext
+	RefundOnReplay    func(r *http.Request)
+	Logger            *log.Logger
 }
 
 // NewDiscordHandler returns the http.Handler that lives at
@@ -89,13 +89,13 @@ type discordHandler struct{ cfg DiscordHandlerConfig }
 //
 // https://discord.com/developers/docs/interactions/receiving-and-responding#interaction-object
 type discordInteraction struct {
-	ID            string                       `json:"id"`
-	ApplicationID string                       `json:"application_id"`
-	Type          int                          `json:"type"`
-	GuildID       string                       `json:"guild_id"`
-	ChannelID     string                       `json:"channel_id"`
-	Member        *discordMember               `json:"member"`
-	User          *discordUser                 `json:"user"`
+	ID            string                         `json:"id"`
+	ApplicationID string                         `json:"application_id"`
+	Type          int                            `json:"type"`
+	GuildID       string                         `json:"guild_id"`
+	ChannelID     string                         `json:"channel_id"`
+	Member        *discordMember                 `json:"member"`
+	User          *discordUser                   `json:"user"`
 	Data          *discordApplicationCommandData `json:"data"`
 }
 

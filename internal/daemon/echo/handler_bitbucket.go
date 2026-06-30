@@ -11,12 +11,12 @@ import (
 // Bitbucket headers and event keys.
 //
 //   - X-Event-Key       — event kind (we handle `pullrequest:fulfilled`
-//                          for merges and `pullrequest:rejected` for
-//                          declined PRs; `pullrequest:created` and
-//                          friends are 200-acked + ignored).
+//     for merges and `pullrequest:rejected` for
+//     declined PRs; `pullrequest:created` and
+//     friends are 200-acked + ignored).
 //   - X-Hub-Signature   — HMAC-SHA256 of the body, prefixed `sha256=` —
-//                          identical wire format to GitHub. We reuse
-//                          `VerifyGitHub` to verify it.
+//     identical wire format to GitHub. We reuse
+//     `VerifyGitHub` to verify it.
 //   - X-Request-UUID    — per-delivery identifier, used for idempotency.
 //
 // Bitbucket Cloud signs requests when the user enables "Use a secret"
@@ -81,9 +81,9 @@ type bitbucketPRPayload struct {
 }
 
 type bitbucketPullRequest struct {
-	State  string                 `json:"state"`  // "MERGED" / "DECLINED" / …
+	State  string                  `json:"state"` // "MERGED" / "DECLINED" / …
 	Source bitbucketPullRequestEnd `json:"source"`
-	Title  string                 `json:"title"`
+	Title  string                  `json:"title"`
 }
 
 type bitbucketPullRequestEnd struct {

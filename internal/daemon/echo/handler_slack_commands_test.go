@@ -514,9 +514,9 @@ func TestSlackCommandsStaleTimestampRejected(t *testing.T) {
 
 func TestSplitSlackCommandText(t *testing.T) {
 	cases := []struct {
-		in           string
-		wantSubcmd   string
-		wantRest     string
+		in         string
+		wantSubcmd string
+		wantRest   string
 	}{
 		{"", "", ""},
 		{"   ", "", ""},

@@ -16,8 +16,8 @@ import (
 // install flows. Provides headless-friendly entry points for the
 // browser-driven flow:
 //
-//   watchfire integrations oauth slack    [--channel <id>]
-//   watchfire integrations oauth discord  [--channel <id>]
+//	watchfire integrations oauth slack    [--channel <id>]
+//	watchfire integrations oauth discord  [--channel <id>]
 //
 // The OAuth daemon RPC opens the user's default browser pointed at
 // the upstream provider's authorize URL; the daemon races a loopback

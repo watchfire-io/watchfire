@@ -46,9 +46,9 @@ type DiscordInstall struct {
 // by tests to point at httptest. Default targets the real Discord
 // endpoints.
 var (
-	DiscordTokenURL    = discordTokenURL
-	DiscordUserURL     = discordUserURL
-	DiscordBotInfoURL  = "https://discord.com/api/applications/@me"
+	DiscordTokenURL   = discordTokenURL
+	DiscordUserURL    = discordUserURL
+	DiscordBotInfoURL = "https://discord.com/api/applications/@me"
 )
 
 // BuildDiscordAuthURL constructs the Discord OAuth2 install URL.
@@ -129,8 +129,8 @@ func ExchangeDiscordCode(ctx context.Context, client *http.Client, clientID, cli
 	}
 
 	install := &DiscordInstall{
-		BotToken: parsed.BotToken,
-		GuildID:  parsed.Guild.ID,
+		BotToken:  parsed.BotToken,
+		GuildID:   parsed.Guild.ID,
 		GuildName: parsed.Guild.Name,
 	}
 

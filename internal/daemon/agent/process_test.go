@@ -11,11 +11,11 @@ import (
 // otherwise the GUI chat terminal snaps to byte 0 on every re-subscribe.
 func TestSubscribeRawFrom_CursorSlice(t *testing.T) {
 	tests := []struct {
-		name           string
-		rawBuf         []byte
-		rawTotalBytes  int64
-		bytesReceived  int64
-		wantSnapshot   []byte
+		name          string
+		rawBuf        []byte
+		rawTotalBytes int64
+		bytesReceived int64
+		wantSnapshot  []byte
 	}{
 		{
 			name:          "initial subscribe (cursor=0) returns full buffer",

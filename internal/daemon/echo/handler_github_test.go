@@ -291,7 +291,9 @@ func TestGitHubHandlerSecretNotConfigured(t *testing.T) {
 	cfg := GitHubHandlerConfig{
 		ResolveSecret: func() ([]byte, error) { return nil, errBadConfig{} },
 		Idempotency:   NewCache(0, 0),
-		FlushTask:     func(ctx context.Context, req TaskFlushRequest) (TaskFlushResult, error) { return TaskFlushResult{}, nil },
+		FlushTask: func(ctx context.Context, req TaskFlushRequest) (TaskFlushResult, error) {
+			return TaskFlushResult{}, nil
+		},
 	}
 	h := NewGitHubHandler(cfg)
 	body := []byte(`{}`)

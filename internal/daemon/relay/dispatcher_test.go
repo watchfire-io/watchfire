@@ -15,18 +15,18 @@ import (
 // returns whatever sendErr is set. It implements IsProjectMuted to
 // exercise the dispatcher's mute short-circuit.
 type stubAdapter struct {
-	id        string
-	supports  map[notify.Kind]bool
-	mutedIDs  map[string]bool
-	sendErr   error
-	mu        sync.Mutex
-	calls     []Payload
+	id       string
+	supports map[notify.Kind]bool
+	mutedIDs map[string]bool
+	sendErr  error
+	mu       sync.Mutex
+	calls    []Payload
 }
 
-func (s *stubAdapter) ID() string                    { return s.id }
-func (s *stubAdapter) Kind() string                  { return "stub" }
-func (s *stubAdapter) Supports(k notify.Kind) bool   { return s.supports[k] }
-func (s *stubAdapter) IsProjectMuted(p string) bool  { return s.mutedIDs[p] }
+func (s *stubAdapter) ID() string                   { return s.id }
+func (s *stubAdapter) Kind() string                 { return "stub" }
+func (s *stubAdapter) Supports(k notify.Kind) bool  { return s.supports[k] }
+func (s *stubAdapter) IsProjectMuted(p string) bool { return s.mutedIDs[p] }
 func (s *stubAdapter) Send(_ context.Context, p Payload) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

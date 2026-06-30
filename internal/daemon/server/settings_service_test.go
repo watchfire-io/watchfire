@@ -20,16 +20,16 @@ import (
 // method is a harmless stub.
 type unavailableBackend struct{ name string }
 
-func (u *unavailableBackend) Name() string                                    { return u.name }
-func (u *unavailableBackend) DisplayName() string                             { return u.name }
+func (u *unavailableBackend) Name() string        { return u.name }
+func (u *unavailableBackend) DisplayName() string { return u.name }
 func (u *unavailableBackend) ResolveExecutable(*models.Settings) (string, error) {
 	return "", errors.New("binary not installed")
 }
 func (u *unavailableBackend) BuildCommand(backend.CommandOpts) (backend.Command, error) {
 	return backend.Command{}, nil
 }
-func (u *unavailableBackend) SandboxExtras() backend.SandboxExtras        { return backend.SandboxExtras{} }
-func (u *unavailableBackend) InstallSystemPrompt(string, string) error    { return nil }
+func (u *unavailableBackend) SandboxExtras() backend.SandboxExtras     { return backend.SandboxExtras{} }
+func (u *unavailableBackend) InstallSystemPrompt(string, string) error { return nil }
 func (u *unavailableBackend) LocateTranscript(string, time.Time, string) (string, error) {
 	return "", nil
 }

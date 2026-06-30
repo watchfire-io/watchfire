@@ -41,10 +41,10 @@ const (
 	EventTaskChanged
 	EventTaskCreated
 	EventTaskDeleted
-	EventRefinePhaseEnded     // refine_done.yaml created
-	EventGeneratePhaseEnded   // generate_done.yaml created
-	EventDefinitionDone       // definition_done.yaml created
-	EventTasksDone            // tasks_done.yaml created
+	EventRefinePhaseEnded      // refine_done.yaml created
+	EventGeneratePhaseEnded    // generate_done.yaml created
+	EventDefinitionDone        // definition_done.yaml created
+	EventTasksDone             // tasks_done.yaml created
 	EventGlobalSettingsChanged // ~/.watchfire/settings.yaml written
 	// EventMetricsChanged fires when a per-task metrics file is written
 	// (`<n>.metrics.yaml`). v6.0 Ember insights consumers treat this as

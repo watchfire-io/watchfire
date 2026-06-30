@@ -25,10 +25,10 @@ const (
 // and DigestDate carries the YYYY-MM-DD identifying the digest file under
 // ~/.watchfire/digests/.
 type Event struct {
-	ProjectID   string
-	Target      Target
-	TaskNumber  int32
-	DigestDate  string
+	ProjectID  string
+	Target     Target
+	TaskNumber int32
+	DigestDate string
 }
 
 // Bus fans an Event out to every subscriber. Subscribers receive a buffered

@@ -15,13 +15,13 @@ import (
 // GitHub headers and event keys.
 //
 //   - X-GitHub-Event       — event kind ("pull_request" is the only one
-//                             this handler acts on; other events 200-ack +
-//                             no-op so GitHub does not retry the delivery).
+//     this handler acts on; other events 200-ack +
+//     no-op so GitHub does not retry the delivery).
 //   - X-Hub-Signature-256  — HMAC-SHA256 of the body, prefixed `sha256=`.
-//                             Verified constant-time by `VerifyGitHub`.
+//     Verified constant-time by `VerifyGitHub`.
 //   - X-GitHub-Delivery    — per-delivery UUID, used for idempotency so
-//                             a redelivery does not double-flush the task
-//                             or double-emit the RUN_COMPLETE notification.
+//     a redelivery does not double-flush the task
+//     or double-emit the RUN_COMPLETE notification.
 //
 // https://docs.github.com/en/webhooks/using-webhooks/validating-webhook-deliveries
 const (
@@ -61,13 +61,13 @@ const githubEventPullRequest = "pull_request"
 //     RPC. nil = no-op.
 //   - Logger           — instrumentation. Defaults to log.Default().
 type GitHubHandlerConfig struct {
-	ResolveSecret    func() ([]byte, error)
-	Idempotency      *Cache
-	FlushTask        TaskFlusher
-	EmitRunComplete  func(n notify.Notification) error
-	RefundOnReplay   func(r *http.Request)
-	RecordDelivery   func()
-	Logger           *log.Logger
+	ResolveSecret   func() ([]byte, error)
+	Idempotency     *Cache
+	FlushTask       TaskFlusher
+	EmitRunComplete func(n notify.Notification) error
+	RefundOnReplay  func(r *http.Request)
+	RecordDelivery  func()
+	Logger          *log.Logger
 }
 
 // NewGitHubHandler returns the http.Handler that lives at
@@ -99,19 +99,19 @@ type githubHandler struct{ cfg GitHubHandlerConfig }
 //
 // https://docs.github.com/en/webhooks/webhook-events-and-payloads#pull_request
 type githubPRPayload struct {
-	Action      string                 `json:"action"`
-	Number      int                    `json:"number"`
-	PullRequest githubPullRequest      `json:"pull_request"`
-	Repository  githubRepositoryRef    `json:"repository"`
+	Action      string              `json:"action"`
+	Number      int                 `json:"number"`
+	PullRequest githubPullRequest   `json:"pull_request"`
+	Repository  githubRepositoryRef `json:"repository"`
 }
 
 type githubPullRequest struct {
-	Number int             `json:"number"`
-	Merged bool            `json:"merged"`
-	Title  string          `json:"title"`
-	HTMLURL string         `json:"html_url"`
-	Head   githubPRRef     `json:"head"`
-	Base   githubPRRef     `json:"base"`
+	Number  int         `json:"number"`
+	Merged  bool        `json:"merged"`
+	Title   string      `json:"title"`
+	HTMLURL string      `json:"html_url"`
+	Head    githubPRRef `json:"head"`
+	Base    githubPRRef `json:"base"`
 }
 
 type githubPRRef struct {

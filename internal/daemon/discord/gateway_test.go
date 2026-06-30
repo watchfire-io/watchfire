@@ -109,7 +109,7 @@ func helloFrame(intervalMs int) []byte {
 
 func dispatchFrame(t string, seq int, payload any) []byte {
 	b, _ := json.Marshal(struct {
-		Op   int `json:"op"`
+		Op   int    `json:"op"`
 		Type string `json:"t"`
 		Seq  int    `json:"s"`
 		Data any    `json:"d"`

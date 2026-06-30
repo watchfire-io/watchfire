@@ -34,14 +34,14 @@ type CallbackResult struct {
 // because the user is the one visiting the link; no cross-origin
 // concerns.
 type Server struct {
-	store     *StateStore
-	logger    *log.Logger
-	mu        sync.Mutex
-	listener  net.Listener
-	httpSrv   *http.Server
-	resultCh  chan CallbackResult
-	closed    bool
-	port      int
+	store      *StateStore
+	logger     *log.Logger
+	mu         sync.Mutex
+	listener   net.Listener
+	httpSrv    *http.Server
+	resultCh   chan CallbackResult
+	closed     bool
+	port       int
 	httpClient *http.Client
 }
 
@@ -61,11 +61,11 @@ func NewServer(store *StateStore, httpClient *http.Client, logger *log.Logger) (
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
 	return &Server{
-		store:     store,
-		logger:    logger,
-		listener:  listener,
-		resultCh:  make(chan CallbackResult, 1),
-		port:      port,
+		store:      store,
+		logger:     logger,
+		listener:   listener,
+		resultCh:   make(chan CallbackResult, 1),
+		port:       port,
 		httpClient: httpClient,
 	}, nil
 }

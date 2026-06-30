@@ -58,8 +58,8 @@ type Server struct {
 	// or when the gateway client has been torn down for restart.
 	discordRegistrar *discord.Registrar
 	discordGwCancel  context.CancelFunc
-	integrationsSvc *integrationsService
-	updateState    UpdateState
+	integrationsSvc  *integrationsService
+	updateState      UpdateState
 }
 
 // New creates a new server listening on the specified port.

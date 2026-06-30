@@ -133,8 +133,8 @@ func TestAgentBadgeLabelFallsBackForUnknownBackend(t *testing.T) {
 	}
 }
 
-func boolPtr(b bool) *bool       { return &b }
-func strPtr(s string) *string    { return &s }
+func boolPtr(b bool) *bool    { return &b }
+func strPtr(s string) *string { return &s }
 
 func TestFailedRowShowsFailureReasonPreview(t *testing.T) {
 	tl := NewTaskList()

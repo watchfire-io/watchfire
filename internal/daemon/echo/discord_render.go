@@ -23,16 +23,16 @@ const discordRenderEllipsis = "…"
 // Translation rules (mirrors the doc in `commands.go` / `Block`):
 //
 //   - "header"  → `embeds[0].title` (the first header block becomes the
-//                 title of the first embed).
+//     title of the first embed).
 //   - "section" → `embeds[*].description` — successive sections after
-//                 a header are concatenated with `\n\n`. A section
-//                 BEFORE any header lands as a top-level `data.content`
-//                 line plus a fallback embed description (so clients
-//                 that strip embeds still see the gist).
+//     a header are concatenated with `\n\n`. A section
+//     BEFORE any header lands as a top-level `data.content`
+//     line plus a fallback embed description (so clients
+//     that strip embeds still see the gist).
 //   - "context" → `embeds[*].footer.text` (last context wins per embed).
 //   - "divider" → starts a new embed (Discord embeds visually separate
-//                 themselves; using one embed per logical section
-//                 keeps long status responses readable).
+//     themselves; using one embed per logical section
+//     keeps long status responses readable).
 //   - response.Ephemeral → `data.flags = 64`.
 //
 // The output is the raw JSON bytes that the handler writes verbatim

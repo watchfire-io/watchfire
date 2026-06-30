@@ -12,9 +12,9 @@ type AgentConfig struct {
 
 // NotificationsEvents holds per-event toggles.
 type NotificationsEvents struct {
-	TaskFailed    bool `yaml:"task_failed"`
-	RunComplete   bool `yaml:"run_complete"`
-	WeeklyDigest  bool `yaml:"weekly_digest"`
+	TaskFailed   bool `yaml:"task_failed"`
+	RunComplete  bool `yaml:"run_complete"`
+	WeeklyDigest bool `yaml:"weekly_digest"`
 }
 
 // NotificationsSounds holds sound prefs for notifications.

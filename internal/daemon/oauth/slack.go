@@ -87,11 +87,11 @@ func ExchangeSlackCode(ctx context.Context, client *http.Client, clientID, clien
 	}
 
 	var parsed struct {
-		OK        bool   `json:"ok"`
-		Error     string `json:"error"`
+		OK          bool   `json:"ok"`
+		Error       string `json:"error"`
 		AccessToken string `json:"access_token"`
-		BotUserID string `json:"bot_user_id"`
-		Team      struct {
+		BotUserID   string `json:"bot_user_id"`
+		Team        struct {
 			ID   string `json:"id"`
 			Name string `json:"name"`
 		} `json:"team"`

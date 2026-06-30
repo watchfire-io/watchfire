@@ -371,10 +371,10 @@ func (o *Opencode) LocateTranscript(workDir string, started time.Time, sessionHi
 //   - content: sometimes a plain string, sometimes an array of parts
 //   - text: fallback when parts are absent
 type opencodeMessage struct {
-	Role    string              `json:"role"`
+	Role    string                `json:"role"`
 	Parts   []opencodeMessagePart `json:"parts"`
-	Content json.RawMessage     `json:"content"`
-	Text    string              `json:"text"`
+	Content json.RawMessage       `json:"content"`
+	Text    string                `json:"text"`
 	// Some opencode builds wrap the message under "info" or "message".
 	Info    json.RawMessage `json:"info"`
 	Message json.RawMessage `json:"message"`

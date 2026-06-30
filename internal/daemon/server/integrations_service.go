@@ -467,10 +467,10 @@ func scrubConfigToProto(cfg *models.IntegrationsConfig) *pb.IntegrationsConfig {
 		out.Webhooks = append(out.Webhooks, &pb.WebhookIntegration{
 			Id:             ep.ID,
 			Label:          ep.Label,
-			Url:            ep.URL,           // Webhook URL is non-secret (the HMAC is)
+			Url:            ep.URL, // Webhook URL is non-secret (the HMAC is)
 			UrlLabel:       maskURL(ep.URL),
 			SecretSet:      secretSet,
-			Secret:         "",                // never returned
+			Secret:         "", // never returned
 			EnabledEvents:  eventsModelToProto(ep.EnabledEvents),
 			ProjectMuteIds: append([]string(nil), ep.ProjectMuteIDs...),
 		})

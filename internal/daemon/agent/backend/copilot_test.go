@@ -45,7 +45,7 @@ func TestCopilotBuildCommandArgs(t *testing.T) {
 
 	expectedHome := filepath.Join(home, ".watchfire", "copilot-home", "proj:task:#0001-foo")
 	wantEnv := map[string]bool{
-		"COPILOT_HOME=" + expectedHome:                    true,
+		"COPILOT_HOME=" + expectedHome:                     true,
 		"COPILOT_CUSTOM_INSTRUCTIONS_DIRS=" + expectedHome: true,
 	}
 	for _, e := range cmd.Env {

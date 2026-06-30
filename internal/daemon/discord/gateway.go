@@ -99,11 +99,11 @@ type GatewayConn interface {
 
 // GatewayConfig parametrises a single Gateway client run.
 type GatewayConfig struct {
-	URL     string         // empty defaults to DefaultGatewayURL
-	Token   string         // bot token (without the "Bot " prefix)
-	Intents int            // intent bitfield; defaults to IntentGuilds when 0
-	Dialer  GatewayDialer  // empty falls back to nhooyr.io/websocket.Dial
-	Logger  *log.Logger    // empty falls back to log.Default()
+	URL     string        // empty defaults to DefaultGatewayURL
+	Token   string        // bot token (without the "Bot " prefix)
+	Intents int           // intent bitfield; defaults to IntentGuilds when 0
+	Dialer  GatewayDialer // empty falls back to nhooyr.io/websocket.Dial
+	Logger  *log.Logger   // empty falls back to log.Default()
 	// Now is a clock seam for tests. Defaults to time.Now.
 	Now func() time.Time
 }

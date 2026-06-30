@@ -10,7 +10,7 @@ import (
 )
 
 // boolPtr / timePtr — fixture helpers for *bool / *time.Time fields.
-func boolPtr(b bool) *bool { return &b }
+func boolPtr(b bool) *bool           { return &b }
 func timePtr(t time.Time) *time.Time { return &t }
 
 // makeMetrics builds a v8.0 code-output metrics record for a task.
@@ -217,8 +217,8 @@ func TestComputeGlobalInsights_RespectsWindow(t *testing.T) {
 	projects := []models.ProjectEntry{{ProjectID: "p", Name: "p"}}
 	tasksByProject := map[string][]*models.Task{
 		"p": {
-			makeTask(1, "claude-code", true, in.Add(-5*time.Minute), in),       // inside
-			makeTask(2, "claude-code", true, out.Add(-5*time.Minute), out),     // outside
+			makeTask(1, "claude-code", true, in.Add(-5*time.Minute), in),   // inside
+			makeTask(2, "claude-code", true, out.Add(-5*time.Minute), out), // outside
 		},
 	}
 	g := ComputeGlobalInsightsForTasks(

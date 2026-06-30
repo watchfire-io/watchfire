@@ -49,9 +49,9 @@ func TestOpencodeBuildCommandArgs(t *testing.T) {
 	expectedCfg := filepath.Join(home, ".watchfire", "opencode-home", "proj:task:#0001-foo", "config")
 	expectedData := filepath.Join(home, ".watchfire", "opencode-home", "proj:task:#0001-foo", "data")
 	envWants := map[string]bool{
-		"OPENCODE_CONFIG_DIR=" + expectedCfg:   true,
-		"OPENCODE_DATA_DIR=" + expectedData:    true,
-		`OPENCODE_PERMISSION={"*":"allow"}`:    true,
+		"OPENCODE_CONFIG_DIR=" + expectedCfg: true,
+		"OPENCODE_DATA_DIR=" + expectedData:  true,
+		`OPENCODE_PERMISSION={"*":"allow"}`:  true,
 	}
 	for _, e := range cmd.Env {
 		delete(envWants, e)

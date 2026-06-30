@@ -32,12 +32,12 @@ const vtScrollbackCap = 5000
 // them off via a forwarder callback — wired by Terminal to send them
 // back to the daemon's PTY so the agent gets its answer.
 type vtBuffer struct {
-	mu       sync.Mutex
-	term     *vt.Emulator
-	rows     int
-	cols     int
-	fwdMu    sync.RWMutex
-	forward  func([]byte)
+	mu      sync.Mutex
+	term    *vt.Emulator
+	rows    int
+	cols    int
+	fwdMu   sync.RWMutex
+	forward func([]byte)
 }
 
 func newVTBuffer(rows, cols int) *vtBuffer {

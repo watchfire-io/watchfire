@@ -296,4 +296,3 @@ func CopyTranscript(projectID, logID, srcPath string) error {
 	_, err = io.Copy(dst, src)
 	return err
 }
-

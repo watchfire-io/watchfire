@@ -170,9 +170,9 @@ func clipboardBinary() (string, []string) {
 		bin  string
 		args []string
 	}{
-		{"pbcopy", nil},                       // macOS
+		{"pbcopy", nil}, // macOS
 		{"xclip", []string{"-selection", "clipboard"}}, // Linux X11
-		{"wl-copy", nil},                      // Linux Wayland
+		{"wl-copy", nil}, // Linux Wayland
 	} {
 		if _, err := exec.LookPath(candidate.bin); err == nil {
 			return candidate.bin, candidate.args

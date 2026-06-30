@@ -131,4 +131,3 @@ func TestVTBufferLargeBatchPreservesScrollback(t *testing.T) {
 		t.Errorf("expected earliest line L01 in scrollback, rendered:\n%s", rendered)
 	}
 }
-

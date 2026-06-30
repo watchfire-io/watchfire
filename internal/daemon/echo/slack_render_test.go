@@ -164,10 +164,10 @@ func TestCancelReasonModalViewWithoutTitleFallsBackToGenericHeadline(t *testing.
 
 func TestSplitProjectTaskRef(t *testing.T) {
 	cases := []struct {
-		in        string
-		wantProj  string
-		wantTask  int
-		wantOK    bool
+		in       string
+		wantProj string
+		wantTask int
+		wantOK   bool
 	}{
 		{"proj-abc|42", "proj-abc", 42, true},
 		{"a|b|7", "a|b", 7, true}, // pipe in project id allowed; only last pipe splits
@@ -195,4 +195,3 @@ func decodeJSON(t *testing.T, body []byte) map[string]any {
 	}
 	return doc
 }
-

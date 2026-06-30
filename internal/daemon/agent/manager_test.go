@@ -20,8 +20,8 @@ func (f *fakeBackend) ResolveExecutable(*models.Settings) (string, error) { retu
 func (f *fakeBackend) BuildCommand(backend.CommandOpts) (backend.Command, error) {
 	return backend.Command{}, nil
 }
-func (f *fakeBackend) SandboxExtras() backend.SandboxExtras        { return backend.SandboxExtras{} }
-func (f *fakeBackend) InstallSystemPrompt(string, string) error    { return nil }
+func (f *fakeBackend) SandboxExtras() backend.SandboxExtras     { return backend.SandboxExtras{} }
+func (f *fakeBackend) InstallSystemPrompt(string, string) error { return nil }
 func (f *fakeBackend) LocateTranscript(string, time.Time, string) (string, error) {
 	return "", nil
 }

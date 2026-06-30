@@ -54,8 +54,8 @@ func (s *memSecretStore) Delete(key string) error {
 type memSecretStoreAdapter struct{ inner *memSecretStore }
 
 func (m *memSecretStoreAdapter) Get(key string) (string, bool) { return m.inner.Get(key) }
-func (m *memSecretStoreAdapter) Set(key, value string) error    { return m.inner.Set(key, value) }
-func (m *memSecretStoreAdapter) Delete(key string) error        { return m.inner.Delete(key) }
+func (m *memSecretStoreAdapter) Set(key, value string) error   { return m.inner.Set(key, value) }
+func (m *memSecretStoreAdapter) Delete(key string) error       { return m.inner.Delete(key) }
 
 // withTempHomeIntegrations redirects $HOME so config paths resolve to a
 // per-test directory; restores the original on teardown. Named to avoid
@@ -86,9 +86,9 @@ func TestSaveListRoundTripScrubsSecrets(t *testing.T) {
 	_, err := svc.SaveIntegration(ctx, &pb.SaveIntegrationRequest{
 		Payload: &pb.SaveIntegrationRequest_Webhook{
 			Webhook: &pb.WebhookIntegration{
-				Id:    "hook-1",
-				Label: "ops",
-				Url:   "https://example.com/incoming",
+				Id:     "hook-1",
+				Label:  "ops",
+				Url:    "https://example.com/incoming",
 				Secret: "topsecret",
 				EnabledEvents: &pb.IntegrationEvents{
 					TaskFailed: true, RunComplete: true,

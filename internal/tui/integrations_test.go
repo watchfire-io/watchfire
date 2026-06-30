@@ -64,12 +64,12 @@ func TestIntegrationsListThree(t *testing.T) {
 	cfg := &pb.IntegrationsConfig{
 		Webhooks: []*pb.WebhookIntegration{{
 			Id: "w-1", Label: "ops", UrlLabel: "***ops.example.com/incoming",
-			EnabledEvents: &pb.IntegrationEvents{TaskFailed: true},
+			EnabledEvents:  &pb.IntegrationEvents{TaskFailed: true},
 			ProjectMuteIds: []string{"p-1"},
 		}},
 		Slack: []*pb.SlackIntegration{{
 			Id: "s-1", Label: "channel", UrlLabel: "***hooks.slack.com/services/T0/...",
-			EnabledEvents: &pb.IntegrationEvents{TaskFailed: true, RunComplete: true},
+			EnabledEvents:  &pb.IntegrationEvents{TaskFailed: true, RunComplete: true},
 			ProjectMuteIds: []string{"p-1", "p-2"},
 		}},
 		Discord: []*pb.DiscordIntegration{{

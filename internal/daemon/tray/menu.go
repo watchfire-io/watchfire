@@ -20,17 +20,17 @@ const truncTitle = 32
 type ClickKind string
 
 const (
-	ClickNone           ClickKind = ""
-	ClickFocusMain      ClickKind = "focus_main"
-	ClickFocusTasks     ClickKind = "focus_tasks"
-	ClickFocusTask      ClickKind = "focus_task"
-	ClickFocusDigest    ClickKind = "focus_digest"
-	ClickOpenWatchfire  ClickKind = "open_watchfire"
-	ClickOpenDashboard  ClickKind = "open_dashboard"
-	ClickOpenNotifLog   ClickKind = "open_notif_log"
-	ClickQuitWatchfire  ClickKind = "quit_watchfire"
-	ClickReloadNotifs   ClickKind = "reload_notifs"
-	ClickUpdateAvail    ClickKind = "update_available"
+	ClickNone          ClickKind = ""
+	ClickFocusMain     ClickKind = "focus_main"
+	ClickFocusTasks    ClickKind = "focus_tasks"
+	ClickFocusTask     ClickKind = "focus_task"
+	ClickFocusDigest   ClickKind = "focus_digest"
+	ClickOpenWatchfire ClickKind = "open_watchfire"
+	ClickOpenDashboard ClickKind = "open_dashboard"
+	ClickOpenNotifLog  ClickKind = "open_notif_log"
+	ClickQuitWatchfire ClickKind = "quit_watchfire"
+	ClickReloadNotifs  ClickKind = "reload_notifs"
+	ClickUpdateAvail   ClickKind = "update_available"
 )
 
 // ClickAction is what a click on a MenuNode requests. Empty Kind means the

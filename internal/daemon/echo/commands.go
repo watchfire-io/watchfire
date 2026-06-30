@@ -16,18 +16,18 @@ import (
 // router free of provider-specific concerns:
 //
 //   - Text       — fallback / one-line summary, used when blocks are absent
-//                  or by clients that don't render rich content.
+//     or by clients that don't render rich content.
 //   - Blocks     — structured content in a Slack-Block-Kit-compatible
-//                  shape. The Discord renderer translates them to embeds
-//                  (see `discord_render.go`).
+//     shape. The Discord renderer translates them to embeds
+//     (see `discord_render.go`).
 //   - Ephemeral  — true means "show only to the invoking user". Slack
-//                  maps to `response_type: "ephemeral"`; Discord maps to
-//                  the EPHEMERAL flag (64).
+//     maps to `response_type: "ephemeral"`; Discord maps to
+//     the EPHEMERAL flag (64).
 //   - InChannel  — a hint independent of Ephemeral: "this should be
-//                  publicly visible to others in the channel". When both
-//                  are false the renderer's transport default applies.
-//                  When InChannel is true the Slack renderer emits
-//                  `response_type: "in_channel"`.
+//     publicly visible to others in the channel". When both
+//     are false the renderer's transport default applies.
+//     When InChannel is true the Slack renderer emits
+//     `response_type: "in_channel"`.
 type CommandResponse struct {
 	Text      string
 	Blocks    []Block

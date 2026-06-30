@@ -3,15 +3,15 @@
 // These handlers extend `IntegrationsService` with the four-step
 // browser-driven install flow:
 //
-//   BeginOAuth      → returns the upstream authorize URL + spins up
-//                     a one-shot loopback callback server that races
-//                     to receive the user's redirect.
-//   GetOAuthStatus  → polled by the GUI / TUI to surface
-//                     "in_progress" → "connected" → "error" pills.
-//   CancelOAuth     → tears the in-flight callback server down so the
-//                     user can restart or pick a different provider.
-//   PostOAuthHello  → sends a "hello" through the captured bot token
-//                     so the user can confirm the install end-to-end.
+//	BeginOAuth      → returns the upstream authorize URL + spins up
+//	                  a one-shot loopback callback server that races
+//	                  to receive the user's redirect.
+//	GetOAuthStatus  → polled by the GUI / TUI to surface
+//	                  "in_progress" → "connected" → "error" pills.
+//	CancelOAuth     → tears the in-flight callback server down so the
+//	                  user can restart or pick a different provider.
+//	PostOAuthHello  → sends a "hello" through the captured bot token
+//	                  so the user can confirm the install end-to-end.
 //
 // All persistence flows through `internal/config/integrations.go` —
 // bot tokens land in the OS keyring, non-secret metadata
@@ -40,12 +40,12 @@ import (
 // while a flow is in_progress cancels the prior attempt rather than
 // queuing.
 type oauthFlow struct {
-	server *oauth.Server
-	cancel context.CancelFunc
-	state  pb.OAuthState
-	errMsg string
+	server      *oauth.Server
+	cancel      context.CancelFunc
+	state       pb.OAuthState
+	errMsg      string
 	connectedAs string
-	channel string
+	channel     string
 	completedAt time.Time
 }
 
@@ -53,9 +53,9 @@ type oauthFlow struct {
 // integrationsService; persists across BeginOAuth / GetOAuthStatus
 // calls. Concurrent-safe.
 type oauthCoordinator struct {
-	mu     sync.Mutex
-	store  *oauth.StateStore
-	flows  map[pb.OAuthProvider]*oauthFlow
+	mu    sync.Mutex
+	store *oauth.StateStore
+	flows map[pb.OAuthProvider]*oauthFlow
 }
 
 func newOAuthCoordinator() *oauthCoordinator {
@@ -116,9 +116,9 @@ func (s *integrationsService) BeginOAuth(_ context.Context, req *pb.BeginOAuthRe
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
 	flow := &oauthFlow{
-		server: cb,
-		cancel: cancel,
-		state:  pb.OAuthState_OAUTH_STATE_IN_PROGRESS,
+		server:  cb,
+		cancel:  cancel,
+		state:   pb.OAuthState_OAUTH_STATE_IN_PROGRESS,
 		channel: req.GetDefaultChannel(),
 	}
 	s.oauth.mu.Lock()

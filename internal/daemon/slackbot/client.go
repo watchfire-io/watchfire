@@ -9,10 +9,10 @@
 // continues to use incoming-webhook URLs for fanning notifications
 // out to a channel — this package is purely additive, used by:
 //
-//   1. The "post hello after Connect" flow that proves the install
-//      worked end-to-end.
-//   2. Future v8.x slash-command DM responses to the originator on
-//      private failures (covered separately in echo8sltr).
+//  1. The "post hello after Connect" flow that proves the install
+//     worked end-to-end.
+//  2. Future v8.x slash-command DM responses to the originator on
+//     private failures (covered separately in echo8sltr).
 //
 // All methods accept a context and a bot token as the first two
 // arguments so callers can use a single shared client across multiple

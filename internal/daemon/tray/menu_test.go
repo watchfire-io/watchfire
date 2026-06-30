@@ -216,7 +216,7 @@ func TestBuildMenuRebuildGoroutineBaseline(t *testing.T) {
 	in := MenuInputs{DaemonRunning: true}
 	for i := 0; i < 5; i++ {
 		in.Projects = append(in.Projects, ProjectMenuInfo{
-			ProjectID:   "p", ProjectName: "x", Status: ProjectIdle,
+			ProjectID: "p", ProjectName: "x", Status: ProjectIdle,
 		})
 	}
 	for i := 0; i < 100; i++ {

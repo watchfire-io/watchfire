@@ -34,10 +34,10 @@ const CommandsAPIBase = "https://discord.com/api/v10"
 // also has USER and MESSAGE commands but Watchfire only ships slash
 // commands). `Options[].Type: 3` is STRING.
 type SlashCommand struct {
-	Name        string           `json:"name"`
-	Type        int              `json:"type"`
-	Description string           `json:"description"`
-	Options     []CommandOption  `json:"options,omitempty"`
+	Name        string          `json:"name"`
+	Type        int             `json:"type"`
+	Description string          `json:"description"`
+	Options     []CommandOption `json:"options,omitempty"`
 }
 
 // CommandOption is a single argument to a SlashCommand.

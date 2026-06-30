@@ -27,17 +27,17 @@ type taskDoneFixture struct {
 	notifyCalled           int
 	saveTaskCalled         int
 
-	openPRErr      error
-	mergeErr       error
-	mergeChanged   bool // first return of MergeWorktree
-	removeMerged   bool // captured from RemoveWorktree(_, _, merged)
-	notifications  []notify.Notification
-	openPROptions  gitpkg.OpenPROptions
-	openPRResult   *gitpkg.PRResult
-	autoPREnabled  bool
-	githubScopes   []string
-	taskCompleted  *time.Time
-	savedTasks     []*models.Task // captured snapshots of every SaveTask call
+	openPRErr     error
+	mergeErr      error
+	mergeChanged  bool // first return of MergeWorktree
+	removeMerged  bool // captured from RemoveWorktree(_, _, merged)
+	notifications []notify.Notification
+	openPROptions gitpkg.OpenPROptions
+	openPRResult  *gitpkg.PRResult
+	autoPREnabled bool
+	githubScopes  []string
+	taskCompleted *time.Time
+	savedTasks    []*models.Task // captured snapshots of every SaveTask call
 }
 
 func (f *taskDoneFixture) fns() taskDoneFns {

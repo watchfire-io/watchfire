@@ -239,9 +239,9 @@ func typeName(p Parser) string {
 
 func TestParseInt64Comma(t *testing.T) {
 	cases := []struct {
-		in      string
-		want    int64
-		wantOk  bool
+		in     string
+		want   int64
+		wantOk bool
 	}{
 		{"0", 0, true},
 		{"123", 123, true},

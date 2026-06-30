@@ -9,12 +9,12 @@ import (
 
 type fakeBackend struct{ name string }
 
-func (f *fakeBackend) Name() string                                    { return f.name }
-func (f *fakeBackend) DisplayName() string                             { return f.name }
+func (f *fakeBackend) Name() string                                       { return f.name }
+func (f *fakeBackend) DisplayName() string                                { return f.name }
 func (f *fakeBackend) ResolveExecutable(*models.Settings) (string, error) { return "", nil }
-func (f *fakeBackend) BuildCommand(CommandOpts) (Command, error)       { return Command{}, nil }
-func (f *fakeBackend) SandboxExtras() SandboxExtras                    { return SandboxExtras{} }
-func (f *fakeBackend) InstallSystemPrompt(string, string) error        { return nil }
+func (f *fakeBackend) BuildCommand(CommandOpts) (Command, error)          { return Command{}, nil }
+func (f *fakeBackend) SandboxExtras() SandboxExtras                       { return SandboxExtras{} }
+func (f *fakeBackend) InstallSystemPrompt(string, string) error           { return nil }
 func (f *fakeBackend) LocateTranscript(string, time.Time, string) (string, error) {
 	return "", nil
 }

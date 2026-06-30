@@ -32,10 +32,10 @@ type TaskForm struct {
 	status       string // "draft" or "ready"
 
 	// Agent override: empty string means "use project default".
-	agentOptions         []CycleOption // First entry is the project-default sentinel.
-	agentIndex           int
-	projectDefaultAgent  string // Effective project default (used for display only).
-	projectDefaultLabel  string // Pretty label for the project default.
+	agentOptions        []CycleOption // First entry is the project-default sentinel.
+	agentIndex          int
+	projectDefaultAgent string // Effective project default (used for display only).
+	projectDefaultLabel string // Pretty label for the project default.
 
 	focusIndex int // 0=title, 1=prompt, 2=criteria, 3=agent, 4=status
 	width      int

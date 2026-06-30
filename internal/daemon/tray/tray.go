@@ -71,12 +71,12 @@ var (
 	quitItem   *systray.MenuItem
 
 	// Maps slot index → click action for click handler routing.
-	slotMu                sync.RWMutex
-	attentionActions      [maxAttention]ClickAction
-	workingActions        [maxWorking]ClickAction
-	idleActions           [maxIdleSlots]ClickAction
-	notifActions          [maxNotifSubs]ClickAction
-	previousActiveAgents  map[string]AgentInfo // for completion-detection notifications
+	slotMu               sync.RWMutex
+	attentionActions     [maxAttention]ClickAction
+	workingActions       [maxWorking]ClickAction
+	idleActions          [maxIdleSlots]ClickAction
+	notifActions         [maxNotifSubs]ClickAction
+	previousActiveAgents map[string]AgentInfo // for completion-detection notifications
 
 	// Cache generated icons by hex color.
 	iconCache   = make(map[string][]byte)

@@ -6,11 +6,12 @@
 // v6.0 — keeping the dep tree light is the contract.
 //
 // Keys (overlay-active):
-//   j / down   next file
-//   k / up     prev file
-//   /          start filter (Enter / Esc to confirm / cancel)
-//   r          refresh diff
-//   esc / q    close overlay
+//
+//	j / down   next file
+//	k / up     prev file
+//	/          start filter (Enter / Esc to confirm / cancel)
+//	r          refresh diff
+//	esc / q    close overlay
 package tui
 
 import (
@@ -227,19 +228,19 @@ func renderTaskDiffOverlay(s taskDiffState, width, height int) string {
 	case s.Err != nil:
 		body = lipgloss.NewStyle().
 			Foreground(colorYellow).
-			Width(width-2).
+			Width(width - 2).
 			Height(bodyHeight).
 			Render("Failed to load: " + s.Err.Error())
 	case s.Data == nil || s.Loading:
 		body = lipgloss.NewStyle().
 			Foreground(colorDim).
-			Width(width-2).
+			Width(width - 2).
 			Height(bodyHeight).
 			Render("Loading…")
 	case len(s.Data.GetFiles()) == 0:
 		body = lipgloss.NewStyle().
 			Foreground(colorDim).
-			Width(width-2).
+			Width(width - 2).
 			Height(bodyHeight).
 			Render("No changes — this task didn't touch any files.")
 	default:
