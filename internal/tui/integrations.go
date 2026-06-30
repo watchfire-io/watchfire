@@ -89,10 +89,10 @@ type IntegrationsForm struct {
 	// secret blocks) plus a status pill at the top.
 	tab            integrationsTab
 	inboundStatus  *pb.InboundStatus
-	inboundCursor  int                  // index into the editable inbound rows below
-	inboundEditing bool                 // true when the textinput is consuming keystrokes
-	inboundInput   textinput.Model      // shared input for whichever inbound row is being edited
-	inboundDraft   pb.InboundConfig     // local edit buffer; flushed via saveInboundConfigCmd on Enter
+	inboundCursor  int              // index into the editable inbound rows below
+	inboundEditing bool             // true when the textinput is consuming keystrokes
+	inboundInput   textinput.Model  // shared input for whichever inbound row is being edited
+	inboundDraft   pb.InboundConfig // local edit buffer; flushed via saveInboundConfigCmd on Enter
 
 	// v8.x OAuth — per-provider install state. The integrations
 	// overlay polls GetOAuthStatus and stores the last-seen status
@@ -126,8 +126,8 @@ const (
 	inboundRowListenAddr
 	inboundRowPublicURL
 	inboundRowRateLimit
-	inboundRowGitHost          // v8.x — picker (github / github-enterprise / gitlab / bitbucket)
-	inboundRowGitHostBaseURL   // v8.x — non-cloud installations
+	inboundRowGitHost        // v8.x — picker (github / github-enterprise / gitlab / bitbucket)
+	inboundRowGitHostBaseURL // v8.x — non-cloud installations
 	inboundRowGitHubSecret
 	inboundRowGitLabSecret
 	inboundRowBitbucketSecret
@@ -176,19 +176,19 @@ func (f *IntegrationsForm) LoadInbound(st *pb.InboundStatus) {
 	f.inboundStatus = st
 	if cfg := st.GetConfig(); cfg != nil {
 		f.inboundDraft = pb.InboundConfig{
-			ListenAddr:           cfg.GetListenAddr(),
-			PublicUrl:            cfg.GetPublicUrl(),
-			DiscordAppId:         cfg.GetDiscordAppId(),
-			Disabled:             cfg.GetDisabled(),
-			GithubSecretSet:      cfg.GetGithubSecretSet(),
-			SlackSecretSet:       cfg.GetSlackSecretSet(),
-			DiscordPublicKeySet:  cfg.GetDiscordPublicKeySet(),
-			DiscordBotTokenSet:   cfg.GetDiscordBotTokenSet(),
-			RateLimitPerMin:      cfg.GetRateLimitPerMin(),
-			GitHost:              cfg.GetGitHost(),
-			GitHostBaseUrl:       cfg.GetGitHostBaseUrl(),
-			GitlabSecretSet:      cfg.GetGitlabSecretSet(),
-			BitbucketSecretSet:   cfg.GetBitbucketSecretSet(),
+			ListenAddr:          cfg.GetListenAddr(),
+			PublicUrl:           cfg.GetPublicUrl(),
+			DiscordAppId:        cfg.GetDiscordAppId(),
+			Disabled:            cfg.GetDisabled(),
+			GithubSecretSet:     cfg.GetGithubSecretSet(),
+			SlackSecretSet:      cfg.GetSlackSecretSet(),
+			DiscordPublicKeySet: cfg.GetDiscordPublicKeySet(),
+			DiscordBotTokenSet:  cfg.GetDiscordBotTokenSet(),
+			RateLimitPerMin:     cfg.GetRateLimitPerMin(),
+			GitHost:             cfg.GetGitHost(),
+			GitHostBaseUrl:      cfg.GetGitHostBaseUrl(),
+			GitlabSecretSet:     cfg.GetGitlabSecretSet(),
+			BitbucketSecretSet:  cfg.GetBitbucketSecretSet(),
 		}
 	}
 }
@@ -581,8 +581,12 @@ func (f *IntegrationsForm) IsEditing() bool { return f.mode != integrationsModeL
 // AddSnapshot returns the staged add-form values for the model layer
 // to roll into a SaveIntegrationRequest.
 func (f *IntegrationsForm) AddSnapshot() (kind integrationsRowKind, url, label string, events *pb.IntegrationEvents, mutes []string) {
-	ev := f.addEvents
-	return f.addKind, f.addURL, f.addLabel, &ev, append([]string(nil), f.addMutes...)
+	ev := &pb.IntegrationEvents{
+		TaskFailed:   f.addEvents.TaskFailed,
+		RunComplete:  f.addEvents.RunComplete,
+		WeeklyDigest: f.addEvents.WeeklyDigest,
+	}
+	return f.addKind, f.addURL, f.addLabel, ev, append([]string(nil), f.addMutes...)
 }
 
 // rebuildRows flattens the IntegrationsConfig into the row list.
@@ -739,7 +743,7 @@ func (f *IntegrationsForm) renderInbound() string {
 	b.WriteString("\n")
 	b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render("OAuth bot tokens"))
 	b.WriteString("\n")
-	b.WriteString(renderOAuthRow("Slack",   f.slackOAuth,   "press s to connect"))
+	b.WriteString(renderOAuthRow("Slack", f.slackOAuth, "press s to connect"))
 	b.WriteString("\n")
 	b.WriteString(renderOAuthRow("Discord", f.discordOAuth, "press d to connect"))
 	b.WriteString("\n")
@@ -1106,7 +1110,6 @@ func contains(s []string, v string) bool {
 	return false
 }
 
-
 // LoadOAuthStatus stores a polled-OAuth status for the named provider.
 // Called from the model layer after the integrations overlay opens
 // (initial fetch) and after each BeginOAuth completes (refresh post-
@@ -1148,4 +1151,3 @@ func renderOAuthRow(label string, st *pb.OAuthStatus, idleHint string) string {
 	}
 	return fmt.Sprintf("  %-9s %s  %s", label, pillStr, suffix)
 }
-
