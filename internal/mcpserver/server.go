@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -48,6 +49,10 @@ type server struct {
 	// defaultProjectID is the project of the directory the server was
 	// started in, or "" when started outside a registered project.
 	defaultProjectID string
+
+	// pollInterval is the wait_for_task polling cadence; 0 means the
+	// 2-second default (tests shorten it).
+	pollInterval time.Duration
 
 	readOnly bool
 }
@@ -97,11 +102,12 @@ func newTool[In any](group, name, description string, handler func(context.Conte
 	}
 }
 
-// allTools is the full registry. Tasks 0125–0126 only append groups here.
+// allTools is the full registry. Task 0126 only appends its group here.
 func allTools() []toolDef {
 	var defs []toolDef
 	defs = append(defs, projectTools...)
 	defs = append(defs, taskTools...)
+	defs = append(defs, runTools...)
 	return defs
 }
 
