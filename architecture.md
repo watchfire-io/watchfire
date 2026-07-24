@@ -11,6 +11,7 @@ Watchfire orchestrates coding agent sessions (starting with Claude Code) based o
 | **Daemon** | `watchfired` | Orchestration, PTY management, terminal emulation, git workflows, gRPC server, system tray | Go |
 | **CLI/TUI** | `watchfire` | CLI commands + TUI mode. Project-scoped thin client | Go + Bubbletea |
 | **GUI** | `Watchfire.app` | Multi-window, multi-project thin client (home window + per-project windows) | Electron |
+| **MCP Server** | `watchfire mcp serve` | stdio MCP façade over the daemon — lets external coding agents (Claude Code, Codex, Gemini CLI, …) drive Watchfire as a task factory | Go + MCP Go SDK |
 
 ## Non-Negotiable Tech Choices
 
@@ -22,6 +23,7 @@ Watchfire orchestrates coding agent sessions (starting with Claude Code) based o
 - **TUI framework**: `github.com/charmbracelet/bubbletea`
 - **System tray**: `github.com/getlantern/systray`
 - **File watching**: `github.com/fsnotify/fsnotify`
+- **MCP**: `github.com/modelcontextprotocol/go-sdk` — official Model Context Protocol Go SDK (stdio transport)
 - **Sandbox**: macOS `sandbox-exec` (Seatbelt), Linux Landlock (kernel 5.13+) / bubblewrap (fallback), Windows unsandboxed
 
 ---
@@ -349,6 +351,13 @@ The CLI/TUI is the primary interface for developers. A single binary (`watchfire
 | `watchfire daemon start` | | Start the daemon (no-op if already running) |
 | `watchfire daemon status` | | Show daemon host, port, PID, uptime, and active agents |
 | `watchfire daemon stop` | | Stop the daemon via SIGTERM |
+
+#### MCP
+
+| Command | Alias | Description |
+|---------|-------|-------------|
+| `watchfire mcp serve` | | Run the stdio MCP server (spawned by MCP clients, not by users; auto-starts daemon) |
+| `watchfire mcp install [client]` | | Register the MCP server with a client: `claude-code`, `codex`, `gemini`, `opencode`, `copilot`. No arg = interactive picker. `--print` emits generic JSON config |
 
 ### `watchfire init` Flow
 
@@ -1067,6 +1076,118 @@ An always-on-top, floating mini-window that gives a glanceable, ambient view of 
 **Excluded (future):**
 - Generate Tasks / Auto-fill Definitions buttons in the GUI (available via TUI/CLI)
 - Branch mode toggle (always "new branch per task")
+
+---
+
+## MCP Server (`watchfire mcp`) — v9.0 Firestorm
+
+### Overview
+
+The MCP server turns Watchfire into a **factory for other coding agents**. Any MCP client — Claude Code, Codex, Gemini CLI, opencode, Copilot CLI, or a custom agent — can connect to Watchfire and delegate work: file tasks, launch sandboxed agent runs, await completion, and inspect the resulting diff. The outer agent plans and reviews; Watchfire manufactures the code.
+
+It is the **fourth thin client**. It contains no orchestration logic of its own: every tool call is a translation to an existing daemon gRPC RPC, exactly like the TUI and GUI. The daemon remains the single brain (worktrees, sandboxing, merging, chaining, notifications all keep working unchanged — a task created over MCP is indistinguishable from one created in the TUI).
+
+```
+MCP client (Claude Code / Codex / …)
+   │  stdio (JSON-RPC, MCP)
+   ▼
+watchfire mcp serve            ← thin translation layer, no state
+   │  gRPC (localhost)
+   ▼
+watchfired                     ← all orchestration
+```
+
+### Transport & Lifecycle
+
+- **Transport**: stdio only in v9.0. The MCP client spawns `watchfire mcp serve` as a subprocess; the server auto-starts the daemon if needed (same path as the CLI) and connects via `config.LoadDaemonInfo()`.
+- **SDK**: official `github.com/modelcontextprotocol/go-sdk` (pin latest stable at implementation time).
+- **Scoping**: tools take an optional `project` argument (project id or name). When `watchfire mcp serve` is started inside a registered project directory, that project is the default and `project` may be omitted — mirroring the CLI's project resolution (cwd walk-up + auto-register). A single server instance can address **all** registered projects.
+- **Concurrency**: the server is stateless; concurrent tool calls are safe because the daemon already serializes per-project agent operations.
+
+### Tool Catalog
+
+Tool names are unprefixed (clients namespace by server name). Kept deliberately small (~16 tools).
+
+| Group | Tool | Backing RPC | Notes |
+|-------|------|-------------|-------|
+| Project | `list_projects` | `ProjectService.ListProjects` + `AgentService.GetAgentStatus` | Status summary per project (agent running, mode, current task) |
+| Project | `get_project` | `ProjectService.GetProject` + `GetGitInfo` | Definition, default agent, branch, task counts |
+| Task | `create_task` | `TaskService.CreateTask` | `title`, `prompt`, `acceptance_criteria?`, `status` (`draft`\|`ready`), `agent?` override, `position?`. Validated daemon write path — never authors YAML directly |
+| Task | `list_tasks` | `TaskService.ListTasks` | Optional `include_deleted` |
+| Task | `get_task` | `TaskService.GetTask` | Full task incl. `status` / `success` / `failure_reason` |
+| Task | `update_task` | `TaskService.UpdateTask` | Edit fields, flip `draft`⇄`ready` |
+| Task | `delete_task` | `TaskService.DeleteTask` | Soft delete (trash) |
+| Run | `run_task` | `AgentService.StartAgent` (`mode=task`) | Errors clearly if an agent is already running for the project |
+| Run | `run_all` | `AgentService.StartAgent` (`mode=start-all`) | Run all ready tasks in sequence |
+| Run | `start_wildfire` | `AgentService.StartAgent` (`mode=wildfire`) | Autonomous three-phase loop |
+| Run | `stop_agent` | `AgentService.StopAgent` | |
+| Run | `get_agent_status` | `AgentService.GetAgentStatus` | Mode, task, wildfire phase, blocking issue if any |
+| Run | `wait_for_task` | polls `TaskService.GetTask` + `GetAgentStatus` | Blocking with `timeout_seconds` (default 300, max 600). Returns terminal task state, or current state + `timed_out: true`. Clients re-call to keep waiting — this is the factory loop's synchronization point |
+| Inspect | `get_task_diff` | `InsightsService.GetTaskDiff` | `FileDiffSet` rendered as unified diff text, honoring the daemon's truncation cap |
+| Inspect | `get_agent_screen` | `AgentService.GetScrollback` | Tail of the live agent terminal (plain text, ANSI stripped) — lets the outer agent peek at a stuck run |
+| Inspect | `get_insights` | `InsightsService.GetProjectInsights` / `GetGlobalInsights` | Throughput + code-output summary |
+| Inspect | `list_logs` / `get_log` | `LogService` | Past session transcripts |
+
+### The Factory Loop
+
+The canonical outer-agent workflow the tool surface is designed around:
+
+1. `create_task` (`status: ready`, `auto_start_tasks` off → or explicit `run_task`)
+2. `wait_for_task` — blocks until the daemon's reactive lifecycle finishes (agent writes `status: done` → watcher → stop → merge/auto-PR → cleanup)
+3. `get_task` — check `success` / `failure_reason`
+4. `get_task_diff` — review what was merged
+5. Iterate: file follow-up tasks or fix-ups
+
+Escape hatches: `get_agent_screen` to diagnose a stuck agent, `stop_agent` to abort, `update_task`/`delete_task` to reshape the queue.
+
+### Safety & Limits
+
+- **Local trust boundary**: stdio only; the server runs as the invoking user and talks to the localhost daemon over the same unauthenticated channel as the CLI. No network exposure is added.
+- **`--read-only` flag**: `watchfire mcp serve --read-only` registers only the Project/Inspect groups plus `get_agent_status` — an observation-only deployment for dashboards or untrusted callers.
+- **Recursion**: a Watchfire-managed agent could itself call the Watchfire MCP server (the sandbox permits local exec + network). This is permitted but not the designed pattern; the designed pattern is outer agent → Watchfire. Documentation warns about unbounded task-spawning loops.
+- **Destructive scope**: no tool deletes projects, edits settings/integrations, empties trash, or touches secrets. That surface stays in the human-facing clients.
+
+### Client Onboarding
+
+`watchfire mcp install [client]` writes the server registration into the target client's config, mirroring how the agent-backend registry enumerates supported agents:
+
+| Client | Mechanism |
+|--------|-----------|
+| `claude-code` | `claude mcp add watchfire -- watchfire mcp serve` (user scope) |
+| `codex` | `~/.codex/config.toml` `[mcp_servers.watchfire]` entry |
+| `gemini` | `~/.gemini/settings.json` `mcpServers` entry |
+| `opencode` | opencode config `mcp` entry |
+| `copilot` | Copilot CLI MCP config entry |
+| _generic_ | `--print` emits the standard `{"command": "watchfire", "args": ["mcp", "serve"]}` JSON block |
+
+Each installer is best-effort: if the client CLI/config is absent, print the manual snippet instead of failing.
+
+### Package Layout
+
+```
+cmd/watchfire/mcp.go            # cobra: watchfire mcp serve|install
+internal/mcpserver/
+├── server.go                   # SDK wiring, tool registry, --read-only filtering
+├── conn.go                     # daemon ensure+connect (reuses/exports internal/cli helpers)
+├── resolve.go                  # project argument → project_id resolution (id, name, cwd default)
+├── tools_project.go
+├── tools_task.go
+├── tools_run.go                # incl. wait_for_task polling
+├── tools_inspect.go            # diff/scrollback/insights/logs rendering
+└── install/                    # per-client config writers for `mcp install`
+```
+
+`internal/mcpserver` imports the generated proto client + `internal/config` only — no daemon-internal packages.
+
+### Scope
+
+**Included (v9.0):** stdio server, the tool catalog above, `--read-only`, `mcp install` for the five known clients + generic print.
+
+**Excluded (future):**
+- Streamable HTTP transport + auth (would build on the Echo inbound server infrastructure)
+- MCP resources (task files, logs, digests as subscribable resources) & prompts
+- MCP-driven project creation/registration (`watchfire init` remains interactive)
+- Sampling / elicitation (server-initiated requests to the client)
 
 ---
 
