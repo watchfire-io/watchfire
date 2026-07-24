@@ -6,6 +6,9 @@
 *.dylib
 watchfire
 watchfired
+# The binary patterns above also match the source dirs; re-include them
+!cmd/watchfire/
+!cmd/watchfired/
 
 # Build output
 /build/

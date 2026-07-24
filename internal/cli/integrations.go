@@ -28,7 +28,7 @@ var integrationsListCmd = &cobra.Command{
 		if err := EnsureDaemon(); err != nil {
 			return err
 		}
-		conn, err := connectDaemon()
+		conn, err := ConnectDaemon()
 		if err != nil {
 			return err
 		}
@@ -85,7 +85,7 @@ template is exercised in a single command. The github form has no id
 		if err := EnsureDaemon(); err != nil {
 			return err
 		}
-		conn, err := connectDaemon()
+		conn, err := ConnectDaemon()
 		if err != nil {
 			return err
 		}
