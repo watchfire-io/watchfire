@@ -1142,14 +1142,25 @@ Escape hatches: `get_agent_screen` to diagnose a stuck agent, `stop_agent` to ab
 
 ### Safety & Limits
 
-- **Local trust boundary**: stdio only; the server runs as the invoking user and talks to the localhost daemon over the same unauthenticated channel as the CLI. No network exposure is added.
+- **Local-only, by construction**: the MCP server **never opens a TCP socket**. Its only transport is stdio, spawned as a subprocess by an MCP client running on the same host as the daemon. It runs as the invoking user and talks to the localhost daemon over the same unauthenticated channel as the CLI. Nothing in v9.0 makes Watchfire reachable from outside the host machine.
 - **`--read-only` flag**: `watchfire mcp serve --read-only` registers only the Project/Inspect groups plus `get_agent_status` — an observation-only deployment for dashboards or untrusted callers.
 - **Recursion**: a Watchfire-managed agent could itself call the Watchfire MCP server (the sandbox permits local exec + network). This is permitted but not the designed pattern; the designed pattern is outer agent → Watchfire. Documentation warns about unbounded task-spawning loops.
 - **Destructive scope**: no tool deletes projects, edits settings/integrations, empties trash, or touches secrets. That surface stays in the human-facing clients.
 
 ### Client Onboarding
 
-`watchfire mcp install [client]` writes the server registration into the target client's config, mirroring how the agent-backend registry enumerates supported agents:
+Setup follows one UX rule everywhere: **pick one of the most-used harnesses and Watchfire does the whole process for you, or pick Custom and get the generic snippet to paste into any MCP client.**
+
+The installer logic lives in `internal/mcpserver/install/` as pure, dependency-light config writers (detect client → parse existing config → merge `watchfire` entry → write back). It is shared by every surface:
+
+| Surface | Mechanism |
+|---------|-----------|
+| **CLI** | `watchfire mcp install [client]` — direct; no-arg shows an interactive picker (five clients + Custom) |
+| **Daemon** | `SettingsService.GetMcpClientStatus` (per-client: detected? configured? config path) + `SettingsService.InstallMcpClient` — the daemon runs as the same user, so it can write the same config files. This is the **only proto/daemon change in Firestorm** |
+| **TUI** | Settings view → "MCP" section: client list with detected/configured badges, Enter to install, Custom shows the copyable snippet |
+| **GUI** | Global Settings → "MCP" panel: same list with one-click Install buttons + copy-snippet for Custom, via gRPC-Web |
+
+Per-client mechanisms:
 
 | Client | Mechanism |
 |--------|-----------|
@@ -1158,9 +1169,9 @@ Escape hatches: `get_agent_screen` to diagnose a stuck agent, `stop_agent` to ab
 | `gemini` | `~/.gemini/settings.json` `mcpServers` entry |
 | `opencode` | opencode config `mcp` entry |
 | `copilot` | Copilot CLI MCP config entry |
-| _generic_ | `--print` emits the standard `{"command": "watchfire", "args": ["mcp", "serve"]}` JSON block |
+| _custom_ | Show/print the standard `{"command": "watchfire", "args": ["mcp", "serve"]}` JSON block for any other MCP client (`--print` in the CLI) |
 
-Each installer is best-effort: if the client CLI/config is absent, print the manual snippet instead of failing.
+Each installer is best-effort and idempotent: if the client CLI/config is absent or unparseable, surface the manual snippet instead of failing or clobbering the file.
 
 ### Package Layout
 
@@ -1174,14 +1185,14 @@ internal/mcpserver/
 ├── tools_task.go
 ├── tools_run.go                # incl. wait_for_task polling
 ├── tools_inspect.go            # diff/scrollback/insights/logs rendering
-└── install/                    # per-client config writers for `mcp install`
+└── install/                    # per-client config writers — shared by cmd/watchfire (CLI) AND the daemon's SettingsService
 ```
 
-`internal/mcpserver` imports the generated proto client + `internal/config` only — no daemon-internal packages.
+`internal/mcpserver` imports the generated proto client + `internal/config` only — no daemon-internal packages. The exception is `internal/mcpserver/install/`, which is deliberately standalone (stdlib + config parsing only) so the daemon can import it without pulling in the MCP runtime.
 
 ### Scope
 
-**Included (v9.0):** stdio server, the tool catalog above, `--read-only`, `mcp install` for the five known clients + generic print.
+**Included (v9.0):** stdio server (local-only — no TCP listener), the tool catalog above, `--read-only`, client onboarding from all four surfaces (CLI `mcp install`, daemon RPCs, TUI Settings section, GUI Settings panel) for the five known harnesses + Custom snippet.
 
 **Excluded (future):**
 - Streamable HTTP transport + auth (would build on the Echo inbound server infrastructure)
@@ -1679,6 +1690,8 @@ message Log {
 |-----|---------|----------|-------|
 | `GetSettings` | `Empty` | `Settings` | Global settings |
 | `UpdateSettings` | `Settings` | `Settings` | Update global settings |
+| `GetMcpClientStatus` | `Empty` | `McpClientStatusList` | v9.0 Firestorm — per-harness MCP setup state (detected? configured? config path) + Custom snippet |
+| `InstallMcpClient` | `InstallMcpClientRequest` | `McpClientStatus` | v9.0 Firestorm — register `watchfire mcp serve` with the named harness via shared `internal/mcpserver/install` writers |
 
 ### Event Streaming (per-project)
 
