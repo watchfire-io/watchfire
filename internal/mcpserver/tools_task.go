@@ -309,6 +309,15 @@ func defaultProperty(name, rawJSON string) func(*jsonschema.Schema) {
 	}
 }
 
+// rangeProperty bounds a numeric property of an inferred input schema.
+func rangeProperty(name string, min, max float64) func(*jsonschema.Schema) {
+	return func(s *jsonschema.Schema) {
+		p := mustProperty(s, name)
+		p.Minimum = &min
+		p.Maximum = &max
+	}
+}
+
 func mustProperty(s *jsonschema.Schema, name string) *jsonschema.Schema {
 	p, ok := s.Properties[name]
 	if !ok {
