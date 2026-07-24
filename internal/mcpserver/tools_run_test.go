@@ -18,9 +18,10 @@ import (
 // every other method panics via the embedded nil interface.
 type fakeAgentClient struct {
 	pb.AgentServiceClient
-	statusFn func(*pb.ProjectId) (*pb.AgentStatus, error)
-	startFn  func(*pb.StartAgentRequest) (*pb.AgentStatus, error)
-	stopFn   func(*pb.ProjectId) (*emptypb.Empty, error)
+	statusFn     func(*pb.ProjectId) (*pb.AgentStatus, error)
+	startFn      func(*pb.StartAgentRequest) (*pb.AgentStatus, error)
+	stopFn       func(*pb.ProjectId) (*emptypb.Empty, error)
+	scrollbackFn func(*pb.ScrollbackRequest) (*pb.ScrollbackLines, error)
 }
 
 func (f *fakeAgentClient) GetAgentStatus(_ context.Context, req *pb.ProjectId, _ ...grpc.CallOption) (*pb.AgentStatus, error) {
@@ -370,22 +371,26 @@ func TestWaitForTaskPollError(t *testing.T) {
 }
 
 // TestRunToolsRegistered guards the registry wiring: all six run tools are
-// present under the run group.
+// present, and only get_agent_status carries the inspect group (the group
+// field drives --read-only filtering, which keeps that one observation tool).
 func TestRunToolsRegistered(t *testing.T) {
-	want := map[string]bool{
-		"run_task": false, "run_all": false, "start_wildfire": false,
-		"stop_agent": false, "get_agent_status": false, "wait_for_task": false,
+	want := map[string]string{
+		"run_task": groupRun, "run_all": groupRun, "start_wildfire": groupRun,
+		"stop_agent": groupRun, "get_agent_status": groupInspect, "wait_for_task": groupRun,
 	}
+	seen := map[string]bool{}
 	for _, td := range allTools() {
-		if _, ok := want[td.name]; ok {
-			want[td.name] = true
-			if td.group != groupRun {
-				t.Errorf("tool %s registered under group %q, want %q", td.name, td.group, groupRun)
-			}
+		group, ok := want[td.name]
+		if !ok {
+			continue
+		}
+		seen[td.name] = true
+		if td.group != group {
+			t.Errorf("tool %s registered under group %q, want %q", td.name, td.group, group)
 		}
 	}
-	for name, seen := range want {
-		if !seen {
+	for name := range want {
+		if !seen[name] {
 			t.Errorf("tool %s missing from allTools()", name)
 		}
 	}

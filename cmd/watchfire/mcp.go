@@ -36,7 +36,6 @@ stdout carries the MCP transport; all logs go to stderr.`,
 }
 
 func init() {
-	// --read-only is reserved: tool filtering lands with the inspect tools.
 	mcpServeCmd.Flags().BoolVar(&mcpReadOnly, "read-only", false,
 		"Serve only observation tools (no task creation or agent control)")
 	mcpCmd.AddCommand(mcpServeCmd)

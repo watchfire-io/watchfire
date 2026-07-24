@@ -29,7 +29,10 @@ var runTools = []toolDef{
 	newTool(groupRun, "stop_agent",
 		"Stop the agent running in a project (SIGTERM to the sandboxed process; the daemon cleans up). Also breaks run_all / wildfire chaining — no next task is started. In-progress work in the task's worktree is left uncommitted or unmerged, not lost. Safe to call when nothing is running: returns stopped: false instead of an error.",
 		handleStopAgent),
-	newTool(groupRun, "get_agent_status",
+	// Registry group "inspect", not "run": get_agent_status is pure
+	// observation, so --read-only serving must keep it. The group field
+	// only drives read-only filtering, not the documented tool catalog.
+	newTool(groupInspect, "get_agent_status",
 		"Get live agent status for a project: whether an agent is running, its mode (chat | task | start-all | wildfire), the task number/title being worked, the wildfire phase, when the session started, and any blocking issue (auth_required / rate_limited) with its message and cooldown — how to tell a working agent from a stuck one.",
 		handleGetAgentStatus),
 	newTool(groupRun, "wait_for_task",
