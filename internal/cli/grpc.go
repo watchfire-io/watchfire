@@ -9,8 +9,10 @@ import (
 	"github.com/watchfire-io/watchfire/internal/config"
 )
 
-// connectDaemon establishes a gRPC connection to the running daemon.
-func connectDaemon() (*grpc.ClientConn, error) {
+// ConnectDaemon establishes a gRPC connection to the running daemon.
+// Exported so other thin clients (e.g. internal/mcpserver) can reuse the
+// CLI's connection logic instead of duplicating it.
+func ConnectDaemon() (*grpc.ClientConn, error) {
 	info, err := config.LoadDaemonInfo()
 	if err != nil {
 		return nil, fmt.Errorf("failed to load daemon info: %w", err)

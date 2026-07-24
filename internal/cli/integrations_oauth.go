@@ -56,7 +56,7 @@ the install end-to-end.`,
 		if err := EnsureDaemon(); err != nil {
 			return err
 		}
-		conn, err := connectDaemon()
+		conn, err := ConnectDaemon()
 		if err != nil {
 			return err
 		}
@@ -143,7 +143,7 @@ var integrationsOAuthStatusCmd = &cobra.Command{
 		if err := EnsureDaemon(); err != nil {
 			return err
 		}
-		conn, err := connectDaemon()
+		conn, err := ConnectDaemon()
 		if err != nil {
 			return err
 		}

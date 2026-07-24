@@ -29,6 +29,12 @@ It manages multiple projects in parallel, with one active task per project.`,
 		if name == "update" {
 			return
 		}
+		// Never write to stdout for mcp commands: stdout is the MCP transport
+		for c := cmd; c != nil; c = c.Parent() {
+			if c.Name() == "mcp" {
+				return
+			}
+		}
 		checkAndWarnUpdate()
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -80,6 +86,12 @@ func checkAndWarnUpdate() {
 // Execute runs the CLI.
 func Execute() error {
 	return rootCmd.Execute()
+}
+
+// AddCommand registers a top-level command defined outside this package
+// (e.g. cmd/watchfire's mcp command group).
+func AddCommand(cmd *cobra.Command) {
+	rootCmd.AddCommand(cmd)
 }
 
 func init() {

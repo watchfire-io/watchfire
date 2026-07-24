@@ -32,7 +32,7 @@ func runAgentAttach(projectPath, mode string, taskNumber int32) error {
 	}
 
 	// Connect to daemon via gRPC
-	conn, err := connectDaemon()
+	conn, err := ConnectDaemon()
 	if err != nil {
 		return err
 	}
