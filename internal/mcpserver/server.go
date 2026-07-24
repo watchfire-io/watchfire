@@ -8,9 +8,11 @@ package mcpserver
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"log/slog"
 	"os"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	pb "github.com/watchfire-io/watchfire/proto"
@@ -41,6 +43,7 @@ type server struct {
 	projects pb.ProjectServiceClient
 	tasks    pb.TaskServiceClient
 	agents   pb.AgentServiceClient
+	settings pb.SettingsServiceClient
 
 	// defaultProjectID is the project of the directory the server was
 	// started in, or "" when started outside a registered project.
@@ -63,12 +66,26 @@ type toolDef struct {
 // arguments are validated by the SDK before the handler runs. The handler's
 // return value is rendered as JSON text content; an error becomes a tool
 // error (IsError result), not a protocol error.
-func newTool[In any](group, name, description string, handler func(context.Context, *server, In) (any, error)) toolDef {
+//
+// An optional customize function post-processes the inferred schema for
+// constraints struct tags cannot express (enums, defaults).
+func newTool[In any](group, name, description string, handler func(context.Context, *server, In) (any, error), customize ...func(*jsonschema.Schema)) toolDef {
 	return toolDef{
 		group: group,
 		name:  name,
 		register: func(m *mcp.Server, s *server) {
-			mcp.AddTool(m, &mcp.Tool{Name: name, Description: description},
+			tool := &mcp.Tool{Name: name, Description: description}
+			if len(customize) > 0 {
+				schema, err := jsonschema.For[In](nil)
+				if err != nil {
+					panic(fmt.Sprintf("tool %q: infer input schema: %v", name, err))
+				}
+				for _, c := range customize {
+					c(schema)
+				}
+				tool.InputSchema = schema
+			}
+			mcp.AddTool(m, tool,
 				func(ctx context.Context, _ *mcp.CallToolRequest, in In) (*mcp.CallToolResult, any, error) {
 					out, err := handler(ctx, s, in)
 					if err != nil {
@@ -80,10 +97,11 @@ func newTool[In any](group, name, description string, handler func(context.Conte
 	}
 }
 
-// allTools is the full registry. Tasks 0124–0126 only append groups here.
+// allTools is the full registry. Tasks 0125–0126 only append groups here.
 func allTools() []toolDef {
 	var defs []toolDef
 	defs = append(defs, projectTools...)
+	defs = append(defs, taskTools...)
 	return defs
 }
 
@@ -121,6 +139,7 @@ func Serve(ctx context.Context, opts Options) error {
 		projects: pb.NewProjectServiceClient(conn),
 		tasks:    pb.NewTaskServiceClient(conn),
 		agents:   pb.NewAgentServiceClient(conn),
+		settings: pb.NewSettingsServiceClient(conn),
 		readOnly: opts.ReadOnly,
 	}
 
