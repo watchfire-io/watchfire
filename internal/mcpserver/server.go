@@ -19,7 +19,7 @@ import (
 	pb "github.com/watchfire-io/watchfire/proto"
 )
 
-// Tool groups. --read-only serving (task 0126) filters registration by group.
+// Tool groups. --read-only serving filters registration by group.
 const (
 	groupProject = "project"
 	groupTask    = "task"
@@ -29,8 +29,9 @@ const (
 
 // Options configures a Serve run.
 type Options struct {
-	// ReadOnly registers only observation tools. Reserved: the filtering
-	// plumbing lands with the inspect tools (task 0126).
+	// ReadOnly registers only observation tools: the project and inspect
+	// registry groups (which include get_agent_status). Task-factory and
+	// agent-control tools are not registered at all.
 	ReadOnly bool
 	// Version is the client version reported in the MCP handshake.
 	Version string
@@ -45,6 +46,8 @@ type server struct {
 	tasks    pb.TaskServiceClient
 	agents   pb.AgentServiceClient
 	settings pb.SettingsServiceClient
+	insights pb.InsightsServiceClient
+	logs     pb.LogServiceClient
 
 	// defaultProjectID is the project of the directory the server was
 	// started in, or "" when started outside a registered project.
@@ -102,13 +105,39 @@ func newTool[In any](group, name, description string, handler func(context.Conte
 	}
 }
 
-// allTools is the full registry. Task 0126 only appends its group here.
+// allTools is the full registry.
 func allTools() []toolDef {
 	var defs []toolDef
 	defs = append(defs, projectTools...)
 	defs = append(defs, taskTools...)
 	defs = append(defs, runTools...)
+	defs = append(defs, inspectTools...)
 	return defs
+}
+
+// readOnlyGroups are the registry groups still served under --read-only:
+// pure-observation tools that cannot create tasks or control agents.
+// get_agent_status is included because it carries the inspect registry
+// group (see tools_run.go).
+var readOnlyGroups = map[string]bool{
+	groupProject: true,
+	groupInspect: true,
+}
+
+// registeredTools is the registry a Serve run actually exposes: everything,
+// or only the read-only groups.
+func registeredTools(readOnly bool) []toolDef {
+	defs := allTools()
+	if !readOnly {
+		return defs
+	}
+	filtered := make([]toolDef, 0, len(defs))
+	for _, td := range defs {
+		if readOnlyGroups[td.group] {
+			filtered = append(filtered, td)
+		}
+	}
+	return filtered
 }
 
 // jsonResult renders a handler's return value as pretty-printed JSON text
@@ -146,6 +175,8 @@ func Serve(ctx context.Context, opts Options) error {
 		tasks:    pb.NewTaskServiceClient(conn),
 		agents:   pb.NewAgentServiceClient(conn),
 		settings: pb.NewSettingsServiceClient(conn),
+		insights: pb.NewInsightsServiceClient(conn),
+		logs:     pb.NewLogServiceClient(conn),
 		readOnly: opts.ReadOnly,
 	}
 
@@ -159,7 +190,7 @@ func Serve(ctx context.Context, opts Options) error {
 		&mcp.Implementation{Name: "watchfire", Title: "Watchfire", Version: opts.Version},
 		&mcp.ServerOptions{Instructions: serverInstructions, Logger: logger},
 	)
-	for _, td := range allTools() {
+	for _, td := range registeredTools(s.readOnly) {
 		td.register(m, s)
 	}
 
