@@ -467,6 +467,28 @@ message AgentList {
   repeated AgentInfo agents = 1;
 }
 
+// McpClientStatus is one known MCP client's onboarding state on this machine
+// (v9.0 Firestorm). Produced both by GetMcpClientStatus (per-client state) and
+// by InstallMcpClient (post-install state + outcome message).
+message McpClientStatus {
+  string client = 1;                              // Stable key: "claude-code" | "codex" | "gemini" | "opencode" | "copilot"
+  string display_name = 2;                        // Human-readable client name (e.g. "Gemini CLI")
+  bool detected = 3;                              // Harness appears installed on this machine (CLI on PATH or config dir present)
+  bool configured = 4;                            // Client config already has a watchfire MCP entry
+  string config_path = 5;                         // Where the client's MCP config lives (may not exist yet)
+  string message = 6;                             // Human-readable result; for a failed install, the manual instructions + snippet
+}
+
+message McpClientStatusList {
+  repeated McpClientStatus clients = 1;
+  string custom_snippet = 2;                      // Generic JSON block for the Custom option, so every surface renders it from one source of truth
+}
+
+message InstallMcpClientRequest {
+  RequestMeta meta = 1;
+  string client = 2;                              // Stable key from McpClientStatus.client
+}
+
 // ============================================================================
 // Services
 // ============================================================================
@@ -641,6 +663,15 @@ service SettingsService {
   rpc GetSettings(google.protobuf.Empty) returns (Settings);
   rpc UpdateSettings(UpdateSettingsRequest) returns (Settings);
   rpc ListAgents(google.protobuf.Empty) returns (AgentList);
+
+  // MCP client onboarding (v9.0 Firestorm). The daemon runs as the invoking
+  // user, so it can write the same user-level client configs the CLI does —
+  // letting the TUI and GUI offer one-click MCP setup without shelling out.
+  // InstallMcpClient never fails for an install problem: a client that is
+  // missing or has an unparseable config comes back with configured=false and
+  // a message carrying the manual snippet.
+  rpc GetMcpClientStatus(google.protobuf.Empty) returns (McpClientStatusList);
+  rpc InstallMcpClient(InstallMcpClientRequest) returns (McpClientStatus);
 }
 
 // ============================================================================

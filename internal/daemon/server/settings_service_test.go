@@ -5,9 +5,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/watchfire-io/watchfire/internal/daemon/agent/backend"
@@ -34,6 +37,161 @@ func (u *unavailableBackend) LocateTranscript(string, time.Time, string) (string
 	return "", nil
 }
 func (u *unavailableBackend) FormatTranscript(string) (string, error) { return "", nil }
+
+// scratchMcpHome points the MCP install writers at a throwaway HOME with no
+// client CLIs on PATH, so the onboarding RPC tests can never read or write a
+// real ~/.gemini, ~/.codex or ~/.claude.json.
+func scratchMcpHome(t *testing.T) string {
+	t.Helper()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("PATH", "")
+	t.Setenv("XDG_CONFIG_HOME", "")
+	t.Setenv("COPILOT_HOME", "")
+	return home
+}
+
+// TestGetMcpClientStatus checks the shape the TUI and GUI depend on: one entry
+// per known harness keyed by its stable id, a message for every entry, and the
+// Custom snippet carried alongside so all surfaces render that option from one
+// source of truth.
+func TestGetMcpClientStatus(t *testing.T) {
+	home := scratchMcpHome(t)
+	// Pre-create the Gemini config dir so exactly one harness is "detected"
+	// without any CLI on PATH.
+	if err := os.MkdirAll(filepath.Join(home, ".gemini"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := &settingsService{}
+	resp, err := svc.GetMcpClientStatus(context.Background(), &emptypb.Empty{})
+	if err != nil {
+		t.Fatalf("GetMcpClientStatus error: %v", err)
+	}
+
+	byClient := map[string]*pb.McpClientStatus{}
+	for _, c := range resp.Clients {
+		byClient[c.Client] = c
+	}
+	for _, want := range []string{"claude-code", "codex", "gemini", "opencode", "copilot"} {
+		got, ok := byClient[want]
+		if !ok {
+			t.Fatalf("GetMcpClientStatus missing client %q (have %v)", want, byClient)
+		}
+		if got.DisplayName == "" {
+			t.Errorf("client %q has no display_name", want)
+		}
+		if got.ConfigPath == "" {
+			t.Errorf("client %q has no config_path", want)
+		}
+		if got.Message == "" {
+			t.Errorf("client %q has no message", want)
+		}
+	}
+
+	if !byClient["gemini"].Detected {
+		t.Error("gemini should be detected: its config dir exists")
+	}
+	if byClient["gemini"].Configured {
+		t.Error("gemini should not be configured: nothing was installed yet")
+	}
+	if byClient["claude-code"].Detected {
+		t.Error("claude-code should not be detected: no CLI on PATH, no ~/.claude.json")
+	}
+
+	if !strings.Contains(resp.CustomSnippet, "mcp") {
+		t.Errorf("custom_snippet does not look like the generic server block: %q", resp.CustomSnippet)
+	}
+}
+
+// TestInstallMcpClientIdempotent covers the happy path: installing a detected
+// harness flips configured to true, and re-installing is a no-op that says so
+// rather than rewriting or erroring.
+func TestInstallMcpClientIdempotent(t *testing.T) {
+	home := scratchMcpHome(t)
+	if err := os.MkdirAll(filepath.Join(home, ".gemini"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := &settingsService{}
+	req := &pb.InstallMcpClientRequest{Client: "gemini"}
+
+	first, err := svc.InstallMcpClient(context.Background(), req)
+	if err != nil {
+		t.Fatalf("first InstallMcpClient error: %v", err)
+	}
+	if !first.Configured {
+		t.Fatalf("configured = false after install (message: %s)", first.Message)
+	}
+	if first.ConfigPath != filepath.Join(home, ".gemini", "settings.json") {
+		t.Errorf("config_path = %q, want the scratch gemini settings.json", first.ConfigPath)
+	}
+	if !strings.Contains(first.Message, "Registered") {
+		t.Errorf("message does not report the install: %q", first.Message)
+	}
+
+	second, err := svc.InstallMcpClient(context.Background(), req)
+	if err != nil {
+		t.Fatalf("second InstallMcpClient error: %v", err)
+	}
+	if !second.Configured {
+		t.Error("configured = false on re-install")
+	}
+	if !strings.Contains(second.Message, "already configured") {
+		t.Errorf("re-install message should report a no-op: %q", second.Message)
+	}
+
+	// The status RPC agrees with the install RPC.
+	list, err := svc.GetMcpClientStatus(context.Background(), &emptypb.Empty{})
+	if err != nil {
+		t.Fatalf("GetMcpClientStatus error: %v", err)
+	}
+	for _, c := range list.Clients {
+		if c.Client == "gemini" && !c.Configured {
+			t.Error("GetMcpClientStatus reports gemini unconfigured after a successful install")
+		}
+	}
+}
+
+// TestInstallMcpClientMissingHarnessReturnsManualInstructions guards the
+// contract the UIs render against: a harness that isn't installed must come
+// back as a normal response carrying the paste-this-yourself instructions, not
+// as a gRPC error.
+func TestInstallMcpClientMissingHarnessReturnsManualInstructions(t *testing.T) {
+	scratchMcpHome(t)
+
+	svc := &settingsService{}
+	for _, client := range []string{"claude-code", "gemini"} {
+		resp, err := svc.InstallMcpClient(context.Background(), &pb.InstallMcpClientRequest{Client: client})
+		if err != nil {
+			t.Fatalf("InstallMcpClient(%q) returned a gRPC error instead of manual instructions: %v", client, err)
+		}
+		if resp.Detected || resp.Configured {
+			t.Errorf("%s: detected=%v configured=%v, want both false", client, resp.Detected, resp.Configured)
+		}
+		if !strings.Contains(resp.Message, "Could not register automatically") {
+			t.Errorf("%s: message lacks the manual fallback: %q", client, resp.Message)
+		}
+		if !strings.Contains(resp.Message, "watchfire") {
+			t.Errorf("%s: message lacks the snippet to paste: %q", client, resp.Message)
+		}
+	}
+}
+
+// TestInstallMcpClientUnknownClient — an unrecognized key is a caller bug, so
+// it is the one case that is a gRPC error.
+func TestInstallMcpClientUnknownClient(t *testing.T) {
+	scratchMcpHome(t)
+
+	svc := &settingsService{}
+	_, err := svc.InstallMcpClient(context.Background(), &pb.InstallMcpClientRequest{Client: "emacs"})
+	if err == nil {
+		t.Fatal("InstallMcpClient with an unknown client should error")
+	}
+	if got := status.Code(err); got != codes.InvalidArgument {
+		t.Errorf("error code = %v, want %v", got, codes.InvalidArgument)
+	}
+}
 
 // TestListAgentsIncludesUnavailableBackend guards the architectural
 // invariant behind the fix for issue #29: ListAgents must return every

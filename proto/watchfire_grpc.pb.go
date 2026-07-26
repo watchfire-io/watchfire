@@ -2338,9 +2338,11 @@ var BranchService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	SettingsService_GetSettings_FullMethodName    = "/watchfire.SettingsService/GetSettings"
-	SettingsService_UpdateSettings_FullMethodName = "/watchfire.SettingsService/UpdateSettings"
-	SettingsService_ListAgents_FullMethodName     = "/watchfire.SettingsService/ListAgents"
+	SettingsService_GetSettings_FullMethodName        = "/watchfire.SettingsService/GetSettings"
+	SettingsService_UpdateSettings_FullMethodName     = "/watchfire.SettingsService/UpdateSettings"
+	SettingsService_ListAgents_FullMethodName         = "/watchfire.SettingsService/ListAgents"
+	SettingsService_GetMcpClientStatus_FullMethodName = "/watchfire.SettingsService/GetMcpClientStatus"
+	SettingsService_InstallMcpClient_FullMethodName   = "/watchfire.SettingsService/InstallMcpClient"
 )
 
 // SettingsServiceClient is the client API for SettingsService service.
@@ -2352,6 +2354,14 @@ type SettingsServiceClient interface {
 	GetSettings(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*Settings, error)
 	UpdateSettings(ctx context.Context, in *UpdateSettingsRequest, opts ...grpc.CallOption) (*Settings, error)
 	ListAgents(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*AgentList, error)
+	// MCP client onboarding (v9.0 Firestorm). The daemon runs as the invoking
+	// user, so it can write the same user-level client configs the CLI does —
+	// letting the TUI and GUI offer one-click MCP setup without shelling out.
+	// InstallMcpClient never fails for an install problem: a client that is
+	// missing or has an unparseable config comes back with configured=false and
+	// a message carrying the manual snippet.
+	GetMcpClientStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*McpClientStatusList, error)
+	InstallMcpClient(ctx context.Context, in *InstallMcpClientRequest, opts ...grpc.CallOption) (*McpClientStatus, error)
 }
 
 type settingsServiceClient struct {
@@ -2392,6 +2402,26 @@ func (c *settingsServiceClient) ListAgents(ctx context.Context, in *emptypb.Empt
 	return out, nil
 }
 
+func (c *settingsServiceClient) GetMcpClientStatus(ctx context.Context, in *emptypb.Empty, opts ...grpc.CallOption) (*McpClientStatusList, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(McpClientStatusList)
+	err := c.cc.Invoke(ctx, SettingsService_GetMcpClientStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *settingsServiceClient) InstallMcpClient(ctx context.Context, in *InstallMcpClientRequest, opts ...grpc.CallOption) (*McpClientStatus, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(McpClientStatus)
+	err := c.cc.Invoke(ctx, SettingsService_InstallMcpClient_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // SettingsServiceServer is the server API for SettingsService service.
 // All implementations must embed UnimplementedSettingsServiceServer
 // for forward compatibility.
@@ -2401,6 +2431,14 @@ type SettingsServiceServer interface {
 	GetSettings(context.Context, *emptypb.Empty) (*Settings, error)
 	UpdateSettings(context.Context, *UpdateSettingsRequest) (*Settings, error)
 	ListAgents(context.Context, *emptypb.Empty) (*AgentList, error)
+	// MCP client onboarding (v9.0 Firestorm). The daemon runs as the invoking
+	// user, so it can write the same user-level client configs the CLI does —
+	// letting the TUI and GUI offer one-click MCP setup without shelling out.
+	// InstallMcpClient never fails for an install problem: a client that is
+	// missing or has an unparseable config comes back with configured=false and
+	// a message carrying the manual snippet.
+	GetMcpClientStatus(context.Context, *emptypb.Empty) (*McpClientStatusList, error)
+	InstallMcpClient(context.Context, *InstallMcpClientRequest) (*McpClientStatus, error)
 	mustEmbedUnimplementedSettingsServiceServer()
 }
 
@@ -2419,6 +2457,12 @@ func (UnimplementedSettingsServiceServer) UpdateSettings(context.Context, *Updat
 }
 func (UnimplementedSettingsServiceServer) ListAgents(context.Context, *emptypb.Empty) (*AgentList, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListAgents not implemented")
+}
+func (UnimplementedSettingsServiceServer) GetMcpClientStatus(context.Context, *emptypb.Empty) (*McpClientStatusList, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetMcpClientStatus not implemented")
+}
+func (UnimplementedSettingsServiceServer) InstallMcpClient(context.Context, *InstallMcpClientRequest) (*McpClientStatus, error) {
+	return nil, status.Error(codes.Unimplemented, "method InstallMcpClient not implemented")
 }
 func (UnimplementedSettingsServiceServer) mustEmbedUnimplementedSettingsServiceServer() {}
 func (UnimplementedSettingsServiceServer) testEmbeddedByValue()                         {}
@@ -2495,6 +2539,42 @@ func _SettingsService_ListAgents_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _SettingsService_GetMcpClientStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(emptypb.Empty)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SettingsServiceServer).GetMcpClientStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SettingsService_GetMcpClientStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SettingsServiceServer).GetMcpClientStatus(ctx, req.(*emptypb.Empty))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _SettingsService_InstallMcpClient_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(InstallMcpClientRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(SettingsServiceServer).InstallMcpClient(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: SettingsService_InstallMcpClient_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(SettingsServiceServer).InstallMcpClient(ctx, req.(*InstallMcpClientRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // SettingsService_ServiceDesc is the grpc.ServiceDesc for SettingsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2513,6 +2593,14 @@ var SettingsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListAgents",
 			Handler:    _SettingsService_ListAgents_Handler,
+		},
+		{
+			MethodName: "GetMcpClientStatus",
+			Handler:    _SettingsService_GetMcpClientStatus_Handler,
+		},
+		{
+			MethodName: "InstallMcpClient",
+			Handler:    _SettingsService_InstallMcpClient_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
