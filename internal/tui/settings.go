@@ -1,10 +1,16 @@
 // Package tui — Project Settings tab.
 //
 // v6 (#0090 + #0091) replaced the flat 7-row form with a macOS-style
-// sidebar + content-pane layout. The sidebar lists seven sections (General,
-// Automation, Notifications, Integrations, Metadata, Secrets, Danger zone);
-// the right pane renders the focused section's rows. Tab/Shift+Tab moves
-// the section cursor; ↑↓ moves the row cursor inside the active section.
+// sidebar + content-pane layout. The sidebar lists eight sections (General,
+// Automation, Notifications, Integrations, MCP, Metadata, Secrets, Danger
+// zone); the right pane renders the focused section's rows. Tab/Shift+Tab
+// moves the section cursor; ↑↓ moves the row cursor inside the active
+// section.
+//
+// v9.0 Firestorm added MCP: a thin onboarding surface over
+// SettingsService.GetMcpClientStatus / InstallMcpClient. It holds no config
+// state of its own — every badge, path and instruction block is what the
+// daemon reported.
 //
 // `/` opens the same search overlay shape used by the Flare global settings
 // (filter-as-you-type, Enter jumps to the matching row).
@@ -48,8 +54,10 @@ type CycleOption struct {
 	Display string
 }
 
-// settingsSectionID enumerates the seven sections of the per-project
-// Settings tab. Order matches the sidebar.
+// settingsSectionID enumerates the sections of the per-project Settings tab.
+// Order matches the sidebar. MCP (v9.0 Firestorm) sits next to Integrations
+// because it is the same kind of concern: wiring Watchfire up to something
+// outside it.
 type settingsSectionID int
 
 const (
@@ -57,6 +65,7 @@ const (
 	sectionAutomation
 	sectionNotifications
 	sectionIntegrations
+	sectionMcp
 	sectionMetadata
 	sectionSecrets
 	sectionDanger
@@ -73,6 +82,7 @@ var settingsSections = []settingsSectionDef{
 	{sectionAutomation, "Automation"},
 	{sectionNotifications, "Notifications"},
 	{sectionIntegrations, "Integrations"},
+	{sectionMcp, "MCP"},
 	{sectionMetadata, "Metadata"},
 	{sectionSecrets, "Secrets"},
 	{sectionDanger, "Danger zone"},
@@ -95,6 +105,10 @@ const (
 	rowKindIntegGitHub
 	rowKindIntegSlackChannel
 	rowKindIntegDiscordGuild
+	// MCP onboarding rows (v9.0 Firestorm): one per known harness, plus a
+	// trailing Custom row that reveals the generic snippet.
+	rowKindMcpClient
+	rowKindMcpCustom
 	// Metadata copy-target rows are rowKindGeneric + readonly.
 	// Secrets editor row.
 	rowKindSecretsEdit
@@ -128,6 +142,9 @@ type SettingsField struct {
 	// CopyValue overrides the displayed value when copying to the
 	// clipboard (Metadata `y` action). Empty falls back to Value.
 	CopyValue string
+	// McpClient is the stable client key ("claude-code", "codex", ...) a
+	// rowKindMcpClient row targets. Empty for every other row.
+	McpClient string
 }
 
 // settingsPaneFocus tracks which side of the layout owns navigation.
@@ -166,6 +183,28 @@ type SettingsForm struct {
 	searchInput  textinput.Model
 	searchCursor int
 
+	// ── MCP onboarding (v9.0 Firestorm) ──────────────────────────
+	// Every value here comes from SettingsService.GetMcpClientStatus /
+	// InstallMcpClient. The TUI is a pure thin client: it never reads or
+	// writes a harness config itself, so an empty mcpClients slice means
+	// "not fetched yet", never "no clients".
+	mcpClients []*pb.McpClientStatus
+	// mcpCustomSnippet is the generic MCP block for any other client,
+	// rendered verbatim as the daemon returned it.
+	mcpCustomSnippet string
+	mcpFetched       bool
+	mcpLoading       bool
+	mcpErr           string
+	// mcpInstalling is the client key with an InstallMcpClient RPC in
+	// flight (empty when idle) — drives the inline spinner.
+	mcpInstalling string
+	// mcpDetail holds the per-client message revealed by Enter: the install
+	// outcome, or the manual instructions when the harness is absent.
+	mcpDetail map[string]string
+	// mcpShowCustom expands the Custom row's copyable snippet block.
+	mcpShowCustom   bool
+	mcpSpinnerFrame int
+
 	// Loaded project snapshot (used for read-only / compute fields).
 	project *pb.Project
 	// projectPath caches the project's filesystem path (read from
@@ -189,6 +228,7 @@ func NewSettingsForm() *SettingsForm {
 		pane:          settingsPaneSidebar,
 		activeSec:     sectionGeneral,
 		sidebarCursor: 0,
+		mcpDetail:     map[string]string{},
 	}
 }
 
@@ -301,6 +341,31 @@ func (s *SettingsForm) rebuildRows() {
 		SettingsField{Section: sectionIntegrations, Label: "Slack channel", Key: "integ_slack_channel", Value: slackChannel, Type: fieldText, Kind: rowKindIntegSlackChannel},
 		SettingsField{Section: sectionIntegrations, Label: "Discord guild ID", Key: "integ_discord_guild", Value: discordGuild, Type: fieldText, Kind: rowKindIntegDiscordGuild},
 	)
+
+	// ── MCP (v9.0 Firestorm) ─────────────────────────────────────
+	// One row per harness the daemon reported, then a Custom row. The
+	// Custom row exists before the first fetch lands so the section is
+	// always navigable.
+	for _, c := range s.mcpClients {
+		if c == nil {
+			continue
+		}
+		rows = append(rows, SettingsField{
+			Section:   sectionMcp,
+			Label:     c.DisplayName,
+			Key:       "mcp_" + c.Client,
+			Type:      fieldAction,
+			Kind:      rowKindMcpClient,
+			McpClient: c.Client,
+		})
+	}
+	rows = append(rows, SettingsField{
+		Section: sectionMcp,
+		Label:   "Custom",
+		Key:     "mcp_custom",
+		Type:    fieldAction,
+		Kind:    rowKindMcpCustom,
+	})
 
 	// ── Metadata ─────────────────────────────────────────────────
 	branch := resolveDefaultBranch(p.Path)
@@ -759,6 +824,199 @@ func (s *SettingsForm) CurrentNotificationsConfig() *pb.ProjectNotifications {
 	return out
 }
 
+// ── MCP onboarding (v9.0 Firestorm) ──────────────────────────────
+//
+// The form holds no MCP truth of its own: every flag below is either a
+// request-lifecycle marker (loading / installing) or a verbatim copy of what
+// SettingsService.GetMcpClientStatus / InstallMcpClient returned.
+
+// NeedsMcpFetch reports whether the MCP section has focus and still has no
+// status to render. The key handler checks this after every navigation so
+// focusing the section triggers exactly one GetMcpClientStatus RPC.
+func (s *SettingsForm) NeedsMcpFetch() bool {
+	return s.activeSec == sectionMcp && !s.mcpFetched && !s.mcpLoading
+}
+
+// MarkMcpFetching flips the in-flight flag and clears any previous error.
+// Returns false when a fetch is already running, so a burst of navigation
+// keys can't fan out into duplicate RPCs.
+func (s *SettingsForm) MarkMcpFetching() bool {
+	if s.mcpLoading {
+		return false
+	}
+	s.mcpLoading = true
+	s.mcpErr = ""
+	return true
+}
+
+// SetMcpStatus applies a GetMcpClientStatus response (or its error). A failed
+// fetch still marks the section fetched — the error renders inline with a
+// retry hint rather than re-firing the RPC on every keypress.
+func (s *SettingsForm) SetMcpStatus(list *pb.McpClientStatusList, err error) {
+	s.mcpLoading = false
+	s.mcpFetched = true
+	if err != nil {
+		s.mcpErr = err.Error()
+		return
+	}
+	s.mcpErr = ""
+	s.mcpClients = list.GetClients()
+	s.mcpCustomSnippet = list.GetCustomSnippet()
+	s.rebuildPreservingCursor()
+}
+
+// McpFetchFailed reports whether the last GetMcpClientStatus attempt errored.
+func (s *SettingsForm) McpFetchFailed() bool { return s.mcpErr != "" }
+
+// BeginMcpInstall marks an InstallMcpClient RPC as in flight for clientKey.
+// Returns false when the key is empty or another install is already running —
+// the daemon writes user-level config files, so we keep it one at a time.
+func (s *SettingsForm) BeginMcpInstall(clientKey string) bool {
+	if clientKey == "" || s.mcpInstalling != "" {
+		return false
+	}
+	s.mcpInstalling = clientKey
+	s.mcpSpinnerFrame = 0
+	delete(s.mcpDetail, clientKey)
+	return true
+}
+
+// SetMcpInstalled applies an InstallMcpClient response. The response carries
+// post-install detected/configured state for that one client, so we splice it
+// into the list rather than re-fetching. Its message is revealed inline — that
+// is where the manual instructions live when the install could not be done
+// automatically.
+func (s *SettingsForm) SetMcpInstalled(clientKey string, st *pb.McpClientStatus, err error) {
+	if s.mcpInstalling == clientKey {
+		s.mcpInstalling = ""
+	}
+	if s.mcpDetail == nil {
+		s.mcpDetail = map[string]string{}
+	}
+	if err != nil {
+		s.mcpDetail[clientKey] = err.Error()
+		return
+	}
+	if st == nil {
+		return
+	}
+	s.mcpDetail[clientKey] = st.GetMessage()
+	for i, c := range s.mcpClients {
+		if c != nil && c.GetClient() == clientKey {
+			s.mcpClients[i] = st
+			return
+		}
+	}
+}
+
+// McpBusy reports whether an install is in flight (drives the spinner tick).
+func (s *SettingsForm) McpBusy() bool { return s.mcpInstalling != "" }
+
+// TickMcpSpinner advances the install spinner one frame.
+func (s *SettingsForm) TickMcpSpinner() {
+	s.mcpSpinnerFrame = (s.mcpSpinnerFrame + 1) % len(spinnerFrames)
+}
+
+// McpStatusFor returns the cached status for a client key, or nil when the
+// daemon didn't report it (or nothing has been fetched yet).
+func (s *SettingsForm) McpStatusFor(clientKey string) *pb.McpClientStatus {
+	for _, c := range s.mcpClients {
+		if c != nil && c.GetClient() == clientKey {
+			return c
+		}
+	}
+	return nil
+}
+
+// RevealMcpDetail shows a client's status message inline without installing.
+// Used for a harness that is absent (its message carries the manual snippet)
+// or already configured (nothing to do).
+func (s *SettingsForm) RevealMcpDetail(clientKey string) {
+	st := s.McpStatusFor(clientKey)
+	if st == nil {
+		return
+	}
+	if s.mcpDetail == nil {
+		s.mcpDetail = map[string]string{}
+	}
+	if _, shown := s.mcpDetail[clientKey]; shown {
+		delete(s.mcpDetail, clientKey)
+		return
+	}
+	s.mcpDetail[clientKey] = st.GetMessage()
+}
+
+// mcpEnterAction is what Enter on the focused MCP row should do. Keeping the
+// decision in the form (rather than the key handler) means it is driven purely
+// by daemon-reported state and is unit-testable without a gRPC connection.
+type mcpEnterAction int
+
+const (
+	// mcpActionNone — nothing actionable (no status for this row yet).
+	mcpActionNone mcpEnterAction = iota
+	mcpActionToggleCustom
+	mcpActionRetryFetch
+	mcpActionInstall
+	mcpActionReveal
+)
+
+// McpEnterAction resolves Enter on the focused row. The second return value is
+// the client key the action targets (empty for the Custom row).
+func (s *SettingsForm) McpEnterAction() (mcpEnterAction, string) {
+	row := s.CurrentRow()
+	if row == nil {
+		return mcpActionNone, ""
+	}
+	switch row.Kind {
+	case rowKindMcpCustom:
+		return mcpActionToggleCustom, ""
+	case rowKindMcpClient:
+		// A failed fetch leaves nothing to act on — Enter retries it.
+		if s.mcpErr != "" {
+			return mcpActionRetryFetch, ""
+		}
+		st := s.McpStatusFor(row.McpClient)
+		if st == nil {
+			return mcpActionNone, row.McpClient
+		}
+		// Only a detected-but-unconfigured harness installs. An absent one
+		// reveals its message instead — that message carries the manual
+		// snippet, which is the whole point of not erroring out.
+		if st.GetDetected() && !st.GetConfigured() {
+			return mcpActionInstall, row.McpClient
+		}
+		return mcpActionReveal, row.McpClient
+	}
+	return mcpActionNone, ""
+}
+
+// ToggleMcpCustom expands / collapses the Custom row's snippet block.
+func (s *SettingsForm) ToggleMcpCustom() { s.mcpShowCustom = !s.mcpShowCustom }
+
+// McpCustomSnippet exposes the generic snippet exactly as the daemon
+// returned it.
+func (s *SettingsForm) McpCustomSnippet() string { return s.mcpCustomSnippet }
+
+// rebuildPreservingCursor rebuilds the row list while keeping the cursor on
+// the same logical row. Needed because the MCP client rows appear only after
+// the first fetch lands, which shifts every row index below them.
+func (s *SettingsForm) rebuildPreservingCursor() {
+	key := ""
+	if r := s.CurrentRow(); r != nil {
+		key = r.Key
+	}
+	s.rebuildRows()
+	if key != "" {
+		for i := range s.rows {
+			if s.rows[i].Key == key {
+				s.cursor = i
+				break
+			}
+		}
+	}
+	s.snapCursor()
+}
+
 // ── Helpers ──────────────────────────────────────────────────────
 
 func sectionLabel(id settingsSectionID) string {
@@ -928,6 +1186,8 @@ func (s *SettingsForm) renderHint() string {
 		hint += "   y  copy"
 	case sectionSecrets:
 		hint += "   e  $EDITOR"
+	case sectionMcp:
+		hint = "j/k  navigate   Tab  switch pane   /  search   Enter  install / show snippet"
 	}
 	return lipgloss.NewStyle().Foreground(colorDim).Render(hint)
 }
@@ -991,6 +1251,13 @@ func (s *SettingsForm) renderFieldsPane() string {
 	def := settingsSections[s.sidebarCursor]
 	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(colorCyan)
 	lines := []string{headerStyle.Render(def.Label)}
+
+	// The MCP section renders badges + inline instruction blocks rather than
+	// label/value pairs, so it owns its own row renderer.
+	if def.ID == sectionMcp {
+		lines = append(lines, s.renderMcpRows()...)
+		return strings.Join(lines, "\n")
+	}
 
 	rows := s.rowsInSection(def.ID)
 	if len(rows) == 0 {
@@ -1059,4 +1326,152 @@ func (s *SettingsForm) renderFieldsPane() string {
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// mcpContentWidth is the usable width of the fields pane for MCP copy. The
+// sidebar takes 18 columns plus a 2-column gutter; the rest wraps.
+func (s *SettingsForm) mcpContentWidth() int {
+	w := s.width - 24
+	if w < 40 {
+		w = 40
+	}
+	return w
+}
+
+// renderMcpRows renders the MCP onboarding section: a one-line explainer, one
+// row per known harness with detected / configured badges + config path, and a
+// trailing Custom row that reveals the generic snippet. Everything displayed
+// here comes from the daemon's GetMcpClientStatus / InstallMcpClient responses.
+func (s *SettingsForm) renderMcpRows() []string {
+	dim := lipgloss.NewStyle().Foreground(colorDim)
+	width := s.mcpContentWidth()
+
+	out := []string{
+		dim.Width(width).Render("Expose Watchfire to coding agents as a local MCP server (stdio, host-only)."),
+		"",
+	}
+
+	switch {
+	case s.mcpErr != "":
+		out = append(out,
+			lipgloss.NewStyle().Foreground(colorRed).Width(width).Render("✗ "+s.mcpErr),
+			dim.Render("  Enter retries."),
+			"",
+		)
+	case s.mcpLoading && !s.mcpFetched:
+		out = append(out, dim.Render("Loading MCP client status…"), "")
+	}
+
+	rows := s.rowsInSection(sectionMcp)
+	maxLabel := 0
+	for _, idx := range rows {
+		if l := len(s.rows[idx].Label); l > maxLabel {
+			maxLabel = l
+		}
+	}
+	labelStyle := settingsValueStyle.Width(maxLabel + 2)
+	paneActive := s.pane == settingsPaneFields && !s.searchOpen
+	// Space left for the config path after the label and badge columns.
+	pathWidth := width - (maxLabel + 3) - mcpBadgeWidth
+
+	for _, idx := range rows {
+		f := &s.rows[idx]
+		line := labelStyle.Render(f.Label) + " " + s.mcpRowValue(f, pathWidth)
+		if idx == s.cursor && paneActive {
+			line = settingsCursorStyle.Render(line)
+		}
+		out = append(out, line)
+		out = append(out, s.mcpRowDetail(f)...)
+	}
+	return out
+}
+
+// mcpBadgeWidth is the fixed width of the detected / configured badge column,
+// so config paths line up across rows.
+const mcpBadgeWidth = 15
+
+// mcpRowValue renders the badge column for one MCP row: the install spinner
+// while an RPC is in flight, otherwise the harness's detected / configured
+// state plus its config path, elided to pathWidth columns.
+func (s *SettingsForm) mcpRowValue(f *SettingsField, pathWidth int) string {
+	dim := lipgloss.NewStyle().Foreground(colorDim)
+	if f.Kind == rowKindMcpCustom {
+		if s.mcpShowCustom {
+			return dim.Render("⏎ hide snippet")
+		}
+		return lipgloss.NewStyle().Foreground(colorYellow).Render("⏎ show snippet")
+	}
+
+	if s.mcpInstalling == f.McpClient {
+		frame := spinnerFrames[s.mcpSpinnerFrame%len(spinnerFrames)]
+		return lipgloss.NewStyle().Foreground(colorYellow).Render(frame + " installing…")
+	}
+
+	st := s.McpStatusFor(f.McpClient)
+	if st == nil {
+		return dim.Render("—")
+	}
+
+	var badge string
+	switch {
+	case st.GetConfigured():
+		badge = lipgloss.NewStyle().Foreground(colorGreen).Bold(true).Width(mcpBadgeWidth).Render("✓ configured")
+	case st.GetDetected():
+		badge = lipgloss.NewStyle().Foreground(colorCyan).Width(mcpBadgeWidth).Render("detected")
+	default:
+		badge = dim.Width(mcpBadgeWidth).Render("not detected")
+	}
+	if path := st.GetConfigPath(); path != "" {
+		return badge + dim.Render(elideLeft(path, pathWidth))
+	}
+	return badge
+}
+
+// elideLeft trims a path from the left, keeping the informative tail, so a long
+// config path can't push the MCP rows past the pane width. Returns the path
+// unchanged when it already fits (or when there is no sane budget to fit into).
+func elideLeft(path string, width int) string {
+	if width < 8 || len([]rune(path)) <= width {
+		return path
+	}
+	runes := []rune(path)
+	return "…" + string(runes[len(runes)-(width-1):])
+}
+
+// mcpRowDetail renders the inline block revealed by Enter: the install outcome
+// or manual instructions for a harness row, the generic snippet for the Custom
+// row. Returns nil when nothing is revealed.
+func (s *SettingsForm) mcpRowDetail(f *SettingsField) []string {
+	if f.Kind == rowKindMcpCustom {
+		if !s.mcpShowCustom {
+			return nil
+		}
+		out := mcpDetailBlock(s.mcpCustomSnippet, settingsValueStyle, s.mcpContentWidth())
+		return append(out, mcpDetailBlock(
+			"Add this to any other MCP client. `watchfire mcp install --print` prints it from the CLI.",
+			lipgloss.NewStyle().Foreground(colorDim), s.mcpContentWidth())...)
+	}
+	msg, shown := s.mcpDetail[f.McpClient]
+	if !shown || msg == "" {
+		return nil
+	}
+	return mcpDetailBlock(msg, lipgloss.NewStyle().Foreground(colorDim), s.mcpContentWidth())
+}
+
+// mcpDetailBlock indents a possibly multi-line daemon message under its row.
+// Line structure is preserved as the daemon sent it — for a failed install the
+// message is the manual instructions plus the snippet to paste, so the JSON
+// keeps its own line breaks. The indent is left padding rather than a literal
+// prefix so wrapped continuation lines stay aligned too.
+func mcpDetailBlock(text string, style lipgloss.Style, width int) []string {
+	if strings.TrimSpace(text) == "" {
+		return nil
+	}
+	indented := style.Width(width).PaddingLeft(4)
+	raw := strings.Split(strings.TrimRight(text, "\n"), "\n")
+	out := make([]string, 0, len(raw))
+	for _, line := range raw {
+		out = append(out, indented.Render(line))
+	}
+	return out
 }

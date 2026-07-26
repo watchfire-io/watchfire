@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	pb "github.com/watchfire-io/watchfire/proto"
@@ -99,6 +101,7 @@ func TestSidebarHasAllSections(t *testing.T) {
 		sectionAutomation:    false,
 		sectionNotifications: false,
 		sectionIntegrations:  false,
+		sectionMcp:           false,
 		sectionMetadata:      false,
 		sectionSecrets:       false,
 		sectionDanger:        false,
@@ -340,6 +343,298 @@ func TestCopySelectedValueOnlyFromMetadata(t *testing.T) {
 	val, ok := f.CopySelectedValue()
 	if !ok || val != "test-id" {
 		t.Errorf("expected copy value 'test-id', got %q ok=%v", val, ok)
+	}
+}
+
+// ── MCP onboarding section (v9.0 Firestorm) ───────────────────────
+
+// mcpStatusList is a two-harness GetMcpClientStatus response: one detected but
+// unconfigured, one absent.
+func mcpStatusList() *pb.McpClientStatusList {
+	return &pb.McpClientStatusList{
+		Clients: []*pb.McpClientStatus{
+			{
+				Client:      "claude-code",
+				DisplayName: "Claude Code",
+				Detected:    true,
+				Configured:  false,
+				ConfigPath:  "/home/u/.claude.json",
+				Message:     "Detected. Installing adds the watchfire entry to /home/u/.claude.json.",
+			},
+			{
+				Client:      "codex",
+				DisplayName: "OpenAI Codex",
+				Detected:    false,
+				Configured:  false,
+				ConfigPath:  "/home/u/.codex/config.toml",
+				Message:     "OpenAI Codex was not found on this machine. Installing returns the snippet to add to /home/u/.codex/config.toml by hand.",
+			},
+		},
+		CustomSnippet: "{\n  \"command\": \"watchfire\",\n  \"args\": [\"mcp\", \"serve\"]\n}",
+	}
+}
+
+// focusRow lands the cursor on the row with the given key and focuses the
+// fields pane. Fails the test when the row is missing.
+func focusRow(t *testing.T, f *SettingsForm, key string) {
+	t.Helper()
+	for i := range f.rows {
+		if f.rows[i].Key == key {
+			f.cursor = i
+			f.pane = settingsPaneFields
+			return
+		}
+	}
+	t.Fatalf("row %q not found", key)
+}
+
+// TestMcpSectionCustomRowExistsBeforeFetch: the section must be navigable
+// before any RPC lands, so the Custom row is always present.
+func TestMcpSectionCustomRowExistsBeforeFetch(t *testing.T) {
+	f := NewSettingsForm()
+	f.LoadFromProject(minimalProject())
+
+	rows := f.rowsInSection(sectionMcp)
+	if len(rows) != 1 {
+		t.Fatalf("expected exactly the Custom row before fetch, got %d rows", len(rows))
+	}
+	if got := f.rows[rows[0]].Kind; got != rowKindMcpCustom {
+		t.Fatalf("expected rowKindMcpCustom, got %v", got)
+	}
+}
+
+// TestMcpNeedsFetchOnSectionFocus: focusing the section (and only it) asks for
+// exactly one fetch.
+func TestMcpNeedsFetchOnSectionFocus(t *testing.T) {
+	f := NewSettingsForm()
+	f.LoadFromProject(minimalProject())
+
+	if f.NeedsMcpFetch() {
+		t.Fatalf("General section should not request an MCP fetch")
+	}
+	f.activeSec = sectionMcp
+	if !f.NeedsMcpFetch() {
+		t.Fatalf("MCP section with no status should request a fetch")
+	}
+	if !f.MarkMcpFetching() {
+		t.Fatalf("first MarkMcpFetching should win")
+	}
+	if f.NeedsMcpFetch() {
+		t.Fatalf("an in-flight fetch should suppress further requests")
+	}
+	if f.MarkMcpFetching() {
+		t.Fatalf("MarkMcpFetching should refuse while a fetch is in flight")
+	}
+
+	f.SetMcpStatus(mcpStatusList(), nil)
+	if f.NeedsMcpFetch() {
+		t.Fatalf("a completed fetch should not be repeated")
+	}
+}
+
+// TestMcpStatusBuildsOneRowPerHarness verifies the daemon's client list drives
+// the rows, with the Custom row kept last.
+func TestMcpStatusBuildsOneRowPerHarness(t *testing.T) {
+	f := NewSettingsForm()
+	f.LoadFromProject(minimalProject())
+	f.SetMcpStatus(mcpStatusList(), nil)
+
+	rows := f.rowsInSection(sectionMcp)
+	if len(rows) != 3 {
+		t.Fatalf("expected 2 harness rows + Custom, got %d", len(rows))
+	}
+	if got := f.rows[rows[0]].McpClient; got != "claude-code" {
+		t.Errorf("first row should target claude-code, got %q", got)
+	}
+	if got := f.rows[rows[1]].McpClient; got != "codex" {
+		t.Errorf("second row should target codex, got %q", got)
+	}
+	if got := f.rows[rows[2]].Kind; got != rowKindMcpCustom {
+		t.Errorf("Custom row should be last, got kind %v", got)
+	}
+	if got := f.McpCustomSnippet(); got != mcpStatusList().CustomSnippet {
+		t.Errorf("custom snippet should be stored verbatim, got %q", got)
+	}
+}
+
+// TestMcpEnterActionPerState covers the Enter contract: install only for a
+// detected-but-unconfigured harness, reveal otherwise, toggle for Custom.
+func TestMcpEnterActionPerState(t *testing.T) {
+	f := NewSettingsForm()
+	f.LoadFromProject(minimalProject())
+	f.SetMcpStatus(mcpStatusList(), nil)
+
+	cases := []struct {
+		rowKey     string
+		wantAction mcpEnterAction
+		wantClient string
+	}{
+		{"mcp_claude-code", mcpActionInstall, "claude-code"},
+		{"mcp_codex", mcpActionReveal, "codex"},
+		{"mcp_custom", mcpActionToggleCustom, ""},
+	}
+	for _, c := range cases {
+		t.Run(c.rowKey, func(t *testing.T) {
+			focusRow(t, f, c.rowKey)
+			action, client := f.McpEnterAction()
+			if action != c.wantAction || client != c.wantClient {
+				t.Fatalf("got (%v, %q), want (%v, %q)", action, client, c.wantAction, c.wantClient)
+			}
+		})
+	}
+
+	// An already-configured harness reveals rather than re-installing.
+	list := mcpStatusList()
+	list.Clients[0].Configured = true
+	f.SetMcpStatus(list, nil)
+	focusRow(t, f, "mcp_claude-code")
+	if action, _ := f.McpEnterAction(); action != mcpActionReveal {
+		t.Fatalf("configured harness should reveal, got %v", action)
+	}
+}
+
+// TestMcpInstallFlipsToConfigured walks the install lifecycle the way the
+// message handler does: begin (spinner), then apply the response.
+func TestMcpInstallFlipsToConfigured(t *testing.T) {
+	f := NewSettingsForm()
+	f.LoadFromProject(minimalProject())
+	f.SetMcpStatus(mcpStatusList(), nil)
+
+	if !f.BeginMcpInstall("claude-code") {
+		t.Fatalf("BeginMcpInstall should start for a fresh install")
+	}
+	if !f.McpBusy() {
+		t.Fatalf("form should report busy while the install is in flight")
+	}
+	if f.BeginMcpInstall("codex") {
+		t.Fatalf("a second concurrent install should be refused")
+	}
+
+	f.SetMcpInstalled("claude-code", &pb.McpClientStatus{
+		Client:      "claude-code",
+		DisplayName: "Claude Code",
+		Detected:    true,
+		Configured:  true,
+		ConfigPath:  "/home/u/.claude.json",
+		Message:     "Registered the Watchfire MCP server with Claude Code.",
+	}, nil)
+
+	if f.McpBusy() {
+		t.Fatalf("form should be idle after the install response")
+	}
+	st := f.McpStatusFor("claude-code")
+	if st == nil || !st.Configured {
+		t.Fatalf("claude-code should read configured after install, got %v", st)
+	}
+	// Enter on the now-configured row must not install again.
+	focusRow(t, f, "mcp_claude-code")
+	if action, _ := f.McpEnterAction(); action != mcpActionReveal {
+		t.Fatalf("configured harness should reveal, got %v", action)
+	}
+}
+
+// TestMcpInstallFailureRendersManualInstructions: a failed install comes back
+// as a normal response with configured=false plus manual instructions, and
+// those must show up in the rendered section.
+func TestMcpInstallFailureRendersManualInstructions(t *testing.T) {
+	f := NewSettingsForm()
+	f.SetSize(120, 40)
+	f.LoadFromProject(minimalProject())
+	f.SetMcpStatus(mcpStatusList(), nil)
+
+	const manual = "Could not register automatically: config unparseable"
+	f.BeginMcpInstall("claude-code")
+	f.SetMcpInstalled("claude-code", &pb.McpClientStatus{
+		Client:      "claude-code",
+		DisplayName: "Claude Code",
+		Detected:    true,
+		Configured:  false,
+		Message:     manual,
+	}, nil)
+
+	f.activeSec = sectionMcp
+	f.sidebarCursor = 0
+	for i, def := range settingsSections {
+		if def.ID == sectionMcp {
+			f.sidebarCursor = i
+		}
+	}
+	view := f.View()
+	if !strings.Contains(view, "Could not register automatically") {
+		t.Fatalf("manual instructions should render inline; view was:\n%s", view)
+	}
+}
+
+// TestMcpCustomRowShowsSnippetVerbatim: the Custom row renders the snippet the
+// daemon returned, not a locally-authored copy.
+func TestMcpCustomRowShowsSnippetVerbatim(t *testing.T) {
+	f := NewSettingsForm()
+	f.SetSize(120, 40)
+	f.LoadFromProject(minimalProject())
+	f.SetMcpStatus(mcpStatusList(), nil)
+	for i, def := range settingsSections {
+		if def.ID == sectionMcp {
+			f.sidebarCursor = i
+			f.activeSec = def.ID
+		}
+	}
+
+	view := f.View()
+	if strings.Contains(view, "\"mcp\", \"serve\"") {
+		t.Fatalf("snippet should stay collapsed until Enter; view was:\n%s", view)
+	}
+
+	focusRow(t, f, "mcp_custom")
+	f.ToggleMcpCustom()
+	view = f.View()
+	for _, want := range []string{"\"command\": \"watchfire\"", "\"mcp\", \"serve\"", "--print"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("expanded Custom row should contain %q; view was:\n%s", want, view)
+		}
+	}
+}
+
+// TestMcpFetchErrorOffersRetry: a failed fetch renders inline and Enter on a
+// harness row retries instead of acting on stale state.
+func TestMcpFetchErrorOffersRetry(t *testing.T) {
+	f := NewSettingsForm()
+	f.LoadFromProject(minimalProject())
+	f.MarkMcpFetching()
+	f.SetMcpStatus(nil, errors.New("daemon unreachable"))
+
+	if !f.McpFetchFailed() {
+		t.Fatalf("expected McpFetchFailed after an errored fetch")
+	}
+	if f.NeedsMcpFetch() {
+		t.Fatalf("a failed fetch should not auto-retry on every keypress")
+	}
+	// Seed a client row so Enter has something to land on, then confirm the
+	// error path wins over the per-client action.
+	f.mcpClients = mcpStatusList().Clients
+	f.rebuildRows()
+	focusRow(t, f, "mcp_claude-code")
+	if action, _ := f.McpEnterAction(); action != mcpActionRetryFetch {
+		t.Fatalf("expected retry action while the fetch error stands, got %v", action)
+	}
+}
+
+// TestMcpRowEnterIsIgnoredOutsideMcpSection guards the key-handler seam: a
+// non-MCP row must fall through to the existing dispatch.
+func TestMcpRowEnterIsIgnoredOutsideMcpSection(t *testing.T) {
+	m := &Model{settingsForm: NewSettingsForm()}
+	m.settingsForm.LoadFromProject(minimalProject())
+	focusRow(t, m.settingsForm, "name")
+
+	if cmd, handled := m.handleMcpRowEnter(); handled || cmd != nil {
+		t.Fatalf("Enter on a non-MCP row should not be handled by the MCP path")
+	}
+
+	focusRow(t, m.settingsForm, "mcp_custom")
+	if _, handled := m.handleMcpRowEnter(); !handled {
+		t.Fatalf("Enter on the Custom row should be handled by the MCP path")
+	}
+	if !m.settingsForm.mcpShowCustom {
+		t.Fatalf("Enter on the Custom row should expand the snippet")
 	}
 }
 

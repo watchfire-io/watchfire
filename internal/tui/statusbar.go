@@ -183,10 +183,20 @@ func getKeyHints(m *Model) string {
 		case 1: // Definition
 			context = []hint{{"e", "edit in $EDITOR"}}
 		case 2: // Settings
-			context = []hint{
-				{"j/k", "navigate"},
-				{"Enter", "edit"},
-				{"Space", "toggle"},
+			// The MCP section has no editable values — Enter installs a
+			// harness or reveals the snippet to paste.
+			if m.settingsForm != nil && m.settingsForm.ActiveSection() == sectionMcp {
+				context = []hint{
+					{"j/k", "navigate"},
+					{"Enter", "install / snippet"},
+					{"/", "search"},
+				}
+			} else {
+				context = []hint{
+					{"j/k", "navigate"},
+					{"Enter", "edit"},
+					{"Space", "toggle"},
+				}
 			}
 		}
 	} else {

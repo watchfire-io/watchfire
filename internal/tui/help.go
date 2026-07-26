@@ -92,6 +92,7 @@ var helpSections = []helpSection{
 			{"Space", "Toggle boolean / cycle"},
 			{"y", "Copy value (Metadata section)"},
 			{"e", "Open in $EDITOR (Secrets section)"},
+			{"Enter", "Install MCP client / show snippet (MCP section)"},
 			{"y/N", "Confirm danger-zone actions"},
 		},
 	},
