@@ -13,6 +13,7 @@ package install
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -66,6 +67,29 @@ type Result struct {
 	Reason string
 	// Snippet is the exact text to paste for a Manual result.
 	Snippet string
+}
+
+// Message renders the outcome of an Install call as human-readable text for
+// the given client display name. It is the single source of truth for
+// onboarding copy: the CLI prints it, and the daemon's InstallMcpClient RPC
+// returns it as McpClientStatus.message — which is the only channel the TUI
+// and GUI have for explaining a Manual result and the snippet to paste.
+func (r Result) Message(displayName string) string {
+	switch r.Action {
+	case ActionInstalled:
+		return fmt.Sprintf("Registered the Watchfire MCP server with %s.\n  Config: %s\nRestart %s to pick it up.",
+			displayName, r.ConfigPath, displayName)
+	case ActionUpdated:
+		return fmt.Sprintf("Updated the existing watchfire entry for %s.\n  Config: %s\nRestart %s to pick it up.",
+			displayName, r.ConfigPath, displayName)
+	case ActionUnchanged:
+		return fmt.Sprintf("%s is already configured — nothing to do.\n  Config: %s",
+			displayName, r.ConfigPath)
+	case ActionManual:
+		return fmt.Sprintf("Could not register automatically: %s\n\n%s", r.Reason, r.Snippet)
+	default:
+		return fmt.Sprintf("Unknown install result %q for %s.", r.Action, displayName)
+	}
 }
 
 // Client is one known MCP client Watchfire can register itself with.

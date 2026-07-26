@@ -7,11 +7,14 @@ import (
 	"path/filepath"
 
 	"github.com/posthog/posthog-go"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/watchfire-io/watchfire/internal/analytics"
 	"github.com/watchfire-io/watchfire/internal/config"
 	"github.com/watchfire-io/watchfire/internal/daemon/agent/backend"
+	"github.com/watchfire-io/watchfire/internal/mcpserver/install"
 	"github.com/watchfire-io/watchfire/internal/models"
 	pb "github.com/watchfire-io/watchfire/proto"
 )
@@ -158,6 +161,88 @@ func (s *settingsService) ListAgents(_ context.Context, _ *emptypb.Empty) (*pb.A
 		})
 	}
 	return &pb.AgentList{Agents: agents}, nil
+}
+
+// GetMcpClientStatus reports the MCP onboarding state of every known coding
+// agent harness on this machine (v9.0 Firestorm), plus the generic snippet for
+// the Custom option so the CLI, TUI and GUI all render that from one source of
+// truth.
+//
+// The daemon runs as the invoking user, which is why it can answer this at all:
+// detection and configuration both live in user-level config under $HOME. It is
+// a pure read — no network, no writes.
+func (s *settingsService) GetMcpClientStatus(_ context.Context, _ *emptypb.Empty) (*pb.McpClientStatusList, error) {
+	clients := install.Clients()
+	out := make([]*pb.McpClientStatus, 0, len(clients))
+	for _, c := range clients {
+		st := c.Status()
+		out = append(out, &pb.McpClientStatus{
+			Client:      c.ID,
+			DisplayName: c.DisplayName,
+			Detected:    st.Detected,
+			Configured:  st.Configured,
+			ConfigPath:  st.ConfigPath,
+			Message:     mcpStatusMessage(c.DisplayName, st),
+		})
+	}
+	return &pb.McpClientStatusList{
+		Clients:       out,
+		CustomSnippet: install.CustomSnippet(),
+	}, nil
+}
+
+// InstallMcpClient registers `watchfire mcp serve` with one known MCP client by
+// merging a watchfire entry into that client's user-level config — the same
+// best-effort, idempotent write path as `watchfire mcp install`.
+//
+// Install problems are NOT gRPC errors. A missing harness or an unparseable
+// config comes back as a normal response with configured=false and a message
+// carrying the manual snippet, so the TUI/GUI can render the fallback path
+// instead of an opaque error toast. Only an unknown client key — a caller bug —
+// is an error.
+func (s *settingsService) InstallMcpClient(_ context.Context, req *pb.InstallMcpClientRequest) (*pb.McpClientStatus, error) {
+	client, ok := install.Get(req.GetClient())
+	if !ok {
+		return nil, status.Errorf(codes.InvalidArgument, "unknown MCP client %q", req.GetClient())
+	}
+
+	res := client.Install()
+	st := client.Status()
+
+	// Installers know the exact file they targeted; Status only knows where the
+	// config is expected to live. Prefer the former when it is populated.
+	configPath := res.ConfigPath
+	if configPath == "" {
+		configPath = st.ConfigPath
+	}
+
+	analytics.Track("mcp_client_installed", posthog.NewProperties().
+		Set("origin", req.GetMeta().GetOrigin()).
+		Set("client", client.ID).
+		Set("action", string(res.Action)))
+
+	return &pb.McpClientStatus{
+		Client:      client.ID,
+		DisplayName: client.DisplayName,
+		Detected:    st.Detected,
+		Configured:  st.Configured,
+		ConfigPath:  configPath,
+		Message:     res.Message(client.DisplayName),
+	}, nil
+}
+
+// mcpStatusMessage renders the read-only status line for a client. Badges come
+// from detected/configured; this explains what installing would actually do,
+// including the "you'll get a snippet instead" case for an absent harness.
+func mcpStatusMessage(displayName string, st install.Status) string {
+	switch {
+	case st.Configured:
+		return fmt.Sprintf("Configured in %s. Restart %s if it is not picking Watchfire up.", st.ConfigPath, displayName)
+	case st.Detected:
+		return fmt.Sprintf("Detected. Installing adds the watchfire entry to %s.", st.ConfigPath)
+	default:
+		return fmt.Sprintf("%s was not found on this machine. Installing returns the snippet to add to %s by hand.", displayName, st.ConfigPath)
+	}
 }
 
 // validateExecutablePath returns nil iff path points at a regular file the

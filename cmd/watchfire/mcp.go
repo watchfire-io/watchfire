@@ -169,24 +169,11 @@ func printCustomSnippet() {
 	fmt.Println("outside the host.")
 }
 
+// printInstallResult renders the outcome through install.Result.Message so the
+// CLI, the TUI and the GUI all describe an install the same way (the graphical
+// surfaces get the same text over SettingsService.InstallMcpClient).
 func printInstallResult(client install.Client, res install.Result) {
-	switch res.Action {
-	case install.ActionInstalled:
-		fmt.Printf("Registered the Watchfire MCP server with %s.\n", client.DisplayName)
-		fmt.Printf("  Config: %s\n", res.ConfigPath)
-		fmt.Printf("Restart %s to pick it up.\n", client.DisplayName)
-	case install.ActionUpdated:
-		fmt.Printf("Updated the existing watchfire entry for %s.\n", client.DisplayName)
-		fmt.Printf("  Config: %s\n", res.ConfigPath)
-		fmt.Printf("Restart %s to pick it up.\n", client.DisplayName)
-	case install.ActionUnchanged:
-		fmt.Printf("%s is already configured — nothing to do.\n", client.DisplayName)
-		fmt.Printf("  Config: %s\n", res.ConfigPath)
-	case install.ActionManual:
-		fmt.Printf("Could not register automatically: %s\n", res.Reason)
-		fmt.Println()
-		fmt.Println(res.Snippet)
-	}
+	fmt.Println(res.Message(client.DisplayName))
 }
 
 func init() {
