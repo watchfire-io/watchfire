@@ -32,6 +32,19 @@ This produces `build/watchfired` (daemon) and `build/watchfire` (CLI/TUI).
 make test
 ```
 
+The MCP server has an additional end-to-end test that drives the real
+`watchfire mcp serve` binary over stdio against a real `watchfired`. It is
+behind the `mcpe2e` build tag (so `make test` never compiles it) and has its
+own target, which builds both binaries first:
+
+```bash
+make test-mcp-e2e
+```
+
+It runs the daemon with `HOME` redirected to a temp directory, so it cannot
+see or disturb your own daemon, projects, or config — and it never starts a
+coding agent.
+
 ### Linting
 
 ```bash

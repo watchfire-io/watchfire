@@ -102,8 +102,8 @@ Watchfire manufactures the code in sandboxed, git-worktree-isolated runs
 and merges the results.
 
 The server is **local-only by construction** — its only transport is stdio,
-spawned by the MCP client on this machine. It never opens a TCP socket and
-is not reachable from outside the host.
+spawned by the MCP client on this machine. It never opens a listening
+socket and is not reachable from outside the host.
 
 ### Quickstart
 
@@ -139,19 +139,33 @@ watchfire mcp install --print
 ### The factory loop
 
 The server exposes Watchfire's project, task, run, and inspect surfaces as
-MCP tools. The canonical loop for an outer agent:
+18 MCP tools. The canonical loop for an outer agent:
 
-1. `create_task` — file a task (status `ready`) with a prompt + acceptance criteria
+1. `create_task` — file a task with a prompt + acceptance criteria
 2. `run_task` — launch a sandboxed agent on it in an isolated worktree
-3. `wait_for_task` — block until the run completes
-4. `get_task` — check `success` / `failure_reason`
+3. `wait_for_task` — block until the run completes (on `timed_out: true`, call it again)
+4. `get_task` — check `success` / `failure_reason` — `done` means the agent
+   stopped, not that it succeeded
 5. `get_task_diff` — review exactly what changed, then iterate with follow-up tasks
+
+Creating a task never starts it: status `ready` queues a task for `run_all`
+(and lets an in-flight `run_all`/wildfire chain pick it up), while `run_task`
+is what starts one now. Watchfire runs at most **one agent per project** —
+the run tools refuse rather than queue while one is busy, so use
+`wait_for_task` or `stop_agent` first.
+
+The rest of the catalog: `list_projects`, `get_project`, `list_tasks`,
+`update_task`, `delete_task`, `run_all`, `start_wildfire`, `stop_agent`,
+`get_agent_status`, `get_agent_screen`, `get_insights`, `list_logs`,
+`get_log`.
 
 ### Read-only mode
 
-`watchfire mcp serve --read-only` serves only observation tools (projects,
-diffs, screens, insights, logs, agent status) — no task creation or agent
-control. Useful for dashboards or less-trusted callers.
+`watchfire mcp serve --read-only` serves only the 10 observation tools
+(projects, tasks, diffs, screens, insights, logs, agent status) — no task
+creation, editing, or agent control. The write and run tools aren't merely
+refused: they are never registered, so they don't appear in `tools/list` at
+all. Useful for dashboards or less-trusted callers.
 
 ### A note on recursion
 
@@ -195,6 +209,7 @@ make dev-daemon   # Daemon with hot reload
 make dev-tui      # Build and run TUI
 make dev-gui      # Electron GUI dev mode
 make test         # Tests with race detector
+make test-mcp-e2e # MCP end-to-end test (real binary + real daemon, isolated HOME)
 make lint         # Linting
 make proto        # Regenerate protobuf code
 ```

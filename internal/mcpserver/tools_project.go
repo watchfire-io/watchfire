@@ -12,12 +12,16 @@ import (
 )
 
 var projectTools = []toolDef{
-	newTool(groupProject, "list_projects",
-		"List every Watchfire project registered on this machine, each enriched with live agent status: whether an agent is running, in which mode (chat, task, start-all, wildfire), the task it is working on, and the wildfire phase if any. Use this to discover the ids and names accepted by the \"project\" argument of the other tools.",
-		handleListProjects),
-	newTool(groupProject, "get_project",
-		"Get full detail for one Watchfire project: definition (the project spec agents work from), default agent and sandbox/merge settings, task counts by status, git state (current branch, dirty files, ahead/behind), and live agent status. \"project\" is a project id or name; omit it to use the project of the directory the server was started in.",
-		handleGetProject),
+	newTool(toolSpec{
+		Group: groupProject, Name: "list_projects", Title: "List projects",
+		ReadOnly: true, Idempotent: true,
+		Description: "List every Watchfire project registered on this machine, each enriched with live agent status: whether an agent is running, in which mode (chat, task, start-all, wildfire), the task it is working on, and the wildfire phase if any. Start here: this is how you discover the ids and names accepted by the \"project\" argument of every other tool.",
+	}, handleListProjects),
+	newTool(toolSpec{
+		Group: groupProject, Name: "get_project", Title: "Get project",
+		ReadOnly: true, Idempotent: true,
+		Description: "Get full detail for one Watchfire project: definition (the project spec agents work from), default agent and sandbox/merge settings, task counts by status, git state (current branch, dirty files, ahead/behind), and live agent status. \"project\" is a project id or name; omit it to use the project of the directory the server was started in.",
+	}, handleGetProject),
 }
 
 type listProjectsArgs struct{}
@@ -92,7 +96,7 @@ type projectDetail struct {
 func handleListProjects(ctx context.Context, s *server, _ listProjectsArgs) (any, error) {
 	list, err := s.projects.ListProjects(ctx, &emptypb.Empty{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list projects: %w", err)
+		return nil, rpcErr("list projects", err)
 	}
 
 	summaries := make([]projectSummary, 0, len(list.Projects))
@@ -122,7 +126,7 @@ func handleGetProject(ctx context.Context, s *server, args getProjectArgs) (any,
 
 	project, err := s.projects.GetProject(ctx, &pb.ProjectId{ProjectId: projectID})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get project %s: %w", projectID, err)
+		return nil, rpcErr(fmt.Sprintf("get project %s", projectID), err)
 	}
 
 	detail := projectDetail{

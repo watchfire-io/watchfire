@@ -313,22 +313,27 @@ func TestDeleteTaskHappyPath(t *testing.T) {
 }
 
 // TestTaskToolsRegistered guards the registry wiring: all five task tools are
-// present under the task group.
+// present, the three that write carry the task group (so --read-only drops
+// them) and the two pure reads carry the inspect group (so --read-only keeps
+// them).
 func TestTaskToolsRegistered(t *testing.T) {
-	want := map[string]bool{
-		"create_task": false, "list_tasks": false, "get_task": false,
-		"update_task": false, "delete_task": false,
+	want := map[string]string{
+		"create_task": groupTask, "update_task": groupTask, "delete_task": groupTask,
+		"list_tasks": groupInspect, "get_task": groupInspect,
 	}
+	seen := map[string]bool{}
 	for _, td := range allTools() {
-		if _, ok := want[td.name]; ok {
-			want[td.name] = true
-			if td.group != groupTask {
-				t.Errorf("tool %s registered under group %q, want %q", td.name, td.group, groupTask)
-			}
+		group, ok := want[td.spec.Name]
+		if !ok {
+			continue
+		}
+		seen[td.spec.Name] = true
+		if td.spec.Group != group {
+			t.Errorf("tool %s registered under group %q, want %q", td.spec.Name, td.spec.Group, group)
 		}
 	}
-	for name, seen := range want {
-		if !seen {
+	for name := range want {
+		if !seen[name] {
 			t.Errorf("tool %s missing from allTools()", name)
 		}
 	}

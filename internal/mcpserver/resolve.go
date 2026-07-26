@@ -19,7 +19,7 @@ import (
 func (s *server) resolveProject(ctx context.Context, arg string) (string, error) {
 	list, err := s.projects.ListProjects(ctx, &emptypb.Empty{})
 	if err != nil {
-		return "", fmt.Errorf("failed to list projects: %w", err)
+		return "", rpcErr("list projects to resolve the \"project\" argument", err)
 	}
 	return resolveProjectID(arg, s.defaultProjectID, list.Projects)
 }
@@ -52,7 +52,7 @@ func resolveProjectID(arg, defaultID string, projects []*pb.Project) (string, er
 	case 1:
 		return matches[0].ProjectId, nil
 	case 0:
-		return "", fmt.Errorf("unknown project %q; valid projects: %s", arg, projectChoices(projects))
+		return "", fmt.Errorf("project %q not found — known projects: %s", arg, projectChoices(projects))
 	default:
 		return "", fmt.Errorf("project name %q is ambiguous; pass a project id instead: %s", arg, projectChoices(matches))
 	}

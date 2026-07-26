@@ -13,24 +13,39 @@ import (
 )
 
 var taskTools = []toolDef{
-	newTool(groupTask, "create_task",
-		"Create a task in a Watchfire project through the daemon's validated write path. A task is a unit of work a sandboxed coding agent executes in an isolated git worktree, merged into the project's default branch on success. status \"draft\" (the default) files the task for review without running anything; status \"ready\" queues it for execution — and may immediately auto-start an agent if the project has auto_start_tasks enabled (check get_project). \"agent\" overrides the project's default backend for this task and must be a registered backend name. Returns the created task including its assigned task_number.",
-		handleCreateTask,
+	newTool(toolSpec{
+		Group: groupTask, Name: "create_task", Title: "Create task",
+		Description: "Create a task in a Watchfire project through the daemon's validated write path. A task is a unit of work a sandboxed coding agent executes in an isolated git worktree, merged into the project's default branch on success. Creating a task never starts it: status \"draft\" (the default) files it for review, status \"ready\" additionally queues it for run_all and lets an already-running run_all or wildfire chain into it. To run it now, call run_task with the returned task_number. \"agent\" overrides the project's default backend for this task and must be a registered backend name. Returns the created task including its assigned task_number.",
+	}, handleCreateTask,
 		enumProperty("status", "draft", "ready"),
 		defaultProperty("status", `"draft"`)),
-	newTool(groupTask, "list_tasks",
-		"List the tasks of a Watchfire project: number, title, status (draft | ready | done), success flag for done tasks, agent override, and position. Soft-deleted (trashed) tasks are excluded unless include_deleted is true. Use get_task for the full prompt, acceptance criteria, failure reason, and timestamps of one task.",
-		handleListTasks),
-	newTool(groupTask, "get_task",
-		"Get one task in full: title, prompt, acceptance criteria, status (draft | ready | done), success, failure_reason (why the agent reported failure), merge_failure_reason (why the post-task merge failed, if it did), agent override, position, session count, and timestamps. This is where to check the outcome after a run finishes.",
-		handleGetTask),
-	newTool(groupTask, "update_task",
-		"Update fields of an existing task: title, prompt, acceptance_criteria, status, agent (backend override; empty string clears it back to the project default), position. Only the fields you pass change. Status may only be flipped between \"draft\" and \"ready\" here — \"done\" is written by the executing agent, not by clients. Setting \"ready\" may immediately auto-start an agent if the project has auto_start_tasks enabled. The daemon rejects invalid edits (e.g. to a task an agent is currently running); its error is returned as-is.",
-		handleUpdateTask,
+	// Registry group "inspect", not "task": list_tasks and get_task are
+	// pure reads, and a --read-only server that can fetch a task's DIFF
+	// (get_task_diff) but not the task it belongs to is incoherent — the
+	// diff is strictly more revealing. Same precedent as get_agent_status
+	// in tools_run.go: the group only drives read-only filtering, while
+	// ARCHITECTURE.md documents these two under Task.
+	newTool(toolSpec{
+		Group: groupInspect, Name: "list_tasks", Title: "List tasks",
+		ReadOnly: true, Idempotent: true,
+		Description: "List the tasks of a Watchfire project: task_number, title, status (draft | ready | done), success flag for done tasks, agent override, and position. Soft-deleted (trashed) tasks are excluded unless include_deleted is true. Use get_task for one task's full prompt, acceptance criteria, failure reason, and timestamps.",
+	}, handleListTasks),
+	newTool(toolSpec{
+		Group: groupInspect, Name: "get_task", Title: "Get task",
+		ReadOnly: true, Idempotent: true,
+		Description: "Get one task in full: title, prompt, acceptance criteria, status (draft | ready | done), success, failure_reason (why the agent reported failure), merge_failure_reason (why the post-task merge failed, if it did), agent override, position, session count, and timestamps. This is where to check the outcome after a run finishes — status \"done\" only means the agent stopped, so always read the success flag too.",
+	}, handleGetTask),
+	newTool(toolSpec{
+		Group: groupTask, Name: "update_task", Title: "Update task",
+		Idempotent:  true,
+		Description: "Update fields of an existing task: title, prompt, acceptance_criteria, status, agent (backend override; empty string clears it back to the project default), position. Only the fields you pass change. Status may only be flipped between \"draft\" and \"ready\" here — \"done\" is written by the executing agent, not by clients. Setting \"ready\" queues the task (for run_all, and for an in-flight run_all/wildfire to chain into) but does not start an agent by itself; use run_task for that. The daemon rejects invalid edits, e.g. to a task an agent is currently running.",
+	}, handleUpdateTask,
 		enumProperty("status", "draft", "ready")),
-	newTool(groupTask, "delete_task",
-		"Soft-delete a task: it moves to the project's trash and stops being eligible to run. This is reversible — a human can restore it from the Trash view in the Watchfire TUI or GUI. Permanent deletion is intentionally not available over MCP.",
-		handleDeleteTask),
+	newTool(toolSpec{
+		Group: groupTask, Name: "delete_task", Title: "Delete task",
+		Destructive: true, Idempotent: true,
+		Description: "Soft-delete a task: it moves to the project's trash and stops being eligible to run. This is reversible — a human can restore it from the Trash view in the Watchfire TUI or GUI. Permanent deletion is intentionally not available over MCP.",
+	}, handleDeleteTask),
 }
 
 type createTaskArgs struct {
@@ -38,7 +53,7 @@ type createTaskArgs struct {
 	Title              string `json:"title" jsonschema:"Short task title."`
 	Prompt             string `json:"prompt" jsonschema:"Full instructions for the coding agent: what to build or change, with enough context to work autonomously."`
 	AcceptanceCriteria string `json:"acceptance_criteria,omitempty" jsonschema:"Verifiable conditions that define success for the task."`
-	Status             string `json:"status,omitempty" jsonschema:"Initial status. \"draft\" files the task for review; \"ready\" queues it to run and may auto-start an agent if the project has auto_start_tasks enabled. Defaults to \"draft\"."`
+	Status             string `json:"status,omitempty" jsonschema:"Initial status. \"draft\" files the task for review; \"ready\" additionally queues it for run_all. Neither starts an agent — call run_task for that. Defaults to \"draft\"."`
 	Agent              string `json:"agent,omitempty" jsonschema:"Agent backend override for this task (e.g. \"claude-code\"). Must be a registered backend name; omit to use the project default."`
 	Position           *int32 `json:"position,omitempty" jsonschema:"Position in the task list; omit to append at the end."`
 }
@@ -60,7 +75,7 @@ type updateTaskArgs struct {
 	Title              *string `json:"title,omitempty" jsonschema:"New title."`
 	Prompt             *string `json:"prompt,omitempty" jsonschema:"New agent instructions."`
 	AcceptanceCriteria *string `json:"acceptance_criteria,omitempty" jsonschema:"New acceptance criteria."`
-	Status             *string `json:"status,omitempty" jsonschema:"New status: \"draft\" or \"ready\" only. Setting \"ready\" may auto-start an agent if the project has auto_start_tasks enabled."`
+	Status             *string `json:"status,omitempty" jsonschema:"New status: \"draft\" or \"ready\" only. Setting \"ready\" queues the task for run_all; it does not start an agent by itself."`
 	Agent              *string `json:"agent,omitempty" jsonschema:"Agent backend override (e.g. \"claude-code\"). Pass an empty string to clear the override back to the project default."`
 	Position           *int32  `json:"position,omitempty" jsonschema:"New position in the task list."`
 }
@@ -138,7 +153,7 @@ func handleCreateTask(ctx context.Context, s *server, args createTaskArgs) (any,
 
 	t, err := s.tasks.CreateTask(ctx, req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create task: %w", err)
+		return nil, rpcErr("create task", err)
 	}
 	return protoTaskDetail(t), nil
 }
@@ -154,7 +169,7 @@ func handleListTasks(ctx context.Context, s *server, args listTasksArgs) (any, e
 		IncludeDeleted: args.IncludeDeleted,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list tasks: %w", err)
+		return nil, rpcErr("list tasks", err)
 	}
 
 	rows := make([]taskSummary, 0, len(list.Tasks))
@@ -183,7 +198,7 @@ func handleGetTask(ctx context.Context, s *server, args taskRefArgs) (any, error
 
 	t, err := s.tasks.GetTask(ctx, &pb.TaskId{ProjectId: projectID, TaskNumber: args.TaskNumber})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get task %d: %w", args.TaskNumber, err)
+		return nil, rpcErr(fmt.Sprintf("get task %d", args.TaskNumber), err)
 	}
 	return protoTaskDetail(t), nil
 }
@@ -218,7 +233,7 @@ func handleUpdateTask(ctx context.Context, s *server, args updateTaskArgs) (any,
 		Position:           args.Position,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to update task %d: %w", args.TaskNumber, err)
+		return nil, rpcErr(fmt.Sprintf("update task %d", args.TaskNumber), err)
 	}
 	return protoTaskDetail(t), nil
 }
@@ -231,7 +246,7 @@ func handleDeleteTask(ctx context.Context, s *server, args taskRefArgs) (any, er
 
 	t, err := s.tasks.DeleteTask(ctx, &pb.TaskId{ProjectId: projectID, TaskNumber: args.TaskNumber})
 	if err != nil {
-		return nil, fmt.Errorf("failed to delete task %d: %w", args.TaskNumber, err)
+		return nil, rpcErr(fmt.Sprintf("delete task %d", args.TaskNumber), err)
 	}
 
 	return struct {
@@ -250,7 +265,7 @@ func handleDeleteTask(ctx context.Context, s *server, args taskRefArgs) (any, er
 func (s *server) validateAgent(ctx context.Context, name string) error {
 	list, err := s.settings.ListAgents(ctx, &emptypb.Empty{})
 	if err != nil {
-		return fmt.Errorf("failed to list agent backends: %w", err)
+		return rpcErr("list agent backends", err)
 	}
 	names := make([]string, 0, len(list.Agents))
 	for _, a := range list.Agents {

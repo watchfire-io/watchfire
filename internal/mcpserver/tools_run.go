@@ -17,27 +17,38 @@ const (
 )
 
 var runTools = []toolDef{
-	newTool(groupRun, "run_task",
-		"Start a sandboxed coding agent on one task (status \"draft\" or \"ready\"; already-done tasks are rejected). The agent works in an isolated git worktree; when it marks the task done the daemon stops it and merges the branch into the project's default branch. Watchfire runs at most one agent per project: if one is already running this errors immediately, naming its mode and task — it never queues or replaces the run (use stop_agent or wait_for_task first). Returns the started agent status; call wait_for_task to block until the run completes.",
-		handleRunTask),
-	newTool(groupRun, "run_all",
-		"Run every \"ready\" task of a project in sequence: the daemon starts the lowest-positioned ready task and automatically chains to the next one after each merge, until no ready tasks remain. Errors if no task is ready or an agent is already running (never queues or replaces a run). Use wait_for_task on individual task numbers to track progress, or get_agent_status to see which task is currently being worked.",
-		handleRunAll),
-	newTool(groupRun, "start_wildfire",
-		"WARNING: wildfire is Watchfire's autonomous mode — a three-phase loop (Execute ready tasks -> Refine failed ones -> Generate NEW tasks from the project definition) that keeps running until no new work emerges. It can create and execute tasks you never reviewed, so only start it when the user explicitly wants autonomous operation. Errors if an agent is already running. Monitor with get_agent_status (wildfire_phase) and abort with stop_agent.",
-		handleStartWildfire),
-	newTool(groupRun, "stop_agent",
-		"Stop the agent running in a project (SIGTERM to the sandboxed process; the daemon cleans up). Also breaks run_all / wildfire chaining — no next task is started. In-progress work in the task's worktree is left uncommitted or unmerged, not lost. Safe to call when nothing is running: returns stopped: false instead of an error.",
-		handleStopAgent),
+	newTool(toolSpec{
+		Group: groupRun, Name: "run_task", Title: "Run task",
+		Description: "Start a sandboxed coding agent on one task (status \"draft\" or \"ready\"; already-done tasks are rejected). The agent works in an isolated git worktree; when it marks the task done the daemon stops it and merges the branch into the project's default branch. Watchfire runs at most one agent per project: if one is already running this errors immediately, naming its mode and task — it never queues or replaces the run (use stop_agent or wait_for_task first). Returns immediately with the started agent status; the run itself takes minutes, so call wait_for_task next to block until it completes.",
+	}, handleRunTask),
+	newTool(toolSpec{
+		Group: groupRun, Name: "run_all", Title: "Run all ready tasks",
+		Description: "Run every \"ready\" task of a project in sequence: the daemon starts the lowest-positioned ready task and automatically chains to the next one after each merge, until no ready tasks remain. Errors if no task is ready, or if an agent is already running (it never queues or replaces a run). Returns as soon as the first task starts; track progress with get_agent_status (which task is being worked now) or wait_for_task per task number.",
+	}, handleRunAll),
+	newTool(toolSpec{
+		Group: groupRun, Name: "start_wildfire", Title: "Start wildfire (autonomous)",
+		Destructive: true,
+		Description: "WARNING: wildfire is Watchfire's autonomous mode — a three-phase loop (Execute ready tasks -> Refine failed ones -> Generate NEW tasks from the project definition) that keeps running until no new work emerges. It creates and executes tasks nobody reviewed and merges them into the default branch, so only start it when the user explicitly asked for autonomous operation. Errors if an agent is already running. Monitor with get_agent_status (wildfire_phase) and abort with stop_agent.",
+	}, handleStartWildfire),
+	newTool(toolSpec{
+		Group: groupRun, Name: "stop_agent", Title: "Stop agent",
+		Destructive: true, Idempotent: true,
+		Description: "Stop the agent running in a project (SIGTERM to the sandboxed process; the daemon cleans up). Also breaks run_all / wildfire chaining — no next task is started. In-progress work stays in the task's worktree, uncommitted or unmerged rather than lost. Safe to call when nothing is running: returns stopped: false instead of an error.",
+	}, handleStopAgent),
 	// Registry group "inspect", not "run": get_agent_status is pure
 	// observation, so --read-only serving must keep it. The group field
-	// only drives read-only filtering, not the documented tool catalog.
-	newTool(groupInspect, "get_agent_status",
-		"Get live agent status for a project: whether an agent is running, its mode (chat | task | start-all | wildfire), the task number/title being worked, the wildfire phase, when the session started, and any blocking issue (auth_required / rate_limited) with its message and cooldown — how to tell a working agent from a stuck one.",
-		handleGetAgentStatus),
-	newTool(groupRun, "wait_for_task",
-		"Block until a task reaches status \"done\" (polls the daemon every ~2s), then return its outcome: status, success, failure_reason, and seconds waited. This is the factory loop's synchronization point — call it right after run_task. On timeout (timeout_seconds, default 300, max 600) it returns the CURRENT state with timed_out: true plus live agent status; that is not an error — simply call wait_for_task again to keep waiting. Note \"done\" means the agent finished, not that it succeeded: always check the success flag.",
-		handleWaitForTask,
+	// only drives read-only filtering, not the documented tool catalog —
+	// ARCHITECTURE.md lists this tool under Run.
+	newTool(toolSpec{
+		Group: groupInspect, Name: "get_agent_status", Title: "Get agent status",
+		ReadOnly: true, Idempotent: true,
+		Description: "Get live agent status for a project: whether an agent is running, its mode (chat | task | start-all | wildfire), the task_number/title being worked, the wildfire phase, when the session started, and any blocking issue (auth_required / rate_limited) with its message and cooldown — how to tell a working agent from a stuck one. Check this before run_task if you are unsure whether the project is busy.",
+	}, handleGetAgentStatus),
+	newTool(toolSpec{
+		Group: groupRun, Name: "wait_for_task", Title: "Wait for task",
+		Idempotent:  true,
+		Description: "Block until a task reaches status \"done\" (polls the daemon every ~2s), then return its outcome: status, success, failure_reason, and seconds waited. This is the factory loop's synchronization point — call it right after run_task. On timeout (timeout_seconds, default 300, max 600) it returns the CURRENT state with timed_out: true plus live agent status; that is a normal result, not an error, and the run is still going — call wait_for_task again with the same arguments to keep waiting. Note \"done\" means the agent finished, not that it succeeded: always check the success flag.",
+	}, handleWaitForTask,
 		defaultProperty("timeout_seconds", "300"),
 		rangeProperty("timeout_seconds", 1, 600)),
 }
@@ -108,7 +119,7 @@ func handleRunTask(ctx context.Context, s *server, args taskRefArgs) (any, error
 
 	status, err := s.agents.StartAgent(ctx, startAgentRequest(projectID, "task", args.TaskNumber))
 	if err != nil {
-		return nil, fmt.Errorf("failed to start agent on task %d: %w", args.TaskNumber, err)
+		return nil, rpcErr(fmt.Sprintf("start an agent on task %d", args.TaskNumber), err)
 	}
 	return runStarted{
 		Started: true,
@@ -128,7 +139,7 @@ func handleRunAll(ctx context.Context, s *server, args agentProjectArgs) (any, e
 
 	status, err := s.agents.StartAgent(ctx, startAgentRequest(projectID, "start-all", 0))
 	if err != nil {
-		return nil, fmt.Errorf("failed to start run-all: %w", err)
+		return nil, rpcErr("start run-all", err)
 	}
 	return runStarted{
 		Started: true,
@@ -149,7 +160,7 @@ func handleStartWildfire(ctx context.Context, s *server, args agentProjectArgs) 
 
 	status, err := s.agents.StartAgent(ctx, startAgentRequest(projectID, "wildfire", 0))
 	if err != nil {
-		return nil, fmt.Errorf("failed to start wildfire: %w", err)
+		return nil, rpcErr("start wildfire", err)
 	}
 	return runStarted{
 		Started: true,
@@ -168,7 +179,7 @@ func handleStopAgent(ctx context.Context, s *server, args agentProjectArgs) (any
 	// Pre-check so stopping an idle project is a no-op, not an error.
 	status, err := s.agents.GetAgentStatus(ctx, &pb.ProjectId{ProjectId: projectID})
 	if err != nil {
-		return nil, fmt.Errorf("failed to check agent status: %w", err)
+		return nil, rpcErr("check agent status", err)
 	}
 	if !status.IsRunning {
 		return struct {
@@ -178,7 +189,7 @@ func handleStopAgent(ctx context.Context, s *server, args agentProjectArgs) (any
 	}
 
 	if _, err := s.agents.StopAgent(ctx, &pb.ProjectId{ProjectId: projectID}); err != nil {
-		return nil, fmt.Errorf("failed to stop agent: %w", err)
+		return nil, rpcErr("stop the agent", err)
 	}
 	return struct {
 		Stopped bool              `json:"stopped"`
@@ -193,7 +204,7 @@ func handleGetAgentStatus(ctx context.Context, s *server, args agentProjectArgs)
 	}
 	status, err := s.agents.GetAgentStatus(ctx, &pb.ProjectId{ProjectId: projectID})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get agent status: %w", err)
+		return nil, rpcErr("get agent status", err)
 	}
 	return protoAgentStatus(status), nil
 }
@@ -230,7 +241,7 @@ func waitForTask(ctx context.Context, s *server, projectID string, taskNumber in
 	for {
 		t, err := s.tasks.GetTask(ctx, &pb.TaskId{ProjectId: projectID, TaskNumber: taskNumber})
 		if err != nil {
-			return nil, fmt.Errorf("failed to poll task %d: %w", taskNumber, err)
+			return nil, rpcErr(fmt.Sprintf("poll task %d", taskNumber), err)
 		}
 
 		res := waitForTaskResult{
@@ -272,7 +283,7 @@ func waitForTask(ctx context.Context, s *server, projectID string, taskNumber in
 func (s *server) requireNoRunningAgent(ctx context.Context, projectID string) error {
 	status, err := s.agents.GetAgentStatus(ctx, &pb.ProjectId{ProjectId: projectID})
 	if err != nil {
-		return fmt.Errorf("failed to check agent status: %w", err)
+		return rpcErr("check agent status", err)
 	}
 	if !status.IsRunning {
 		return nil

@@ -356,7 +356,7 @@ The CLI/TUI is the primary interface for developers. A single binary (`watchfire
 
 | Command | Alias | Description |
 |---------|-------|-------------|
-| `watchfire mcp serve` | | Run the stdio MCP server (spawned by MCP clients, not by users; auto-starts daemon) |
+| `watchfire mcp serve` | | Run the stdio MCP server (spawned by MCP clients, not by users; auto-starts daemon). `--read-only` serves observation tools only |
 | `watchfire mcp install [client]` | | Register the MCP server with a client: `claude-code`, `codex`, `gemini`, `opencode`, `copilot`. No arg = interactive picker. `--print` emits generic JSON config |
 
 ### `watchfire init` Flow
@@ -1100,50 +1100,68 @@ watchfired                     ← all orchestration
 ### Transport & Lifecycle
 
 - **Transport**: stdio only in v9.0. The MCP client spawns `watchfire mcp serve` as a subprocess; the server auto-starts the daemon if needed (same path as the CLI) and connects via `config.LoadDaemonInfo()`.
-- **SDK**: official `github.com/modelcontextprotocol/go-sdk` (pin latest stable at implementation time).
+- **SDK**: official `github.com/modelcontextprotocol/go-sdk` (v1.6.1).
+- **Shutdown**: the MCP spec shuts a stdio server down by closing its stdin. `Serve` wraps the transport so it can tell a clean end-of-input (or a cancelled context from SIGINT/SIGTERM) from a real fault, and exits **0** in that case — the SDK reports the same condition as a session error, and a nonzero exit would make clients log every normal shutdown as a crash. `mcp serve` also sets `SilenceUsage` so a genuine startup failure is not buried under a flag dump.
 - **Scoping**: tools take an optional `project` argument (project id or name). When `watchfire mcp serve` is started inside a registered project directory, that project is the default and `project` may be omitted — mirroring the CLI's project resolution (cwd walk-up + auto-register). A single server instance can address **all** registered projects.
 - **Concurrency**: the server is stateless; concurrent tool calls are safe because the daemon already serializes per-project agent operations.
 
 ### Tool Catalog
 
-Tool names are unprefixed (clients namespace by server name). Kept deliberately small (~16 tools).
+Tool names are unprefixed (clients namespace by server name). Kept deliberately small: **18 tools** in four documented groups.
+
+The "Group" column below is the documented grouping. It is *not* always the registry group in code: `--read-only` filtering keys off a per-tool registry group, and the three pure reads that live in write-heavy documented groups (`get_agent_status`, `list_tasks`, `get_task`) carry the `inspect` registry group so a read-only server keeps them. Each tool declares its own `readOnly` flag in `toolSpec`, and a test asserts the flag and the registry group can never disagree.
 
 | Group | Tool | Backing RPC | Notes |
 |-------|------|-------------|-------|
 | Project | `list_projects` | `ProjectService.ListProjects` + `AgentService.GetAgentStatus` | Status summary per project (agent running, mode, current task) |
-| Project | `get_project` | `ProjectService.GetProject` + `GetGitInfo` | Definition, default agent, branch, task counts |
-| Task | `create_task` | `TaskService.CreateTask` | `title`, `prompt`, `acceptance_criteria?`, `status` (`draft`\|`ready`), `agent?` override, `position?`. Validated daemon write path — never authors YAML directly |
-| Task | `list_tasks` | `TaskService.ListTasks` | Optional `include_deleted` |
-| Task | `get_task` | `TaskService.GetTask` | Full task incl. `status` / `success` / `failure_reason` |
-| Task | `update_task` | `TaskService.UpdateTask` | Edit fields, flip `draft`⇄`ready` |
-| Task | `delete_task` | `TaskService.DeleteTask` | Soft delete (trash) |
-| Run | `run_task` | `AgentService.StartAgent` (`mode=task`) | Errors clearly if an agent is already running for the project |
-| Run | `run_all` | `AgentService.StartAgent` (`mode=start-all`) | Run all ready tasks in sequence |
-| Run | `start_wildfire` | `AgentService.StartAgent` (`mode=wildfire`) | Autonomous three-phase loop |
-| Run | `stop_agent` | `AgentService.StopAgent` | |
-| Run | `get_agent_status` | `AgentService.GetAgentStatus` | Mode, task, wildfire phase, blocking issue if any |
+| Project | `get_project` | `ProjectService.GetProject` + `GetGitInfo` + `TaskService.ListTasks` | Definition, default agent, branch, task counts |
+| Task | `create_task` | `TaskService.CreateTask` | `title`, `prompt`, `acceptance_criteria?`, `status` (`draft`\|`ready`, default `draft`), `agent?` override, `position?`. Validated daemon write path — never authors YAML directly. Does **not** start anything |
+| Task | `list_tasks` | `TaskService.ListTasks` | Optional `include_deleted`. Read-only ⇒ served under `--read-only` |
+| Task | `get_task` | `TaskService.GetTask` | Full task incl. `status` / `success` / `failure_reason`. Read-only ⇒ served under `--read-only` |
+| Task | `update_task` | `TaskService.UpdateTask` | Edit fields, flip `draft`⇄`ready` (`done` is the executing agent's to write) |
+| Task | `delete_task` | `TaskService.DeleteTask` | Soft delete (trash); restorable from TUI/GUI |
+| Run | `run_task` | `AgentService.StartAgent` (`mode=task`) | Pre-checks `GetAgentStatus` and refuses if an agent is running — the daemon's `StartAgent` would otherwise *replace* it |
+| Run | `run_all` | `AgentService.StartAgent` (`mode=start-all`) | Run all ready tasks in sequence; same refusal pre-check |
+| Run | `start_wildfire` | `AgentService.StartAgent` (`mode=wildfire`) | Autonomous three-phase loop; same refusal pre-check |
+| Run | `stop_agent` | `AgentService.GetAgentStatus` + `StopAgent` | No-op (`stopped: false`) when nothing is running, not an error |
+| Run | `get_agent_status` | `AgentService.GetAgentStatus` | Mode, task, wildfire phase, blocking issue if any. Read-only ⇒ served under `--read-only` |
 | Run | `wait_for_task` | polls `TaskService.GetTask` + `GetAgentStatus` | Blocking with `timeout_seconds` (default 300, max 600). Returns terminal task state, or current state + `timed_out: true`. Clients re-call to keep waiting — this is the factory loop's synchronization point |
 | Inspect | `get_task_diff` | `InsightsService.GetTaskDiff` | `FileDiffSet` rendered as unified diff text, honoring the daemon's truncation cap |
 | Inspect | `get_agent_screen` | `AgentService.GetScrollback` | Tail of the live agent terminal (plain text, ANSI stripped) — lets the outer agent peek at a stuck run |
-| Inspect | `get_insights` | `InsightsService.GetProjectInsights` / `GetGlobalInsights` | Throughput + code-output summary |
-| Inspect | `list_logs` / `get_log` | `LogService` | Past session transcripts |
+| Inspect | `get_insights` | `InsightsService.GetProjectInsights` / `GetGlobalInsights` | Throughput + code-output summary; `scope` = `project` (default) \| `global` |
+| Inspect | `list_logs` | `LogService.ListLogs` | Past session transcripts (metadata) |
+| Inspect | `get_log` | `LogService.GetLog` | One transcript, tail-capped at 64 KiB |
+
+**Descriptions are part of the contract.** The catalog is the only thing an outer model reads before choosing a call, so every tool carries a paragraph stating consequences (not just capability), a `title`, and MCP `annotations` (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint: false` — the tools' world is this machine). `internal/mcpserver/catalog_test.go` asserts these properties over the real `tools/list` payload: argument naming is uniform (`project`, `task_number`, `log_id`), the schema constraints are published (enums, defaults, min/max), and the specific sentences an outer agent needs are present.
 
 ### The Factory Loop
 
 The canonical outer-agent workflow the tool surface is designed around:
 
-1. `create_task` (`status: ready`, `auto_start_tasks` off → or explicit `run_task`)
-2. `wait_for_task` — blocks until the daemon's reactive lifecycle finishes (agent writes `status: done` → watcher → stop → merge/auto-PR → cleanup)
-3. `get_task` — check `success` / `failure_reason`
-4. `get_task_diff` — review what was merged
-5. Iterate: file follow-up tasks or fix-ups
+1. `create_task` — files the work; **creating a task never starts it**
+2. `run_task` — starts a sandboxed agent on it in an isolated worktree
+3. `wait_for_task` — blocks until the daemon's reactive lifecycle finishes (agent writes `status: done` → watcher → stop → merge/auto-PR → cleanup); on `timed_out: true` the client simply calls again
+4. `get_task` — check `success` / `failure_reason` (`done` ≠ succeeded)
+5. `get_task_diff` — review what was merged
+6. Iterate: file follow-up tasks or fix-ups
+
+`status: ready` only *queues* a task: it makes the task eligible for `run_all` and for an in-flight `run_all`/`wildfire` chain to pick up. Nothing in the daemon starts an agent in response to a task becoming ready (`Project.AutoStartTasks` is persisted and exposed in the settings UIs but is not read by any daemon codepath), so the tool descriptions must not promise otherwise.
 
 Escape hatches: `get_agent_screen` to diagnose a stuck agent, `stop_agent` to abort, `update_task`/`delete_task` to reshape the queue.
 
+### Error Contract
+
+Tool errors are read by a model, not by a human tailing a log, so they name the problem *and* the way out. `internal/mcpserver/errors.go` centralises this:
+
+- Daemon RPC failures go through `rpcErr`, which strips the gRPC envelope (`rpc error: code = … desc = …`) and passes the daemon's own specific message through.
+- `Unavailable` / `DeadlineExceeded` / `Canceled` are reported as *the daemon is not reachable* — a different failure from a bad argument, with `watchfire daemon start` as the fix.
+- A daemon that cannot be started or reached during handshake fails through `startupErr`, which explains that the MCP server is a thin client needing a local `watchfired`.
+- Argument errors enumerate the valid values: unknown project → the registered projects, unknown agent backend → the registered backends, busy project → the running mode and task number plus `stop_agent` / `wait_for_task`.
+
 ### Safety & Limits
 
-- **Local-only, by construction**: the MCP server **never opens a TCP socket**. Its only transport is stdio, spawned as a subprocess by an MCP client running on the same host as the daemon. It runs as the invoking user and talks to the localhost daemon over the same unauthenticated channel as the CLI. Nothing in v9.0 makes Watchfire reachable from outside the host machine.
-- **`--read-only` flag**: `watchfire mcp serve --read-only` registers only the Project/Inspect groups plus `get_agent_status` — an observation-only deployment for dashboards or untrusted callers.
+- **Local-only, by construction**: the MCP server **never opens a listening socket**. Its only transport is stdio, spawned as a subprocess by an MCP client running on the same host as the daemon. It runs as the invoking user and talks to the localhost daemon over the same unauthenticated channel as the CLI. Nothing in v9.0 makes Watchfire reachable from outside the host machine. This is enforced, not just asserted: `local_only_test.go` parses the package's own source (plus `cmd/watchfire/mcp.go`) and fails on any `net.Listen*` / `http.ListenAndServe` / `grpc.NewServer` call or any HTTP/SSE MCP transport, and pins that `Serve` wires the transport to `os.Stdin`/`os.Stdout`; the e2e test checks the same property from outside by `lsof`-ing the live server process for listening or non-loopback sockets.
+- **`--read-only` flag**: `watchfire mcp serve --read-only` registers only the observation tools — 10 of the 18: `list_projects`, `get_project`, `list_tasks`, `get_task`, `get_agent_status`, `get_task_diff`, `get_agent_screen`, `get_insights`, `list_logs`, `get_log`. Filtering happens at *registration* time, so the eight write/run tools are absent from `tools/list` and unknown when called by name, not merely refused. An observation-only deployment for dashboards or less-trusted callers.
 - **Recursion**: a Watchfire-managed agent could itself call the Watchfire MCP server (the sandbox permits local exec + network). This is permitted but not the designed pattern; the designed pattern is outer agent → Watchfire. Documentation warns about unbounded task-spawning loops.
 - **Destructive scope**: no tool deletes projects, edits settings/integrations, empties trash, or touches secrets. That surface stays in the human-facing clients.
 
@@ -1178,21 +1196,36 @@ Each installer is best-effort and idempotent: if the client CLI/config is absent
 ```
 cmd/watchfire/mcp.go            # cobra: watchfire mcp serve|install
 internal/mcpserver/
-├── server.go                   # SDK wiring, tool registry, --read-only filtering
+├── server.go                   # SDK wiring, toolSpec registry, --read-only filtering, stdio transport
+├── errors.go                   # rpcErr / startupErr / isCleanShutdown — the tool error contract
 ├── conn.go                     # daemon ensure+connect (reuses/exports internal/cli helpers)
 ├── resolve.go                  # project argument → project_id resolution (id, name, cwd default)
 ├── tools_project.go
 ├── tools_task.go
 ├── tools_run.go                # incl. wait_for_task polling
 ├── tools_inspect.go            # diff/scrollback/insights/logs rendering
+├── catalog_test.go             # tools/list audit: naming, consequences, annotations, schemas
+├── local_only_test.go          # source guard: no listener, no HTTP/SSE transport
+├── e2e_test.go                 # //go:build mcpe2e — real binary + real daemon (make test-mcp-e2e)
 └── install/                    # per-client config writers — shared by cmd/watchfire (CLI) AND the daemon's SettingsService
 ```
 
 `internal/mcpserver` imports the generated proto client + `internal/config` only — no daemon-internal packages. The exception is `internal/mcpserver/install/`, which is deliberately standalone (stdlib + config parsing only) so the daemon can import it without pulling in the MCP runtime.
 
+### Testing
+
+| Layer | Where | Runs in |
+|-------|-------|---------|
+| Handler unit tests | `tools_*_test.go` — handlers against fake gRPC clients | `make test` |
+| Catalog audit | `catalog_test.go` — registers the real tools over an in-memory transport and asserts the `tools/list` payload | `make test` |
+| Local-only guard | `local_only_test.go` — AST + source scan of the serve path | `make test` |
+| End-to-end | `e2e_test.go` — spawns the real `watchfire mcp serve` against a real `watchfired` under an isolated `HOME`, speaks MCP over stdio: initialize → tools/list → list_projects → create_task(draft) → update_task(ready) → get_task → delete_task, plus the actionable-error, `--read-only`, no-listening-socket and onboarding-consistency checks | `make test-mcp-e2e` |
+
+The e2e test sits behind the `mcpe2e` build tag (so `make test` never compiles it) and skips itself when the binaries are absent. It **never starts a coding agent**: the run tools are exercised only through refusal paths that fail before a process is created, and it asserts that flipping a task to `ready` starts nothing.
+
 ### Scope
 
-**Included (v9.0):** stdio server (local-only — no TCP listener), the tool catalog above, `--read-only`, client onboarding from all four surfaces (CLI `mcp install`, daemon RPCs, TUI Settings section, GUI Settings panel) for the five known harnesses + Custom snippet.
+**Included (v9.0):** stdio server (local-only — no listening socket), the 18-tool catalog above, `--read-only`, client onboarding from all four surfaces (CLI `mcp install`, daemon RPCs, TUI Settings section, GUI Settings panel) for the five known harnesses + Custom snippet, and the test layers above (catalog audit, local-only guard, end-to-end factory loop).
 
 **Excluded (future):**
 - Streamable HTTP transport + auth (would build on the Echo inbound server infrastructure)
