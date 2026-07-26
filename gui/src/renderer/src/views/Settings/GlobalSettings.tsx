@@ -9,6 +9,7 @@ import { AgentPathsSection } from './AgentPathsSection'
 import { NotificationsSection } from './NotificationsSection'
 import { IntegrationsSection } from './IntegrationsSection'
 import { InboundSection } from './InboundSection'
+import { McpSection } from './McpSection'
 import { UpdatesSection } from './UpdatesSection'
 import { AboutSection } from './AboutSection'
 import { SettingsSidebar } from './SettingsSidebar'
@@ -190,7 +191,10 @@ export function GlobalSettings() {
   }
 
   const renderSection = () => {
-    if (!settings && selected !== 'about') {
+    // About and MCP read nothing out of the Settings message — About takes the
+    // app version, MCP talks straight to SettingsService.GetMcpClientStatus —
+    // so they render even while (or if) the settings fetch hasn't landed.
+    if (!settings && selected !== 'about' && selected !== 'mcp') {
       return null
     }
     switch (selected) {
@@ -210,6 +214,8 @@ export function GlobalSettings() {
         return <IntegrationsSection />
       case 'inbound':
         return <InboundSection />
+      case 'mcp':
+        return <McpSection />
       case 'updates':
         return settings ? <UpdatesSection settings={settings} /> : null
       case 'about':

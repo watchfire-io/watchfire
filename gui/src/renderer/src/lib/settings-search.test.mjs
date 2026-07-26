@@ -32,6 +32,7 @@ const CATEGORIES = [
   { id: 'notifications', label: 'Notifications' },
   { id: 'integrations', label: 'Integrations' },
   { id: 'inbound', label: 'Inbound' },
+  { id: 'mcp', label: 'MCP' },
   { id: 'updates', label: 'Updates' },
   { id: 'about', label: 'About' }
 ]
