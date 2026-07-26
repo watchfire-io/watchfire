@@ -200,6 +200,30 @@ type ReorderFailedMsg struct {
 	Focused int32
 }
 
+// McpClientStatusLoadedMsg carries the per-harness MCP onboarding state from
+// SettingsService.GetMcpClientStatus (v9.0 Firestorm). The Settings view's MCP
+// section fetches this on focus; the daemon is the only source of truth for
+// detected / configured — the TUI never reads a client config itself.
+type McpClientStatusLoadedMsg struct {
+	List *pb.McpClientStatusList
+	Err  error
+}
+
+// McpClientInstalledMsg carries the post-install state of one harness from
+// SettingsService.InstallMcpClient. Install problems are not RPC errors: they
+// come back with Configured=false and a Message holding the manual snippet,
+// which the MCP section renders inline.
+type McpClientInstalledMsg struct {
+	Client string
+	Status *pb.McpClientStatus
+	Err    error
+}
+
+// mcpSpinnerTickMsg advances the MCP section's inline install spinner. It is
+// separate from spinnerTickMsg (which is gated on a running agent) so the
+// spinner keeps animating while an InstallMcpClient RPC is in flight.
+type mcpSpinnerTickMsg struct{}
+
 // OAuthHelloPostedMsg carries the result of a PostOAuthHello call.
 // The TUI surfaces this as a one-shot status banner.
 type OAuthHelloPostedMsg struct {

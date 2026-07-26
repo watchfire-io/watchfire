@@ -676,6 +676,52 @@ func updateGlobalSettingsCmd(conn *grpc.ClientConn, defaultAgent *string, agents
 	}
 }
 
+// getMcpClientStatusCmd fetches the MCP onboarding state of every known coding
+// agent harness plus the generic Custom snippet (v9.0 Firestorm). Errors are
+// carried on the message rather than routed through ErrorMsg so the MCP section
+// can render them inline without stealing the status bar.
+func getMcpClientStatusCmd(conn *grpc.ClientConn) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewSettingsServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		list, err := client.GetMcpClientStatus(ctx, &emptypb.Empty{})
+		if err != nil {
+			return McpClientStatusLoadedMsg{Err: fmt.Errorf("failed to load MCP client status: %w", err)}
+		}
+		return McpClientStatusLoadedMsg{List: list}
+	}
+}
+
+// installMcpClientCmd registers `watchfire mcp serve` with one harness. The
+// daemon writes the config (it runs as the same user), and reports install
+// problems as a normal response with configured=false plus manual
+// instructions — only an unknown client key is a gRPC error.
+func installMcpClientCmd(conn *grpc.ClientConn, mcpClient string) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewSettingsServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+		defer cancel()
+
+		st, err := client.InstallMcpClient(ctx, &pb.InstallMcpClientRequest{
+			Meta:   &pb.RequestMeta{Origin: "tui"},
+			Client: mcpClient,
+		})
+		if err != nil {
+			return McpClientInstalledMsg{Client: mcpClient, Err: fmt.Errorf("failed to install MCP client: %w", err)}
+		}
+		return McpClientInstalledMsg{Client: mcpClient, Status: st}
+	}
+}
+
+// mcpSpinnerTick drives the MCP section's install spinner.
+func mcpSpinnerTick() tea.Cmd {
+	return tea.Tick(150*time.Millisecond, func(_ time.Time) tea.Msg {
+		return mcpSpinnerTickMsg{}
+	})
+}
+
 func fetchGitInfoCmd(conn *grpc.ClientConn, projectID string) tea.Cmd {
 	return func() tea.Msg {
 		client := pb.NewProjectServiceClient(conn)

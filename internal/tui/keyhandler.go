@@ -136,7 +136,9 @@ func (m *Model) handleKey(msg tea.KeyMsg) tea.Cmd {
 			return nil
 		case key.Matches(msg, tabSwitchKeys.Tab3):
 			m.leftTab = 2
-			return nil
+			// The Settings tab keeps its section across tab switches, so
+			// re-entering it on MCP has to (re-)fetch the client status.
+			return m.mcpStatusFetchCmd()
 		}
 	}
 
@@ -345,7 +347,9 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) tea.Cmd {
 			return nil
 		case "enter":
 			m.settingsForm.ActivateSearch()
-			return nil
+			// The jump may have landed on the MCP section for the first
+			// time — fetch its status like any other focus change would.
+			return m.mcpStatusFetchCmd()
 		case "up":
 			m.settingsForm.MoveUp()
 			return nil
@@ -366,7 +370,7 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case "tab", "shift+tab":
 		m.settingsForm.SwitchPane()
-		return nil
+		return m.mcpStatusFetchCmd()
 	case "y":
 		// Copy focused metadata value.
 		if val, ok := m.settingsForm.CopySelectedValue(); ok {
@@ -398,7 +402,11 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) tea.Cmd {
 		// On the sidebar, Enter drills into the fields pane.
 		if m.settingsForm.ActivePane() == settingsPaneSidebar {
 			m.settingsForm.SwitchPane()
-			return nil
+			return m.mcpStatusFetchCmd()
+		}
+		// MCP rows install / reveal instructions rather than edit a value.
+		if cmd, handled := m.handleMcpRowEnter(); handled {
+			return cmd
 		}
 		// On an action row, fire the corresponding y/N confirm.
 		if cmd := m.maybeStartSettingsAction(); cmd != nil {
@@ -414,7 +422,51 @@ func (m *Model) handleSettingsKey(msg tea.KeyMsg) tea.Cmd {
 			return m.dispatchSettingsToggle(k, v, kind)
 		}
 	}
-	return nil
+	// Any navigation may have focused the MCP section for the first time.
+	return m.mcpStatusFetchCmd()
+}
+
+// mcpStatusFetchCmd fires GetMcpClientStatus when the MCP section has just
+// taken focus and has no status yet. Returns nil in every other case, so
+// callers can use it as the tail of a key handler unconditionally.
+func (m *Model) mcpStatusFetchCmd() tea.Cmd {
+	if m.conn == nil || !m.settingsForm.NeedsMcpFetch() {
+		return nil
+	}
+	if !m.settingsForm.MarkMcpFetching() {
+		return nil
+	}
+	return getMcpClientStatusCmd(m.conn)
+}
+
+// handleMcpRowEnter implements Enter on an MCP row. handled=false means the
+// cursor is not on an MCP row and the caller should continue its dispatch. The
+// form decides what Enter means (see McpEnterAction); this only turns that
+// decision into RPCs.
+func (m *Model) handleMcpRowEnter() (tea.Cmd, bool) {
+	row := m.settingsForm.CurrentRow()
+	if row == nil || (row.Kind != rowKindMcpClient && row.Kind != rowKindMcpCustom) {
+		return nil, false
+	}
+	action, clientKey := m.settingsForm.McpEnterAction()
+	switch action {
+	case mcpActionToggleCustom:
+		m.settingsForm.ToggleMcpCustom()
+	case mcpActionReveal:
+		m.settingsForm.RevealMcpDetail(clientKey)
+	case mcpActionRetryFetch:
+		if m.conn != nil && m.settingsForm.MarkMcpFetching() {
+			return getMcpClientStatusCmd(m.conn), true
+		}
+	case mcpActionInstall:
+		if m.conn != nil && m.settingsForm.BeginMcpInstall(clientKey) {
+			return tea.Batch(
+				installMcpClientCmd(m.conn, clientKey),
+				mcpSpinnerTick(),
+			), true
+		}
+	}
+	return nil, true
 }
 
 // dispatchSettingsToggle routes a toggle / cycle change to the right RPC

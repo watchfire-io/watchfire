@@ -311,6 +311,27 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 		cmds = append(cmds, clearSavedAfter(clearSavedTimeout))
 		return true, tea.Batch(cmds...)
 
+	// ── v9.0 Firestorm MCP onboarding ─────────────────────────────
+	case McpClientStatusLoadedMsg:
+		m.settingsForm.SetMcpStatus(msg.List, msg.Err)
+		return true, nil
+
+	case McpClientInstalledMsg:
+		m.settingsForm.SetMcpInstalled(msg.Client, msg.Status, msg.Err)
+		if msg.Err == nil && msg.Status.GetConfigured() {
+			m.statusMessage = msg.Status.GetDisplayName() + " configured for MCP"
+			m.showSaved = true
+			cmds = append(cmds, clearSavedAfter(clearSavedTimeout))
+		}
+		return true, tea.Batch(cmds...)
+
+	case mcpSpinnerTickMsg:
+		if m.settingsForm.McpBusy() {
+			m.settingsForm.TickMcpSpinner()
+			cmds = append(cmds, mcpSpinnerTick())
+		}
+		return true, tea.Batch(cmds...)
+
 	// ── v7.0 Relay integrations ───────────────────────────────────
 	case IntegrationsLoadedMsg:
 		if m.integrationsForm != nil {
