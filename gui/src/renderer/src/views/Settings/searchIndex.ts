@@ -5,6 +5,7 @@ import {
   Bell,
   Webhook,
   ArrowDownLeft,
+  Plug,
   RefreshCw,
   Info,
   type LucideIcon
@@ -17,6 +18,7 @@ export type SettingsCategoryId =
   | 'notifications'
   | 'integrations'
   | 'inbound'
+  | 'mcp'
   | 'updates'
   | 'about'
 
@@ -40,6 +42,7 @@ export const SETTINGS_CATEGORIES: SettingsCategory[] = [
   { id: 'notifications', label: 'Notifications', icon: Bell },
   { id: 'integrations', label: 'Integrations', icon: Webhook },
   { id: 'inbound', label: 'Inbound', icon: ArrowDownLeft },
+  { id: 'mcp', label: 'MCP', icon: Plug },
   { id: 'updates', label: 'Updates', icon: RefreshCw },
   { id: 'about', label: 'About', icon: Info }
 ]
@@ -87,6 +90,9 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   { category: 'inbound', fieldId: 'inbound-discord-public-key', label: 'Discord public key', keywords: ['discord', 'ed25519', 'key'] },
   { category: 'inbound', fieldId: 'inbound-discord-app-id', label: 'Discord application ID', keywords: ['discord', 'app id'] },
   { category: 'inbound', fieldId: 'inbound-discord-bot-token', label: 'Discord bot token', keywords: ['discord', 'bot', 'token'] },
+
+  { category: 'mcp', fieldId: 'mcp-clients', label: 'MCP clients', keywords: ['mcp', 'model context protocol', 'claude code', 'codex', 'gemini', 'opencode', 'copilot', 'install', 'onboarding'] },
+  { category: 'mcp', fieldId: 'mcp-custom-snippet', label: 'Custom MCP snippet', keywords: ['mcp', 'snippet', 'json', 'custom', 'copy', 'stdio'] },
 
   { category: 'updates', fieldId: 'updates-check-startup', label: 'Check on startup', keywords: ['update', 'startup', 'launch'] },
   { category: 'updates', fieldId: 'updates-auto-download', label: 'Auto-download', keywords: ['download', 'update'] },
