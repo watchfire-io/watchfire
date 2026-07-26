@@ -94,6 +94,75 @@ Run agents across multiple projects in parallel. Monitor live terminal output, r
 
 ---
 
+## MCP Server
+
+Watchfire is also an **MCP server**: any MCP-capable coding agent can use it
+as a *factory for other agents*. The outer agent plans and reviews;
+Watchfire manufactures the code in sandboxed, git-worktree-isolated runs
+and merges the results.
+
+The server is **local-only by construction** — its only transport is stdio,
+spawned by the MCP client on this machine. It never opens a TCP socket and
+is not reachable from outside the host.
+
+### Quickstart
+
+Register the server with your client in one command:
+
+```bash
+watchfire mcp install claude-code   # Claude Code
+watchfire mcp install codex         # OpenAI Codex  (~/.codex/config.toml)
+watchfire mcp install gemini        # Gemini CLI    (~/.gemini/settings.json)
+watchfire mcp install opencode      # opencode      (~/.config/opencode/opencode.json)
+watchfire mcp install copilot       # Copilot CLI   (~/.copilot/mcp-config.json)
+
+watchfire mcp install               # interactive picker (the five above + Custom)
+```
+
+Installers merge into existing config files (never overwrite) and are
+idempotent — re-running updates or no-ops. If a client isn't installed or
+its config can't be parsed, the manual snippet is printed instead.
+
+For any other MCP client, print the generic snippet:
+
+```bash
+watchfire mcp install --print
+```
+
+```json
+{
+  "command": "watchfire",
+  "args": ["mcp", "serve"]
+}
+```
+
+### The factory loop
+
+The server exposes Watchfire's project, task, run, and inspect surfaces as
+MCP tools. The canonical loop for an outer agent:
+
+1. `create_task` — file a task (status `ready`) with a prompt + acceptance criteria
+2. `run_task` — launch a sandboxed agent on it in an isolated worktree
+3. `wait_for_task` — block until the run completes
+4. `get_task` — check `success` / `failure_reason`
+5. `get_task_diff` — review exactly what changed, then iterate with follow-up tasks
+
+### Read-only mode
+
+`watchfire mcp serve --read-only` serves only observation tools (projects,
+diffs, screens, insights, logs, agent status) — no task creation or agent
+control. Useful for dashboards or less-trusted callers.
+
+### A note on recursion
+
+A Watchfire-managed agent could itself call the Watchfire MCP server —
+tasks spawning tasks. This works, but it is not the designed pattern
+(outer agent → Watchfire is), and an agent that files new tasks on every
+run can create an unbounded task-spawning loop. Prefer having the outer
+agent own the loop and review each run's diff before queueing more work.
+
+---
+
 ## Build from Source
 
 ```bash
