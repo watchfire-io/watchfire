@@ -3,14 +3,22 @@
 // translates to an existing daemon gRPC RPC — no orchestration logic lives
 // here. The package imports only the generated proto client,
 // internal/config, and exported internal/cli helpers.
+//
+// The server is local-only by construction: its only transport is stdio,
+// wired to this process's stdin/stdout by the MCP client that spawned it.
+// Nothing here opens a listening socket — local_only_test.go enforces that
+// as an invariant over the package source.
 package mcpserver
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -60,12 +68,37 @@ type server struct {
 	readOnly bool
 }
 
-// toolDef is one row of the tool registry: name, description, and input
-// schema are carried by the closed-over *mcp.Tool; group drives --read-only
-// filtering. Later tasks add tools by appending rows in allTools.
+// toolSpec is the declarative half of a registry row: everything an MCP
+// client sees about a tool before calling it. Keeping name, title,
+// description and behaviour hints in one literal is what makes the catalog
+// auditable — a reviewer can read what the model reads without reading the
+// handlers.
+type toolSpec struct {
+	// Group drives --read-only filtering (see readOnlyGroups).
+	Group string
+	// Name is the unprefixed tool name; clients namespace by server name.
+	Name string
+	// Title is the short human-readable label clients show in UI.
+	Title string
+	// Description is what the model reads to decide whether to call the
+	// tool. It must state consequences, not just capability.
+	Description string
+	// ReadOnly marks a pure-observation tool (annotations.readOnlyHint).
+	// It must agree with Group: everything in a read-only group is
+	// read-only and nothing else is — TestToolAnnotationsMatchGroups.
+	ReadOnly bool
+	// Destructive marks a tool whose effect is not purely additive
+	// (annotations.destructiveHint). Meaningful only when ReadOnly is false.
+	Destructive bool
+	// Idempotent marks a tool that can be repeated with the same arguments
+	// without additional effect (annotations.idempotentHint).
+	Idempotent bool
+}
+
+// toolDef is one row of the tool registry: the spec above plus the closure
+// that binds it to the SDK.
 type toolDef struct {
-	group    string
-	name     string
+	spec     toolSpec
 	register func(m *mcp.Server, s *server)
 }
 
@@ -75,18 +108,29 @@ type toolDef struct {
 // return value is rendered as JSON text content; an error becomes a tool
 // error (IsError result), not a protocol error.
 //
-// An optional customize function post-processes the inferred schema for
-// constraints struct tags cannot express (enums, defaults).
-func newTool[In any](group, name, description string, handler func(context.Context, *server, In) (any, error), customize ...func(*jsonschema.Schema)) toolDef {
+// Optional customize functions post-process the inferred schema for
+// constraints struct tags cannot express (enums, defaults, numeric ranges).
+func newTool[In any](spec toolSpec, handler func(context.Context, *server, In) (any, error), customize ...func(*jsonschema.Schema)) toolDef {
 	return toolDef{
-		group: group,
-		name:  name,
+		spec: spec,
 		register: func(m *mcp.Server, s *server) {
-			tool := &mcp.Tool{Name: name, Description: description}
+			tool := &mcp.Tool{
+				Name:        spec.Name,
+				Description: spec.Description,
+				Annotations: &mcp.ToolAnnotations{
+					Title:           spec.Title,
+					ReadOnlyHint:    spec.ReadOnly,
+					DestructiveHint: hintPtr(spec.Destructive),
+					IdempotentHint:  spec.Idempotent,
+					// Every tool's world is this machine's daemon: a
+					// closed, local domain — never the open internet.
+					OpenWorldHint: hintPtr(false),
+				},
+			}
 			if len(customize) > 0 {
 				schema, err := jsonschema.For[In](nil)
 				if err != nil {
-					panic(fmt.Sprintf("tool %q: infer input schema: %v", name, err))
+					panic(fmt.Sprintf("tool %q: infer input schema: %v", spec.Name, err))
 				}
 				for _, c := range customize {
 					c(schema)
@@ -104,6 +148,8 @@ func newTool[In any](group, name, description string, handler func(context.Conte
 		},
 	}
 }
+
+func hintPtr(b bool) *bool { return &b }
 
 // allTools is the full registry.
 func allTools() []toolDef {
@@ -125,7 +171,9 @@ var readOnlyGroups = map[string]bool{
 }
 
 // registeredTools is the registry a Serve run actually exposes: everything,
-// or only the read-only groups.
+// or only the read-only groups. Filtering happens at registration time, so a
+// tool excluded by --read-only is not merely hidden from tools/list — it is
+// never added to the SDK server, and calling it by name fails as unknown.
 func registeredTools(readOnly bool) []toolDef {
 	defs := allTools()
 	if !readOnly {
@@ -133,7 +181,7 @@ func registeredTools(readOnly bool) []toolDef {
 	}
 	filtered := make([]toolDef, 0, len(defs))
 	for _, td := range defs {
-		if readOnlyGroups[td.group] {
+		if readOnlyGroups[td.spec.Group] {
 			filtered = append(filtered, td)
 		}
 	}
@@ -152,9 +200,21 @@ func jsonResult(v any) (*mcp.CallToolResult, any, error) {
 	}, nil, nil
 }
 
-const serverInstructions = `Watchfire is a local orchestrator that runs coding agents (Claude Code, Codex, Gemini CLI, opencode, Copilot CLI) on tasks inside sandboxed, git-worktree-isolated sessions, then merges the results into the project's default branch. This server is a thin facade over the local Watchfire daemon.
+const serverInstructions = `Watchfire is a local orchestrator that runs coding agents (Claude Code, Codex, Gemini CLI, opencode, Copilot CLI) on tasks inside sandboxed, git-worktree-isolated sessions, then merges the results into the project's default branch. This server is a thin facade over the Watchfire daemon on this machine.
 
-The canonical factory loop: create_task (status "ready") -> run_task -> wait_for_task -> get_task (check success/failure_reason) -> get_task_diff (review the merged change) -> iterate with follow-up tasks. You plan and review; Watchfire manufactures the code.
+THE FACTORY LOOP — you plan and review; Watchfire manufactures the code:
+  1. create_task   — file the work with a prompt and acceptance criteria.
+  2. run_task      — start a sandboxed agent on it in an isolated worktree.
+  3. wait_for_task — block until the run finishes. On timed_out: true, call it again.
+  4. get_task      — read the outcome. "done" only means the agent stopped;
+                     check the success flag and failure_reason.
+  5. get_task_diff — review exactly what was merged, then iterate with follow-up tasks.
+
+Before you start:
+- Creating a task never starts it. status "ready" only queues a task — for run_all, and for an already-running run_all/wildfire to chain into. Use run_task to run one now.
+- Watchfire runs at most ONE agent per project. run_task, run_all and start_wildfire refuse while an agent is running; they never queue or replace it. Wait with wait_for_task or abort with stop_agent.
+- Agent runs take minutes, not seconds. Block with wait_for_task, diagnose an apparently stuck run with get_agent_screen, abort with stop_agent.
+- start_wildfire is autonomous: it creates AND executes tasks nobody reviewed. Start it only when the user explicitly asked for autonomous operation.
 
 Most tools take an optional "project" argument (project id or name; see list_projects). When the server was started inside a registered project directory, that project is the default and "project" may be omitted.`
 
@@ -196,5 +256,65 @@ func Serve(ctx context.Context, opts Options) error {
 
 	logger.Info("watchfire mcp server serving on stdio",
 		"default_project_id", s.defaultProjectID, "read_only", s.readOnly)
-	return m.Run(ctx, &mcp.StdioTransport{})
+
+	// A local stdio transport, not mcp.StdioTransport, so we can tell a
+	// deliberate client disconnect from a fault — see below.
+	transport := newStdioTransport()
+	runErr := m.Run(ctx, transport)
+
+	// The MCP spec shuts a stdio server down by closing its stdin. The SDK
+	// surfaces that as a session error ("server is closing: EOF"), which
+	// would make `watchfire mcp serve` exit nonzero on every normal
+	// shutdown — clients read that as a crashed server. An input stream
+	// that ended in EOF, or a cancelled context (SIGINT/SIGTERM), is a
+	// clean exit.
+	if transport.sawEOF() || isCleanShutdown(runErr) {
+		logger.Info("watchfire mcp server shut down")
+		return nil
+	}
+	return runErr
 }
+
+// stdioTransport is mcp.StdioTransport plus a flag recording whether the
+// input stream ended in EOF — whether the client closed the pipe on purpose.
+// stdout is wrapped in a no-op Close: the SDK closes both ends of the
+// connection on teardown, and closing this process's stdout is not ours to
+// do (mcp.StdioTransport does the same).
+type stdioTransport struct {
+	*mcp.IOTransport
+	eof *atomic.Bool
+}
+
+func newStdioTransport() *stdioTransport {
+	eof := &atomic.Bool{}
+	return &stdioTransport{
+		IOTransport: &mcp.IOTransport{
+			Reader: &eofRecordingReader{r: os.Stdin, eof: eof},
+			Writer: nopWriteCloser{os.Stdout},
+		},
+		eof: eof,
+	}
+}
+
+func (t *stdioTransport) sawEOF() bool { return t.eof.Load() }
+
+// eofRecordingReader records a clean end-of-input so Serve can distinguish
+// "the client hung up" from "the session broke".
+type eofRecordingReader struct {
+	r   io.ReadCloser
+	eof *atomic.Bool
+}
+
+func (r *eofRecordingReader) Read(p []byte) (int, error) {
+	n, err := r.r.Read(p)
+	if errors.Is(err, io.EOF) {
+		r.eof.Store(true)
+	}
+	return n, err
+}
+
+func (r *eofRecordingReader) Close() error { return r.r.Close() }
+
+type nopWriteCloser struct{ io.Writer }
+
+func (nopWriteCloser) Close() error { return nil }

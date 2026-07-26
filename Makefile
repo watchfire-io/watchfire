@@ -1,7 +1,7 @@
 -include .env
 export POSTHOG_KEY
 
-.PHONY: dev-daemon dev-tui dev-gui build build-daemon build-cli test lint proto clean install-tools \
+.PHONY: dev-daemon dev-tui dev-gui build build-daemon build-cli test test-mcp-e2e lint proto clean install-tools \
        build-daemon-arm64 build-daemon-amd64 build-cli-arm64 build-cli-amd64 build-universal sync-version package-gui \
        install install-all uninstall
 
@@ -116,6 +116,14 @@ sync-version:
 # Run tests
 test:
 	$(GOTEST) -v -race ./...
+
+# End-to-end MCP test: drives the real `watchfire mcp serve` binary over stdio
+# as an MCP client, against a real watchfired started with an isolated HOME.
+# Excluded from `make test` by the mcpe2e build tag because it needs both
+# binaries and a live daemon. It never starts a coding agent.
+test-mcp-e2e: build
+	WATCHFIRE_E2E_BIN_DIR=$(abspath $(BUILD_DIR)) \
+		$(GOTEST) -v -count=1 -timeout 5m -tags mcpe2e -run TestE2EFactoryLoop ./internal/mcpserver/
 
 # Run linter
 lint:

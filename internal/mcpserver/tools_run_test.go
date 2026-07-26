@@ -380,13 +380,13 @@ func TestRunToolsRegistered(t *testing.T) {
 	}
 	seen := map[string]bool{}
 	for _, td := range allTools() {
-		group, ok := want[td.name]
+		group, ok := want[td.spec.Name]
 		if !ok {
 			continue
 		}
-		seen[td.name] = true
-		if td.group != group {
-			t.Errorf("tool %s registered under group %q, want %q", td.name, td.group, group)
+		seen[td.spec.Name] = true
+		if td.spec.Group != group {
+			t.Errorf("tool %s registered under group %q, want %q", td.spec.Name, td.spec.Group, group)
 		}
 	}
 	for name := range want {

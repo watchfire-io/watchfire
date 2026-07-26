@@ -26,25 +26,35 @@ const maxLogBytes = 64 * 1024
 const binaryHunkHeader = "Binary file changed"
 
 var inspectTools = []toolDef{
-	newTool(groupInspect, "get_task_diff",
-		"Get the code change a task produced, rendered as unified-diff text with per-file headers, +/- lines, and per-file plus total addition/deletion counts (also returned structured). Works whether the task's watchfire/<n> branch still exists or was already merged and deleted. This is the review step of the factory loop: call it after wait_for_task + get_task to see exactly what was shipped. Very large diffs are capped by the daemon and flagged truncated: true.",
-		handleGetTaskDiff),
-	newTool(groupInspect, "get_agent_screen",
-		"Peek at the live agent terminal to diagnose a stuck or long-running task: returns the last N lines (default 100, max 1000) of the running agent's screen and scrollback as plain text, with ANSI escape sequences stripped. Errors if no agent is running for the project — for finished sessions use list_logs / get_log instead.",
-		handleGetAgentScreen,
+	newTool(toolSpec{
+		Group: groupInspect, Name: "get_task_diff", Title: "Get task diff",
+		ReadOnly: true, Idempotent: true,
+		Description: "Get the code change a task produced, rendered as unified-diff text with per-file headers, +/- lines, and per-file plus total addition/deletion counts (also returned structured). Works whether the task's watchfire/<task_number> branch still exists or was already merged and deleted. This is the review step of the factory loop: call it after wait_for_task + get_task to see exactly what was shipped. Very large diffs are capped by the daemon and flagged truncated: true.",
+	}, handleGetTaskDiff),
+	newTool(toolSpec{
+		Group: groupInspect, Name: "get_agent_screen", Title: "Get agent screen",
+		ReadOnly:    true,
+		Description: "Peek at the live agent terminal to diagnose a stuck or long-running task: returns the last N lines (default 100, max 1000) of the running agent's screen and scrollback as plain text, with ANSI escape sequences stripped. Requires an agent to be running for the project (check get_agent_status) — for finished sessions use list_logs / get_log instead.",
+	}, handleGetAgentScreen,
 		defaultProperty("lines", "100"),
 		rangeProperty("lines", 1, maxScreenLines)),
-	newTool(groupInspect, "get_insights",
-		"Get a compact productivity summary: task throughput (total / succeeded / failed, success rate), duration and cost totals, shipped-code output (commits, files changed, lines added/removed, merges), and a per-agent breakdown. scope \"project\" (the default) summarizes one project; scope \"global\" aggregates every registered project and lists the top projects.",
-		handleGetInsights,
+	newTool(toolSpec{
+		Group: groupInspect, Name: "get_insights", Title: "Get insights",
+		ReadOnly: true, Idempotent: true,
+		Description: "Get a compact productivity summary: task throughput (total / succeeded / failed, success rate), duration and cost totals, shipped-code output (commits, files changed, lines added/removed, merges), and a per-agent breakdown. scope \"project\" (the default) summarizes one project; scope \"global\" aggregates every registered project and lists the top projects, ignoring the \"project\" argument.",
+	}, handleGetInsights,
 		enumProperty("scope", "project", "global"),
 		defaultProperty("scope", `"project"`)),
-	newTool(groupInspect, "list_logs",
-		"List past agent session logs (transcripts) for a project: log id, task number, session number, agent backend, mode, start/end times, and exit status. Use get_log with a log_id to read a transcript.",
-		handleListLogs),
-	newTool(groupInspect, "get_log",
-		"Read one past agent session transcript by log_id (see list_logs). The content is plain text and capped at 64 KiB: when a transcript is longer, only its tail is returned and truncated: true is set.",
-		handleGetLog),
+	newTool(toolSpec{
+		Group: groupInspect, Name: "list_logs", Title: "List session logs",
+		ReadOnly: true, Idempotent: true,
+		Description: "List past agent session logs (transcripts) for a project: log_id, task_number, session number, agent backend, mode, start/end times, and exit status. Use get_log with a log_id to read one transcript.",
+	}, handleListLogs),
+	newTool(toolSpec{
+		Group: groupInspect, Name: "get_log", Title: "Get session log",
+		ReadOnly: true, Idempotent: true,
+		Description: "Read one past agent session transcript by log_id (see list_logs). The content is plain text and capped at 64 KiB: when a transcript is longer, only its tail is returned and truncated: true is set.",
+	}, handleGetLog),
 }
 
 // ---------------------------------------------------------------------------
@@ -85,7 +95,7 @@ func handleGetTaskDiff(ctx context.Context, s *server, args taskRefArgs) (any, e
 		TaskNumber: args.TaskNumber,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get diff for task %d: %w", args.TaskNumber, err)
+		return nil, rpcErr(fmt.Sprintf("get the diff for task %d", args.TaskNumber), err)
 	}
 
 	res := taskDiffResult{
@@ -233,7 +243,7 @@ func handleGetAgentScreen(ctx context.Context, s *server, args agentScreenArgs) 
 	// total first (limit 0 returns no lines), then fetch the tail window.
 	probe, err := s.agents.GetScrollback(ctx, &pb.ScrollbackRequest{ProjectId: projectID})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get agent screen (is an agent running? check get_agent_status): %w", err)
+		return nil, rpcErr("read the agent screen (no agent may be running for this project — check get_agent_status)", err)
 	}
 
 	offset, limit := tailWindow(probe.TotalLines, n)
@@ -248,7 +258,7 @@ func handleGetAgentScreen(ctx context.Context, s *server, args agentScreenArgs) 
 		Limit:     limit,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get agent screen: %w", err)
+		return nil, rpcErr("read the agent screen", err)
 	}
 
 	lines := make([]string, 0, len(tail.Lines))
@@ -353,7 +363,7 @@ func projectInsightsSummary(ctx context.Context, s *server, project string) (any
 	}
 	in, err := s.insights.GetProjectInsights(ctx, &pb.GetProjectInsightsRequest{ProjectId: projectID})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get project insights: %w", err)
+		return nil, rpcErr("get project insights", err)
 	}
 	return insightsSummary{
 		Scope:            "project",
@@ -383,7 +393,7 @@ func projectInsightsSummary(ctx context.Context, s *server, project string) (any
 func globalInsightsSummary(ctx context.Context, s *server) (any, error) {
 	in, err := s.insights.GetGlobalInsights(ctx, &pb.GetGlobalInsightsRequest{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get global insights: %w", err)
+		return nil, rpcErr("get global insights", err)
 	}
 	sum := insightsSummary{
 		Scope:            "global",
@@ -472,7 +482,7 @@ func handleListLogs(ctx context.Context, s *server, args listLogsArgs) (any, err
 	}
 	list, err := s.logs.ListLogs(ctx, &pb.ListLogsRequest{ProjectId: projectID})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list logs: %w", err)
+		return nil, rpcErr("list session logs", err)
 	}
 
 	rows := make([]logRow, 0, len(list.Logs))
@@ -495,7 +505,7 @@ func handleGetLog(ctx context.Context, s *server, args getLogArgs) (any, error) 
 
 	log, err := s.logs.GetLog(ctx, &pb.GetLogRequest{ProjectId: projectID, LogId: args.LogID})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get log %s: %w", args.LogID, err)
+		return nil, rpcErr(fmt.Sprintf("get log %q (see list_logs for valid log ids)", args.LogID), err)
 	}
 
 	res := logContentResult{Log: protoLogRow(log.Entry)}

@@ -490,7 +490,7 @@ func TestListLogs(t *testing.T) {
 func toolNames(defs []toolDef) []string {
 	names := make([]string, 0, len(defs))
 	for _, td := range defs {
-		names = append(names, td.name)
+		names = append(names, td.spec.Name)
 	}
 	sort.Strings(names)
 	return names
@@ -503,9 +503,11 @@ func TestRegisteredToolsReadOnly(t *testing.T) {
 		"get_insights",
 		"get_log",
 		"get_project",
+		"get_task",
 		"get_task_diff",
 		"list_logs",
 		"list_projects",
+		"list_tasks",
 	}
 
 	got := toolNames(registeredTools(true))

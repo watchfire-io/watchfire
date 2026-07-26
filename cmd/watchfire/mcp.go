@@ -28,7 +28,7 @@ coding agents can create tasks, launch sandboxed agent runs, and inspect
 the results.
 
 The server is local-only by construction: its only transport is stdio,
-spawned by an MCP client on this machine. It never opens a TCP socket and
+spawned by an MCP client on this machine. It opens no listening socket and
 is not reachable from outside the host.`,
 }
 
@@ -39,8 +39,16 @@ var mcpServeCmd = &cobra.Command{
 
 Intended to be spawned by an MCP client (Claude Code, Codex, Gemini CLI, …),
 not run interactively. Auto-starts the Watchfire daemon if it is not running.
-stdout carries the MCP transport; all logs go to stderr.`,
+stdout carries the MCP transport; all logs go to stderr. Closing stdin shuts
+the server down cleanly (exit 0), as the MCP spec prescribes.
+
+The stdio pipe is the only transport: the server opens no listening socket
+and is not reachable from outside this host.`,
 	Args: cobra.NoArgs,
+	// A serve failure is a runtime problem (no daemon, broken pipe), never
+	// a usage problem. Dumping the flag list into an MCP client's stderr on
+	// top of the real error only buries it.
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		return mcpserver.Serve(cmd.Context(), mcpserver.Options{
 			ReadOnly: mcpReadOnly,
@@ -65,8 +73,8 @@ existing config files are merged (never overwritten), and when a client is
 missing or its config cannot be parsed, the manual snippet is printed
 instead.
 
-The server is local-only: stdio transport spawned on this machine, no TCP
-socket, not reachable from outside the host.`,
+The server is local-only: a stdio transport spawned on this machine.
+It opens no listening socket and is not reachable from outside the host.`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: runMcpInstall,
 }
@@ -165,7 +173,7 @@ func printCustomSnippet() {
 	fmt.Println(install.CustomSnippet())
 	fmt.Println()
 	fmt.Println("The server speaks MCP over stdio: the client spawns `watchfire mcp serve`")
-	fmt.Println("on this machine. It never opens a TCP socket and is not reachable from")
+	fmt.Println("on this machine. It opens no listening socket and is not reachable from")
 	fmt.Println("outside the host.")
 }
 
