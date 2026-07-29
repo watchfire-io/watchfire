@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/watchfire-io/watchfire/internal/config"
+	"github.com/watchfire-io/watchfire/internal/daemon/insights"
 	"github.com/watchfire-io/watchfire/internal/daemon/notify"
 	"github.com/watchfire-io/watchfire/internal/models"
 )
@@ -285,8 +286,18 @@ func renderDigestMarkdown(windowStart, windowEnd time.Time) (body, summary strin
 				if t.CreatedAt.After(windowStart) && !t.CreatedAt.After(windowEnd) {
 					ps.Created++
 				}
-				if t.Status == models.TaskStatusDone && t.CompletedAt != nil &&
-					t.CompletedAt.After(windowStart) && !t.CompletedAt.After(windowEnd) {
+				// Metrics are read before the window filter because the
+				// capture time doubles as the completed_at fallback for
+				// pre-v9.1 tasks that never got a stamp.
+				var m *models.TaskMetrics
+				if t.Status == models.TaskStatusDone {
+					if mm, merr := config.ReadMetrics(entry.Path, t.TaskNumber); merr == nil {
+						m = mm
+					}
+				}
+				completedAt := insights.EffectiveCompletedAt(t, m)
+				if t.Status == models.TaskStatusDone && completedAt != nil &&
+					completedAt.After(windowStart) && !completedAt.After(windowEnd) {
 					if t.Success != nil && *t.Success {
 						ps.Done++
 					} else {
@@ -296,7 +307,7 @@ func renderDigestMarkdown(windowStart, windowEnd time.Time) (body, summary strin
 						}
 					}
 					// Code output — best-effort read of the per-task metrics.
-					if m, merr := config.ReadMetrics(entry.Path, t.TaskNumber); merr == nil && m != nil {
+					if m != nil {
 						ps.Commits += m.Commits
 						ps.LinesAdded += m.LinesAdded
 						ps.LinesRemoved += m.LinesRemoved

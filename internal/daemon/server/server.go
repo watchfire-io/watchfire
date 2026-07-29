@@ -10,6 +10,7 @@ import (
 	"os"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/improbable-eng/grpc-web/go/grpcweb"
 	"github.com/posthog/posthog-go"
@@ -674,11 +675,31 @@ func (s *Server) handleTaskChanged(event watcher.Event) {
 		return
 	}
 
+	// Stamp completed_at on the first observed done transition. Agents are
+	// told never to write timestamps themselves, and the UpdateTask RPC
+	// doesn't stamp it either — only BulkUpdateStatus did. Without this
+	// stamp every agent-completed task is invisible to the insights rollups
+	// and the metrics duration capture, which both key on completed_at.
+	// The re-save fires one more watcher event; that pass sees completed_at
+	// already set (firstDone=false) so nothing double-emits.
+	firstDone := t.CompletedAt == nil
+	if firstDone {
+		now := time.Now().UTC()
+		t.CompletedAt = &now
+		t.UpdatedAt = now
+		if err := config.SaveTask(projectPath, t); err != nil {
+			config.ProjectLogf(event.ProjectID, "[task-watch] Failed to stamp completed_at on task #%04d: %v", event.TaskNumber, err)
+		}
+	}
+
 	// Emit TASK_FAILED before stopping the agent. The emit is gated on
-	// success=false inside emitTaskFailed; calling unconditionally keeps the
-	// "any state-change to done can produce a notification" semantics.
-	projectName := s.projectNameForID(event.ProjectID)
-	emitTaskFailed(s.notifyBus, event.ProjectID, projectPath, projectName, t)
+	// success=false inside emitTaskFailed, and on firstDone here so the
+	// watcher event fired by our own completed_at re-save can't notify a
+	// second time.
+	if firstDone {
+		projectName := s.projectNameForID(event.ProjectID)
+		emitTaskFailed(s.notifyBus, event.ProjectID, projectPath, projectName, t)
+	}
 
 	// v6.0 Ember per-task metrics capture. Non-blocking and best-effort:
 	// the goroutine waits briefly for the session log to land, runs the

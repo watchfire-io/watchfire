@@ -144,3 +144,40 @@ func TestBuildProjectDataCodeOutput(t *testing.T) {
 		t.Errorf("codex churn = %+v want commits=1 lines_added=40", got)
 	}
 }
+
+// v9.1 — agent-completed tasks historically never got a completed_at stamp
+// (the daemon only stamped the interactive bulk set-status path), so the
+// rollups resolve an effective completion time with fallbacks.
+func TestEffectiveCompletedAt_FallbackChain(t *testing.T) {
+	t.Parallel()
+	completed := time.Date(2026, 5, 2, 12, 0, 0, 0, time.UTC)
+	captured := time.Date(2026, 5, 2, 12, 0, 30, 0, time.UTC)
+	updated := time.Date(2026, 5, 2, 11, 59, 0, 0, time.UTC)
+
+	m := &models.TaskMetrics{TaskNumber: 1, CapturedAt: captured}
+
+	// completed_at wins when present.
+	tk := &models.Task{TaskNumber: 1, CompletedAt: &completed, UpdatedAt: updated}
+	if got := EffectiveCompletedAt(tk, m); got == nil || !got.Equal(completed) {
+		t.Errorf("with completed_at: got %v, want %v", got, completed)
+	}
+
+	// No completed_at → metrics capture time.
+	tk = &models.Task{TaskNumber: 1, UpdatedAt: updated}
+	if got := EffectiveCompletedAt(tk, m); got == nil || !got.Equal(captured) {
+		t.Errorf("metrics fallback: got %v, want %v", got, captured)
+	}
+
+	// No completed_at, no metrics → updated_at.
+	if got := EffectiveCompletedAt(tk, nil); got == nil || !got.Equal(updated) {
+		t.Errorf("updated_at fallback: got %v, want %v", got, updated)
+	}
+
+	// Nothing plausible → nil.
+	if got := EffectiveCompletedAt(&models.Task{TaskNumber: 1}, nil); got != nil {
+		t.Errorf("no timestamps: got %v, want nil", got)
+	}
+	if got := EffectiveCompletedAt(nil, m); got != nil {
+		t.Errorf("nil task: got %v, want nil", got)
+	}
+}

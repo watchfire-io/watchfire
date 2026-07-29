@@ -137,13 +137,21 @@ func ComputeProjectInsightsForTasks(
 		if t == nil || t.IsDeleted() {
 			continue
 		}
-		if t.Status != models.TaskStatusDone || t.CompletedAt == nil {
+		if t.Status != models.TaskStatusDone {
 			continue
 		}
-		if !inWindow(*t.CompletedAt, windowStart, windowEnd) {
+		// Metrics are fetched before the window filter because the metrics
+		// capture time doubles as the completed_at fallback for pre-v9.1
+		// tasks that never got a stamp.
+		var m *models.TaskMetrics
+		if metricsFor != nil {
+			m = metricsFor(t)
+		}
+		completedAt := EffectiveCompletedAt(t, m)
+		if completedAt == nil || !inWindow(*completedAt, windowStart, windowEnd) {
 			continue
 		}
-		key := bucketKey(*t.CompletedAt)
+		key := bucketKey(*completedAt)
 		agent := agentKey(t.Agent)
 		p.TasksTotal++
 		p.TasksMissingCost++ // task 0056 not yet wired — every row is missing cost
@@ -157,7 +165,7 @@ func ComputeProjectInsightsForTasks(
 			failedByAgent[agent]++
 		}
 		if t.StartedAt != nil {
-			ms := t.CompletedAt.Sub(*t.StartedAt).Milliseconds()
+			ms := completedAt.Sub(*t.StartedAt).Milliseconds()
 			if ms > 0 {
 				p.TotalDurationMs += ms
 				allDurationsMs = append(allDurationsMs, ms)
@@ -166,10 +174,6 @@ func ComputeProjectInsightsForTasks(
 		}
 
 		// v8.0 code-output rollup — tolerant of missing metrics.
-		var m *models.TaskMetrics
-		if metricsFor != nil {
-			m = metricsFor(t)
-		}
 		cf := codeFieldsFrom(m)
 		if !cf.hasCode {
 			p.MetricsMissingCode++

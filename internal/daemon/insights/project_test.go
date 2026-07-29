@@ -283,3 +283,48 @@ func BenchmarkProjectInsights(b *testing.B) {
 		}
 	})
 }
+
+// v9.1 — a done task without completed_at (every agent-completed task
+// before the daemon stamped it) must still count, resolved via the metrics
+// capture time, then updated_at.
+func TestComputeProjectInsights_CompletedAtFallback(t *testing.T) {
+	t.Parallel()
+	day := func(d int) time.Time { return time.Date(2026, 5, d, 12, 0, 0, 0, time.UTC) }
+
+	viaMetrics := makeTask(1, "claude-code", true, day(2).Add(-10*time.Minute), day(2))
+	viaMetrics.CompletedAt = nil // pre-v9.1 shape
+
+	viaUpdated := makeTask(2, "codex", false, day(3).Add(-5*time.Minute), day(3))
+	viaUpdated.CompletedAt = nil
+	viaUpdated.UpdatedAt = day(3)
+
+	// Fallback lands outside the window → excluded.
+	outside := makeTask(3, "claude-code", true, day(40).Add(-5*time.Minute), day(40))
+	outside.CompletedAt = nil
+	outside.UpdatedAt = day(40)
+
+	metrics := map[int]*models.TaskMetrics{
+		1: {TaskNumber: 1, Agent: "claude-code", CapturedAt: day(2), Commits: 2, LinesAdded: 10, Merged: true},
+	}
+
+	p := ComputeProjectInsightsForTasks(
+		"proj-a", day(1), day(30),
+		[]*models.Task{viaMetrics, viaUpdated, outside},
+		func(t *models.Task) *models.TaskMetrics { return metrics[t.TaskNumber] },
+	)
+
+	if p.TasksTotal != 2 {
+		t.Fatalf("TasksTotal = %d, want 2 (metrics + updated_at fallbacks)", p.TasksTotal)
+	}
+	if p.TasksSucceeded != 1 || p.TasksFailed != 1 {
+		t.Errorf("succeeded/failed = %d/%d, want 1/1", p.TasksSucceeded, p.TasksFailed)
+	}
+	if p.TotalCommits != 2 || p.TotalLinesAdded != 10 || p.TasksMerged != 1 {
+		t.Errorf("code rollup = commits=%d added=%d merged=%d, want 2/10/1",
+			p.TotalCommits, p.TotalLinesAdded, p.TasksMerged)
+	}
+	// Durations resolve from the fallback completion time too.
+	if p.TotalDurationMs <= 0 {
+		t.Errorf("TotalDurationMs = %d, want > 0", p.TotalDurationMs)
+	}
+}

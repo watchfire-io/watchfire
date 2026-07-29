@@ -79,10 +79,13 @@ func (w *windowStats) add(t *models.Task, m *models.TaskMetrics) {
 		w.totalInFlight++
 	}
 
-	// Completion — counted only when CompletedAt is inside the window.
-	if t.Status == models.TaskStatusDone && t.CompletedAt != nil &&
-		inWindow(*t.CompletedAt, w.start, w.end) {
-		key := bucketKey(*t.CompletedAt)
+	// Completion — counted only when the completion time is inside the
+	// window. EffectiveCompletedAt falls back to the metrics capture time /
+	// updated_at for pre-v9.1 tasks that never got a completed_at stamp.
+	completedAt := EffectiveCompletedAt(t, m)
+	if t.Status == models.TaskStatusDone && completedAt != nil &&
+		inWindow(*completedAt, w.start, w.end) {
+		key := bucketKey(*completedAt)
 		agent := agentKey(t.Agent)
 		w.agentTasks[agent]++
 		if t.Success != nil && *t.Success {
@@ -95,7 +98,7 @@ func (w *windowStats) add(t *models.Task, m *models.TaskMetrics) {
 			w.agentFailed[agent]++
 		}
 		if t.StartedAt != nil {
-			d := int64(t.CompletedAt.Sub(*t.StartedAt).Seconds())
+			d := int64(completedAt.Sub(*t.StartedAt).Seconds())
 			if d > 0 {
 				w.durationsSec = append(w.durationsSec, d)
 				w.agentDuration[agent] = append(w.agentDuration[agent], d)
@@ -189,6 +192,30 @@ func (w *windowStats) agents() []AgentBreakdown {
 		return out[i].Agent < out[j].Agent
 	})
 	return out
+}
+
+// EffectiveCompletedAt resolves the completion timestamp a rollup should
+// use for a done task. completed_at is authoritative, but tasks completed
+// by agents before v9.1 never got the stamp (the daemon only stamped the
+// interactive bulk set-status path), so fall back to the metrics capture
+// time (written seconds after completion), then updated_at (the agent's
+// final YAML write). Returns nil when no plausible timestamp exists.
+func EffectiveCompletedAt(t *models.Task, m *models.TaskMetrics) *time.Time {
+	if t == nil {
+		return nil
+	}
+	if t.CompletedAt != nil {
+		return t.CompletedAt
+	}
+	if m != nil && !m.CapturedAt.IsZero() {
+		at := m.CapturedAt
+		return &at
+	}
+	if !t.UpdatedAt.IsZero() {
+		at := t.UpdatedAt
+		return &at
+	}
+	return nil
 }
 
 // inWindow reports whether t falls inside [start, end]. A zero start means

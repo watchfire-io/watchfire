@@ -160,13 +160,21 @@ func ComputeGlobalInsightsForTasks(
 			if t == nil || t.IsDeleted() {
 				continue
 			}
-			if t.Status != models.TaskStatusDone || t.CompletedAt == nil {
+			if t.Status != models.TaskStatusDone {
 				continue
 			}
-			if !inWindow(*t.CompletedAt, windowStart, windowEnd) {
+			// Metrics are fetched before the window filter because the
+			// metrics capture time doubles as the completed_at fallback
+			// for pre-v9.1 tasks that never got a stamp.
+			var m *models.TaskMetrics
+			if metricsFor != nil {
+				m = metricsFor(entry, t)
+			}
+			completedAt := EffectiveCompletedAt(t, m)
+			if completedAt == nil || !inWindow(*completedAt, windowStart, windowEnd) {
 				continue
 			}
-			key := bucketKey(*t.CompletedAt)
+			key := bucketKey(*completedAt)
 			agent := agentKey(t.Agent)
 			tally.count++
 			g.TasksTotal++
@@ -183,7 +191,7 @@ func ComputeGlobalInsightsForTasks(
 				tally.failed++
 			}
 			if t.StartedAt != nil {
-				ms := t.CompletedAt.Sub(*t.StartedAt).Milliseconds()
+				ms := completedAt.Sub(*t.StartedAt).Milliseconds()
 				if ms > 0 {
 					g.TotalDurationMs += ms
 					durationsByAgent[agent] = append(durationsByAgent[agent], ms)
@@ -191,10 +199,6 @@ func ComputeGlobalInsightsForTasks(
 			}
 
 			// v8.0 code-output rollup — tolerant of missing metrics.
-			var m *models.TaskMetrics
-			if metricsFor != nil {
-				m = metricsFor(entry, t)
-			}
 			cf := codeFieldsFrom(m)
 			if !cf.hasCode {
 				g.MetricsMissingCode++
