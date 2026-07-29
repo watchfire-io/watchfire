@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+## [9.1.0] Firestorm
+
+Bug-fix release: Insights (project, global, exports, weekly digest) showed zeros or near-zeros everywhere because almost no completed task ever received a `completed_at` timestamp — and every rollup filters on it.
+
+### Fixed
+
+- **The daemon now stamps `completed_at` on the done transition.** The completion protocol tells agents never to write timestamps ("the daemon fills them in"), but the daemon never did on the watcher path: when an agent wrote `status: done`, `handleTaskChanged` stopped the agent, captured metrics and merged — without stamping. Only the interactive bulk set-status path stamped it (the single-task `UpdateTask` RPC didn't either), leaving 6 of 585 done tasks across the fleet with a timestamp. The stamp happens on the first observed done event, before metrics capture, so `duration_ms` in `<n>.metrics.yaml` is now computed from real endpoints instead of degrading to 0. The re-save fires one extra watcher event; that pass sees the stamp already present and is a no-op — including a new guard so a failed task can't emit TASK_FAILED twice.
+- **Insights rollups recover the ~580 pre-9.1 tasks.** `insights.EffectiveCompletedAt` resolves a done task's completion time as `completed_at` → metrics `captured_at` (written seconds after completion) → `updated_at` (the agent's final YAML write), and is now used by the per-project aggregator, the global aggregator, the CSV/Markdown export stats, and the weekly digest. Historical tasks — and their durations, day buckets, agent breakdowns and shipped-code numbers — appear in Insights without any task file being rewritten.
+
 ## [9.0.0] Firestorm
 
 Firestorm turns Watchfire inside out: instead of only *driving* coding agents, Watchfire is now **driven by** them. `watchfire mcp serve` exposes the whole orchestrator to any MCP-capable client — Claude Code, Codex, Gemini CLI, opencode, Copilot CLI, or a custom agent — as an **18-tool factory**. The outer agent plans and reviews; Watchfire manufactures the code in sandboxed, git-worktree-isolated runs and merges the results. The canonical loop is `create_task` → `run_task` → `wait_for_task` → `get_task` → `get_task_diff` → iterate.
