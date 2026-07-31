@@ -99,8 +99,17 @@ type GlobalAgentRow struct {
 	LinesRemoved int `json:"lines_removed"`
 }
 
-// MaxTopProjects caps the rollup pill list. The dashboard renders a single
-// row at ~64px tall — five pills already wraps awkwardly on narrow widths.
+// MaxTopProjects is the *recommended client-side* cap for a rollup pill
+// list. The dashboard renders a single row at ~64px tall — five pills
+// already wraps awkwardly on narrow widths.
+//
+// v9.2: it is deliberately NOT applied server-side. `TopProjects` carries
+// every project with activity in the window, because consumers read it for
+// two different jobs: the top-N pill row (which wants a cap) and per-project
+// shipped-code lookup on the dashboard list rows (which wants every project).
+// Capping in the daemon meant a project ranked #6 by task count showed no
+// churn at all, however much code it had shipped. Renderers that want a
+// leaderboard slice to this constant themselves.
 const MaxTopProjects = 5
 
 // LoadGlobalInsights computes the fleet-wide rollup. Reads the cache first
@@ -334,6 +343,9 @@ type rollupProjTally struct {
 	merges       int
 }
 
+// pickTopProjects sorts every project that had activity in the window by
+// completed-task count descending (name as a stable tiebreak). It does not
+// truncate — see MaxTopProjects for why the cap is a renderer concern.
 func pickTopProjects(rows []rollupProjTally) []GlobalTopProject {
 	sort.Slice(rows, func(i, j int) bool {
 		if rows[i].count != rows[j].count {
@@ -341,13 +353,8 @@ func pickTopProjects(rows []rollupProjTally) []GlobalTopProject {
 		}
 		return rows[i].entry.Name < rows[j].entry.Name
 	})
-	limit := MaxTopProjects
-	if len(rows) < limit {
-		limit = len(rows)
-	}
-	out := make([]GlobalTopProject, 0, limit)
-	for i := 0; i < limit; i++ {
-		r := rows[i]
+	out := make([]GlobalTopProject, 0, len(rows))
+	for _, r := range rows {
 		var rate float64
 		if r.count > 0 {
 			rate = float64(r.succeeded) / float64(r.count)

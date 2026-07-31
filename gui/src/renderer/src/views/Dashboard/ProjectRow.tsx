@@ -86,7 +86,7 @@ export function ProjectRow({ project, hasWindow = false, churn }: ProjectRowProp
         </span>
 
         <div className="flex items-center gap-3 text-xs min-w-0 flex-1">
-          {running ? (
+          {running && (
             <>
               {isWildfire ? (
                 <WildfirePhaseBadge
@@ -98,13 +98,17 @@ export function ProjectRow({ project, hasWindow = false, churn }: ProjectRowProp
                 <AgentBadge status={agentStatus} className="shrink-0" />
               )}
               {agentStatus.taskTitle && (
-                <span className="text-[var(--wf-text-secondary)] truncate min-w-0">
+                <span className="text-[var(--wf-text-secondary)] truncate min-w-0 max-w-[220px]">
                   {agentStatus.taskTitle}
                 </span>
               )}
             </>
-          ) : live.length > 0 ? (
-            <span className="text-[var(--wf-text-muted)] truncate">
+          )}
+          {/* v9.2: counts render whether or not an agent is running. They used
+              to be the `else` branch of the badge, so a project actively being
+              worked on — the one you most want the numbers for — showed none. */}
+          {live.length > 0 ? (
+            <span className="text-[var(--wf-text-muted)] truncate shrink-0">
               <span>{taskCounts.draft} todo</span>
               <span className="mx-1.5 text-[var(--wf-border)]">·</span>
               <span className="text-[var(--wf-warning)]">{taskCounts.ready} in dev</span>
@@ -118,7 +122,7 @@ export function ProjectRow({ project, hasWindow = false, churn }: ProjectRowProp
               )}
             </span>
           ) : (
-            <span className="text-[var(--wf-text-muted)]">No tasks yet</span>
+            !running && <span className="text-[var(--wf-text-muted)]">No tasks yet</span>
           )}
         </div>
 

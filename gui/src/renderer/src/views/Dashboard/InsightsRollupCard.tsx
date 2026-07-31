@@ -6,7 +6,7 @@
 // element has a fixed footprint so nothing reflows when the window
 // selector flips between 7d / 30d / 90d / All.
 
-import { useMemo } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import { AlertTriangle, Sparkles } from 'lucide-react'
 import { useAppStore } from '../../stores/app-store'
 import {
@@ -14,6 +14,8 @@ import {
   classifyRollup,
   codeCoverageNote,
   dayBarHeights,
+  dayChartSummary,
+  formatBucketDate,
   formatCost,
   formatDuration,
   formatInt,
@@ -24,6 +26,7 @@ import {
   INSIGHTS_WINDOWS,
   mergeRate,
   successRate,
+  tooltipAnchor,
   type InsightsWindow
 } from '../../lib/insights-rollup'
 import { cn } from '../../lib/utils'
@@ -31,6 +34,12 @@ import type { GlobalInsights } from '../../generated/watchfire_pb'
 
 const BAR_HEIGHT_PX = 64
 const MAX_DAY_CELLS = 30
+
+// MAX_TOP_PILLS caps the two leaderboard pill rows. As of v9.2 the daemon
+// returns *every* active project in `top_projects` — the dashboard list rows
+// need the full set to look up per-project churn — so truncating to a
+// single-row leaderboard is this renderer's job.
+const MAX_TOP_PILLS = 5
 
 const AGENT_PALETTE = [
   '#f97316', // orange — primary accent
@@ -285,6 +294,8 @@ function DayStackedBar({ buckets }: DayStackedBarProps) {
   // chart into invisible slivers; the SVG width adapts with flex.
   const slice = buckets.length > MAX_DAY_CELLS ? buckets.slice(-MAX_DAY_CELLS) : buckets
   const cells = useMemo(() => dayBarHeights(slice, BAR_HEIGHT_PX), [slice])
+  const summary = useMemo(() => dayChartSummary(slice), [slice])
+  const [hovered, setHovered] = useState<number | null>(null)
 
   if (cells.length === 0) {
     return (
@@ -297,27 +308,151 @@ function DayStackedBar({ buckets }: DayStackedBarProps) {
     )
   }
 
+  const truncated = buckets.length > slice.length
+  const hasChurn = summary.linesAdded > 0 || summary.linesRemoved > 0
+  const bucket = hovered === null ? null : slice[hovered]
+  const anchor = hovered === null ? null : tooltipAnchor(hovered, cells.length)
+
   return (
     <div
       className="rounded-[var(--wf-radius-sm)] bg-[var(--wf-bg-elevated)] p-2"
-      aria-label="Tasks per day"
+      role="img"
+      aria-label={
+        `Tasks per day over the last ${summary.days} days: ${summary.total} tasks, ` +
+        `peak ${summary.peak} in a day, ${summary.succeeded} succeeded, ${summary.failed} failed`
+      }
     >
-      <div className="flex items-end gap-0.5" style={{ height: `${BAR_HEIGHT_PX}px` }}>
-        {cells.map((c) => (
-          <div
-            key={c.date}
-            title={`${c.date}: ${c.total} tasks`}
-            className="flex-1 flex flex-col-reverse min-w-[2px]"
-          >
+      <ChartHeader
+        label={truncated ? `Tasks per day · last ${slice.length}d` : 'Tasks per day'}
+        stats={
+          <>
+            <span title="Busiest single day in the window">peak {formatInt(summary.peak)}</span>
+            <Dot />
+            <span title={`${summary.activeDays} of ${summary.days} days had activity`}>
+              {formatInt(summary.total)} total
+            </span>
+            {hasChurn && (
+              <>
+                <Dot />
+                <span title="Lines added / removed across the window">
+                  {formatLinesPair(summary.linesAdded, summary.linesRemoved)}
+                </span>
+              </>
+            )}
+          </>
+        }
+      />
+
+      <div className="relative" onMouseLeave={() => setHovered(null)}>
+        <div className="flex items-stretch gap-0.5" style={{ height: `${BAR_HEIGHT_PX}px` }}>
+          {cells.map((c, i) => (
             <div
-              style={{ height: `${c.succeededHeight}px`, backgroundColor: 'var(--wf-success, #22c55e)' }}
+              key={c.date}
+              onMouseEnter={() => setHovered(i)}
+              // Full-column hit area — a 2px-tall bar on a quiet day would
+              // otherwise be almost impossible to hover.
+              className={cn(
+                'flex-1 flex flex-col-reverse min-w-[2px] h-full rounded-[1px] transition-opacity',
+                hovered !== null && hovered !== i && 'opacity-40',
+                hovered === i && 'bg-[var(--wf-bg-secondary)]'
+              )}
+            >
+              <div
+                style={{ height: `${c.succeededHeight}px`, backgroundColor: 'var(--wf-success, #22c55e)' }}
+              />
+              <div
+                style={{ height: `${c.failedHeight}px`, backgroundColor: 'var(--wf-warning, #ef4444)' }}
+              />
+            </div>
+          ))}
+        </div>
+
+        {bucket && anchor && (
+          <ChartTooltip anchor={anchor} title={formatBucketDate(bucket.date)}>
+            <TooltipRow
+              label={`${formatInt(bucket.count)} task${bucket.count === 1 ? '' : 's'}`}
+              detail={
+                bucket.failed > 0
+                  ? `${formatInt(bucket.succeeded)} ok · ${formatInt(bucket.failed)} failed`
+                  : undefined
+              }
             />
-            <div
-              style={{ height: `${c.failedHeight}px`, backgroundColor: 'var(--wf-warning, #ef4444)' }}
-            />
-          </div>
-        ))}
+            {(Number(bucket.linesAdded) > 0 || Number(bucket.linesRemoved) > 0) && (
+              <TooltipRow
+                label={`${formatLinesPair(bucket.linesAdded, bucket.linesRemoved)} lines`}
+              />
+            )}
+          </ChartTooltip>
+        )}
       </div>
+    </div>
+  )
+}
+
+// --- Shared chart chrome (v9.2) -----------------------------------------
+// Before v9.2 both charts were number-free and leaned on the native `title`
+// attribute, which has a ~1s delay, can't be styled, and shows one flat
+// string. These give every chart an always-visible headline plus an instant,
+// styled hover card.
+
+function ChartHeader({ label, stats }: { label: string; stats: ReactNode }) {
+  return (
+    <div className="flex items-baseline justify-between gap-2 mb-1.5">
+      <span className="text-[10px] uppercase tracking-wide text-[var(--wf-text-muted)] shrink-0">
+        {label}
+      </span>
+      <span className="flex items-center text-[10px] tabular-nums text-[var(--wf-text-secondary)] truncate">
+        {stats}
+      </span>
+    </div>
+  )
+}
+
+function Dot() {
+  return <span className="mx-1.5 text-[var(--wf-border)]">·</span>
+}
+
+interface ChartTooltipProps {
+  anchor: { leftPercent: number; transform: string }
+  title: string
+  swatch?: string
+  children: ReactNode
+}
+
+function ChartTooltip({ anchor, title, swatch, children }: ChartTooltipProps) {
+  return (
+    <div
+      // pointer-events-none so the card can never steal the hover from the
+      // bar underneath it and cause a flicker loop.
+      className="pointer-events-none absolute z-20 bottom-full mb-1.5 whitespace-nowrap rounded-[var(--wf-radius-sm)] border border-[var(--wf-border)] bg-[var(--wf-bg-secondary)] px-2 py-1.5 shadow-lg"
+      style={{ left: `${anchor.leftPercent}%`, transform: anchor.transform }}
+      role="tooltip"
+    >
+      <div className="flex items-center gap-1.5 text-[11px] font-medium text-[var(--wf-text-primary)]">
+        {swatch && (
+          <span
+            aria-hidden="true"
+            className="inline-block w-1.5 h-1.5 rounded-full shrink-0"
+            style={{ backgroundColor: swatch }}
+          />
+        )}
+        {title}
+      </div>
+      <div className="mt-0.5 space-y-0.5">{children}</div>
+    </div>
+  )
+}
+
+function TooltipRow({ label, detail }: { label: string; detail?: string }) {
+  return (
+    <div className="text-[10px] tabular-nums text-[var(--wf-text-secondary)]">
+      {label}
+      {detail && (
+        <>
+          <Dot />
+          <span className="text-[var(--wf-text-muted)]">{detail}</span>
+        </>
+      )}
     </div>
   )
 }
@@ -331,12 +466,14 @@ function TopProjectsPills({ projects, onPick }: TopProjectsPillsProps) {
   if (projects.length === 0) {
     return null
   }
+  const shown = projects.slice(0, MAX_TOP_PILLS)
+  const more = projects.length - shown.length
   return (
     <div className="flex flex-wrap gap-1.5" aria-label="Top projects">
       <span className="text-[10px] uppercase tracking-wide text-[var(--wf-text-muted)] self-center pr-1">
         Top
       </span>
-      {projects.map((p) => (
+      {shown.map((p) => (
         <button
           key={p.projectId}
           type="button"
@@ -352,7 +489,22 @@ function TopProjectsPills({ projects, onPick }: TopProjectsPillsProps) {
           <span className="text-[var(--wf-text-muted)] tabular-nums">{p.count}</span>
         </button>
       ))}
+      {more > 0 && <MorePill count={more} />}
     </div>
+  )
+}
+
+// MorePill keeps the leaderboard honest about truncation now that the daemon
+// returns every active project (v9.2) — silently showing five of twelve read
+// as "these are all my projects".
+function MorePill({ count }: { count: number }) {
+  return (
+    <span
+      className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] text-[var(--wf-text-muted)]"
+      title={`${count} more project${count === 1 ? '' : 's'} active in this window`}
+    >
+      +{count} more
+    </span>
   )
 }
 
@@ -375,12 +527,15 @@ function TopProjectsByChurn({ projects, onPick }: TopProjectsByChurnProps) {
 
   if (ranked.length === 0) return null
 
+  const shown = ranked.slice(0, MAX_TOP_PILLS)
+  const more = ranked.length - shown.length
+
   return (
     <div className="flex flex-wrap gap-1.5" aria-label="Top projects by churn">
       <span className="text-[10px] uppercase tracking-wide text-[var(--wf-text-muted)] self-center pr-1">
         Churn
       </span>
-      {ranked.map((p) => (
+      {shown.map((p) => (
         <button
           key={p.projectId}
           type="button"
@@ -399,6 +554,7 @@ function TopProjectsByChurn({ projects, onPick }: TopProjectsByChurnProps) {
           </span>
         </button>
       ))}
+      {more > 0 && <MorePill count={more} />}
     </div>
   )
 }
@@ -409,6 +565,10 @@ interface AgentStackedBarProps {
 
 function AgentStackedBar({ agents }: AgentStackedBarProps) {
   const segments = useMemo(() => agentSegmentWidths(agents), [agents])
+  const rowByAgent = useMemo(
+    () => new Map(agents.map((a) => [a.agent, a])),
+    [agents]
+  )
   // Per-agent net-line lookup so the legend can compare output, not just
   // task share. Only surfaced when some agent shipped code.
   const netByAgent = useMemo(() => {
@@ -421,20 +581,91 @@ function AgentStackedBar({ agents }: AgentStackedBarProps) {
     }
     return any ? map : null
   }, [agents])
+  const totalTasks = useMemo(
+    () => segments.reduce((sum, s) => sum + s.count, 0),
+    [segments]
+  )
+  const [hovered, setHovered] = useState<number | null>(null)
 
   if (segments.length === 0) {
     return null
   }
+
+  const seg = hovered === null ? null : segments[hovered]
+  const row = seg ? rowByAgent.get(seg.agent) : undefined
+  // Segments are variable-width, so anchor the card at the midpoint of the
+  // hovered segment rather than at an even slot boundary.
+  const segLeft =
+    hovered === null
+      ? 0
+      : segments.slice(0, hovered).reduce((sum, s) => sum + s.widthPercent, 0) +
+        segments[hovered].widthPercent / 2
+  const anchor =
+    hovered === null
+      ? null
+      : {
+          leftPercent: segLeft,
+          transform:
+            segLeft < 20
+              ? 'translateX(0)'
+              : segLeft > 80
+                ? 'translateX(-100%)'
+                : 'translateX(-50%)'
+        }
+
   return (
-    <div aria-label="Agent breakdown">
-      <div className="h-2 w-full flex rounded-full overflow-hidden bg-[var(--wf-bg-elevated)]">
-        {segments.map((seg, i) => (
-          <div
-            key={seg.agent}
-            title={`${seg.agent}: ${seg.count}`}
-            style={{ width: `${seg.widthPercent}%`, backgroundColor: agentColor(i) }}
-          />
-        ))}
+    <div aria-label={`Agent breakdown: ${formatInt(totalTasks)} tasks across ${segments.length} agents`}>
+      <ChartHeader
+        label="By agent"
+        stats={
+          <>
+            <span>{formatInt(totalTasks)} tasks</span>
+            <Dot />
+            <span>
+              {segments.length} agent{segments.length === 1 ? '' : 's'}
+            </span>
+          </>
+        }
+      />
+      <div className="relative" onMouseLeave={() => setHovered(null)}>
+        <div className="h-2 w-full flex rounded-full overflow-hidden bg-[var(--wf-bg-elevated)]">
+          {segments.map((s, i) => (
+            <div
+              key={s.agent}
+              onMouseEnter={() => setHovered(i)}
+              className={cn('transition-opacity', hovered !== null && hovered !== i && 'opacity-40')}
+              style={{ width: `${s.widthPercent}%`, backgroundColor: agentColor(i) }}
+            />
+          ))}
+        </div>
+        {seg && anchor && (
+          <ChartTooltip anchor={anchor} title={seg.agent} swatch={agentColor(hovered as number)}>
+            <TooltipRow
+              label={`${formatInt(seg.count)} task${seg.count === 1 ? '' : 's'}`}
+              detail={`${seg.widthPercent}% of fleet`}
+            />
+            {row && (
+              <TooltipRow
+                label={`${formatPercent(row.successRate)} success`}
+                detail={
+                  Number(row.avgDurationMs) > 0
+                    ? `${formatDuration(row.avgDurationMs)} avg`
+                    : undefined
+                }
+              />
+            )}
+            {row && (Number(row.linesAdded) > 0 || Number(row.linesRemoved) > 0) && (
+              <TooltipRow
+                label={`${formatLinesPair(row.linesAdded, row.linesRemoved)} lines`}
+                detail={
+                  Number(row.commits) > 0
+                    ? `${formatInt(row.commits)} commit${Number(row.commits) === 1 ? '' : 's'}`
+                    : undefined
+                }
+              />
+            )}
+          </ChartTooltip>
+        )}
       </div>
       <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[10px] text-[var(--wf-text-muted)]">
         {segments.map((seg, i) => (

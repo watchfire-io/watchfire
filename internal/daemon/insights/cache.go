@@ -35,10 +35,24 @@ const GlobalCacheFile = "_global.json"
 // locking; this just serialises concurrent gRPC handlers.
 var cacheMu sync.Mutex
 
+// globalCacheSchema versions the *semantics* of a cached entry, not just
+// its field set. Adding a field is backward-compatible (it reads as zero),
+// but changing what an existing field contains is not — and a stale entry
+// would otherwise be served indefinitely to an upgraded daemon, since the
+// cascade only invalidates when a task completes.
+//
+// 2 (v9.2): `TopProjects` is no longer truncated to MaxTopProjects. A v1
+// entry holds at most 5 projects, so the dashboard would find no churn for
+// anything outside the old top 5 until the next task landed.
+const globalCacheSchema = 2
+
 // globalCacheFileShape is the on-disk JSON shape. A `map[key]entry`
 // schema lets us cache multiple windows side-by-side (the GUI sometimes
 // flips between 30d and 90d in quick succession).
 type globalCacheFileShape struct {
+	// Schema is absent (and so reads as 0) in files written before v9.2 —
+	// which is exactly the mismatch that must invalidate them.
+	Schema  int                        `json:"schema"`
 	Entries map[string]*GlobalInsights `json:"entries"`
 }
 
@@ -85,6 +99,11 @@ func readGlobalCache(start, end time.Time) (*GlobalInsights, bool) {
 	if err := json.Unmarshal(bytes, &shape); err != nil {
 		return nil, false
 	}
+	if shape.Schema != globalCacheSchema {
+		// Written by a different daemon version — treat every entry as a
+		// miss so the caller recomputes. writeGlobalCache replaces the file.
+		return nil, false
+	}
 	entry, ok := shape.Entries[cacheKey(start, end)]
 	if !ok || entry == nil {
 		return nil, false
@@ -106,12 +125,17 @@ func writeGlobalCache(out *GlobalInsights) {
 	if err != nil {
 		return
 	}
-	shape := globalCacheFileShape{Entries: map[string]*GlobalInsights{}}
+	shape := globalCacheFileShape{Schema: globalCacheSchema, Entries: map[string]*GlobalInsights{}}
 	if bytes, err := os.ReadFile(path); err == nil { //nolint:gosec // path is daemon-controlled
-		_ = json.Unmarshal(bytes, &shape) // best-effort merge — corrupt file just gets overwritten
-	}
-	if shape.Entries == nil {
-		shape.Entries = map[string]*GlobalInsights{}
+		var existing globalCacheFileShape
+		// Merge only a same-schema file. A corrupt or older-schema file is
+		// dropped wholesale rather than merged into — carrying its entries
+		// forward under the new schema stamp would relabel stale data as fresh.
+		if json.Unmarshal(bytes, &existing) == nil && existing.Schema == globalCacheSchema {
+			if existing.Entries != nil {
+				shape.Entries = existing.Entries
+			}
+		}
 	}
 	shape.Entries[cacheKey(out.WindowStart, out.WindowEnd)] = out
 	encoded, err := json.MarshalIndent(shape, "", "  ")

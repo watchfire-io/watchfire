@@ -416,7 +416,13 @@ func globalInsightsSummary(ctx context.Context, s *server) (any, error) {
 		},
 		Agents: agentRows(in.AgentBreakdown),
 	}
-	for _, p := range in.TopProjects {
+	// v9.2: the daemon no longer truncates `top_projects` (the GUI reads it
+	// for per-project churn lookup), so the compact-summary cap this tool
+	// promises is applied here instead. Rows arrive pre-sorted by task count.
+	for i, p := range in.TopProjects {
+		if i >= maxSummaryTopProjects {
+			break
+		}
 		sum.TopProjects = append(sum.TopProjects, topProjectRow{
 			Name:     p.ProjectName,
 			Tasks:    p.Count,
@@ -425,6 +431,10 @@ func globalInsightsSummary(ctx context.Context, s *server) (any, error) {
 	}
 	return sum, nil
 }
+
+// maxSummaryTopProjects keeps `get_insights` compact for an outer agent
+// regardless of how many projects are registered.
+const maxSummaryTopProjects = 5
 
 func agentRows(breakdown []*pb.AgentBreakdown) []agentThroughput {
 	rows := make([]agentThroughput, 0, len(breakdown))

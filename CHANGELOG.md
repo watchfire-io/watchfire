@@ -2,6 +2,19 @@
 
 ## [Unreleased]
 
+Targeted at **9.2.0**. Dashboard legibility: the list view showed different information for different projects for reasons that had nothing to do with the projects, and neither chart in the Fleet insights card rendered a single number.
+
+### Fixed
+
+- **List-view task counts no longer vanish while an agent is working.** In `ProjectRow` the `N todo · N in dev · N done` line was the `else` branch of the running-agent check, so a project actively being worked on — the one whose numbers you most want — showed only a badge and the current task title. Counts now render whether or not an agent is running, alongside the badge. `ProjectCard` (grid view) already did this, so the two layouts agree again.
+- **The per-row "shipped" chip is no longer restricted to five projects.** The chip is derived from `GlobalInsights.top_projects`, which the daemon truncated to `MaxTopProjects` (5) — a cap that exists to size the leaderboard pill row, inherited by accident when v8.0 started reading the same list for per-project churn lookup. A project ranked sixth by completed-task count showed no churn at all, however much code it had shipped. `pickTopProjects` now returns every project with activity in the window, ordered as before; truncation moved to the renderers that actually want a leaderboard (GUI pill rows, TUI `Top proj` line, MCP `get_insights`), each of which now shows a `+N more` affordance instead of silently implying it listed everything.
+- **The fleet insights cache is versioned.** `~/.watchfire/insights-cache/_global.json` carried no schema stamp, so an upgraded daemon would keep serving pre-9.2 entries — capped at five projects — until a task happened to complete and cascade an invalidation. Entries now carry `schema`, a mismatch reads as a cache miss, and a write replaces a foreign-schema file wholesale rather than merging into it and relabelling stale data as fresh.
+
+### Added
+
+- **Charts carry always-visible numbers.** Both charts in the Fleet insights card previously rendered shape without magnitude — you could see *when* the fleet was busy but never *how* busy without hovering. Tasks-per-day now shows `peak N · M total` (plus window churn when code metrics exist), and the agent bar shows total tasks and agent count. The tasks chart also labels itself `last 30d` when a 90d window is trimmed to the rendered cells, so the headline can't be read as covering the whole window.
+- **Styled hover cards replace the native `title` tooltips.** The old tooltips had the browser's ~1s delay, couldn't be styled, and carried one flat string. Hovering a day now shows the date, the succeeded/failed split, and lines added/removed for that day; hovering an agent segment shows its task count and fleet share, success rate and average duration, and its line churn and commits. Cards flip alignment near either edge so they can't clip, are `pointer-events-none` so they can't steal hover from the bar beneath them, and dim the unhovered bars. Day bars get a full-column hit area — a 2px bar on a quiet day was near-impossible to hover.
+
 ## [9.1.0] Firestorm
 
 Bug-fix release: Insights (project, global, exports, weekly digest) showed zeros or near-zeros everywhere because almost no completed task ever received a `completed_at` timestamp — and every rollup filters on it.

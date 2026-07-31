@@ -388,3 +388,114 @@ test('formatShippedLine drops the merge clause when nothing merged', () => {
     '+30 / −4'
   )
 })
+
+// --- v9.2 chart-legibility helpers ---------------------------------------
+// The dashboard charts previously carried no visible numbers and leaned on
+// the native `title` attribute. These back the always-visible headline and
+// the styled hover card that replaced it.
+
+function dayChartSummary(buckets) {
+  const n = (v) => (v === undefined ? 0 : typeof v === 'bigint' ? Number(v) : v)
+  const summary = {
+    peak: 0,
+    total: 0,
+    succeeded: 0,
+    failed: 0,
+    linesAdded: 0,
+    linesRemoved: 0,
+    days: buckets.length,
+    activeDays: 0
+  }
+  for (const b of buckets) {
+    const count = n(b.count)
+    summary.total += count
+    summary.succeeded += n(b.succeeded)
+    summary.failed += n(b.failed)
+    summary.linesAdded += n(b.linesAdded)
+    summary.linesRemoved += n(b.linesRemoved)
+    if (count > summary.peak) summary.peak = count
+    if (count > 0) summary.activeDays++
+  }
+  return summary
+}
+
+function formatBucketDate(date) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
+  if (!m) return date
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  if (Number.isNaN(d.getTime())) return date
+  const weekday = d.toLocaleDateString(undefined, { weekday: 'short' })
+  const day = d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+  return `${weekday} ${day}`
+}
+
+function tooltipAnchor(index, count) {
+  if (count <= 0) return { leftPercent: 0, transform: 'translateX(0)' }
+  const leftPercent = ((index + 0.5) / count) * 100
+  if (leftPercent < 20) return { leftPercent, transform: 'translateX(0)' }
+  if (leftPercent > 80) return { leftPercent, transform: 'translateX(-100%)' }
+  return { leftPercent, transform: 'translateX(-50%)' }
+}
+
+test('dayChartSummary reports peak and totals for the headline', () => {
+  const s = dayChartSummary([
+    { date: 'd1', count: 3, succeeded: 3, failed: 0, linesAdded: 100, linesRemoved: 10 },
+    { date: 'd2', count: 0, succeeded: 0, failed: 0 },
+    { date: 'd3', count: 7, succeeded: 5, failed: 2, linesAdded: 400, linesRemoved: 90 }
+  ])
+  assert.equal(s.peak, 7, 'peak is the busiest single day, not the total')
+  assert.equal(s.total, 10)
+  assert.equal(s.succeeded, 8)
+  assert.equal(s.failed, 2)
+  assert.equal(s.linesAdded, 500)
+  assert.equal(s.linesRemoved, 100)
+  assert.equal(s.days, 3)
+  assert.equal(s.activeDays, 2, 'the empty day is not counted as active')
+})
+
+test('dayChartSummary tolerates bigint counts and absent code fields', () => {
+  const s = dayChartSummary([{ date: 'd1', count: 2n, succeeded: 2n, failed: 0n }])
+  assert.equal(s.total, 2)
+  assert.equal(s.linesAdded, 0, 'pre-v8.0 buckets read as zero churn, not NaN')
+  assert.equal(s.linesRemoved, 0)
+})
+
+test('dayChartSummary of an empty window is all zeros', () => {
+  const s = dayChartSummary([])
+  assert.equal(s.peak, 0)
+  assert.equal(s.total, 0)
+  assert.equal(s.days, 0)
+  assert.equal(s.activeDays, 0)
+})
+
+test('formatBucketDate parses the key as a local date, not UTC midnight', () => {
+  // Parsed via new Date(y, m-1, d), so the weekday can't shift backwards for
+  // viewers west of Greenwich the way new Date('2026-07-24') would.
+  const expected = new Date(2026, 6, 24)
+  const label = formatBucketDate('2026-07-24')
+  assert.ok(
+    label.startsWith(expected.toLocaleDateString(undefined, { weekday: 'short' })),
+    `expected ${label} to start with the local weekday for 2026-07-24`
+  )
+})
+
+test('formatBucketDate returns unparseable keys verbatim', () => {
+  assert.equal(formatBucketDate('not-a-date'), 'not-a-date')
+  assert.equal(formatBucketDate(''), '')
+})
+
+test('tooltipAnchor flips alignment at the edges so the card cannot clip', () => {
+  assert.equal(tooltipAnchor(0, 30).transform, 'translateX(0)', 'first bar left-aligns')
+  assert.equal(tooltipAnchor(29, 30).transform, 'translateX(-100%)', 'last bar right-aligns')
+  assert.equal(tooltipAnchor(15, 30).transform, 'translateX(-50%)', 'middle bars centre')
+})
+
+test('tooltipAnchor centres on the slot, not its left edge', () => {
+  // 2 slots → midpoints at 25% and 75%, both inside the centring band.
+  assert.equal(tooltipAnchor(0, 2).leftPercent, 25)
+  assert.equal(tooltipAnchor(1, 2).leftPercent, 75)
+})
+
+test('tooltipAnchor is safe for an empty chart', () => {
+  assert.deepEqual(tooltipAnchor(0, 0), { leftPercent: 0, transform: 'translateX(0)' })
+})

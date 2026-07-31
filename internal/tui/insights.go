@@ -186,14 +186,27 @@ func fleetSparklineLine(data *pb.GlobalInsights) string {
 	return prefixedRow("Tasks/day", sb.String())
 }
 
+// maxFleetTopProjects caps the single-line "Top proj" leaderboard. As of
+// v9.2 the daemon returns every active project in `top_projects` (so the GUI
+// can look up per-project churn), which makes truncation the renderer's job.
+const maxFleetTopProjects = 5
+
 func fleetTopProjectsLine(data *pb.GlobalInsights) string {
 	rows := data.GetTopProjects()
 	if len(rows) == 0 {
 		return prefixedRow("Top proj", lipgloss.NewStyle().Foreground(colorDim).Render("(none yet)"))
 	}
-	parts := make([]string, 0, len(rows))
+	more := 0
+	if len(rows) > maxFleetTopProjects {
+		more = len(rows) - maxFleetTopProjects
+		rows = rows[:maxFleetTopProjects]
+	}
+	parts := make([]string, 0, len(rows)+1)
 	for _, p := range rows {
 		parts = append(parts, fmt.Sprintf("%s %d", p.GetProjectName(), p.GetCount()))
+	}
+	if more > 0 {
+		parts = append(parts, lipgloss.NewStyle().Foreground(colorDim).Render(fmt.Sprintf("+%d more", more)))
 	}
 	return prefixedRow("Top proj", strings.Join(parts, "  "))
 }

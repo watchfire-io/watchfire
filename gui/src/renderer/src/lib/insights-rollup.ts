@@ -266,6 +266,91 @@ export function dayBarHeights(
   })
 }
 
+/** ChartSummary is the always-visible headline for a bar chart (v9.2). The
+ *  charts previously carried no numbers at all — only a native `title` you
+ *  had to discover by hovering — so a glance told you the *shape* of the
+ *  window but never its magnitude. Peak + total fix that without adding an
+ *  axis. Code fields are zero for windows made of pre-v8.0 tasks. */
+export interface ChartSummary {
+  peak: number
+  total: number
+  succeeded: number
+  failed: number
+  linesAdded: number
+  linesRemoved: number
+  days: number
+  /** Days with at least one completed task — the denominator for "N of M
+   *  days active", which is more honest than dividing by the raw window. */
+  activeDays: number
+}
+
+export function dayChartSummary(
+  buckets: ReadonlyArray<{
+    date: string
+    count: number | bigint
+    succeeded: number | bigint
+    failed: number | bigint
+    linesAdded?: number | bigint
+    linesRemoved?: number | bigint
+  }>
+): ChartSummary {
+  const n = (v: number | bigint | undefined) =>
+    v === undefined ? 0 : typeof v === 'bigint' ? Number(v) : v
+  const summary: ChartSummary = {
+    peak: 0,
+    total: 0,
+    succeeded: 0,
+    failed: 0,
+    linesAdded: 0,
+    linesRemoved: 0,
+    days: buckets.length,
+    activeDays: 0
+  }
+  for (const b of buckets) {
+    const count = n(b.count)
+    summary.total += count
+    summary.succeeded += n(b.succeeded)
+    summary.failed += n(b.failed)
+    summary.linesAdded += n(b.linesAdded)
+    summary.linesRemoved += n(b.linesRemoved)
+    if (count > summary.peak) summary.peak = count
+    if (count > 0) summary.activeDays++
+  }
+  return summary
+}
+
+/** formatBucketDate renders a `YYYY-MM-DD` bucket key as "Fri 24 Jul" for
+ *  the hover card. The key is parsed as a *local* calendar date — passing it
+ *  to `new Date(string)` would parse it as UTC midnight and shift the
+ *  weekday backwards for anyone west of Greenwich. Unparseable keys are
+ *  returned verbatim rather than rendering "Invalid Date". */
+export function formatBucketDate(date: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
+  if (!m) return date
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  if (Number.isNaN(d.getTime())) return date
+  const weekday = d.toLocaleDateString(undefined, { weekday: 'short' })
+  const day = d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+  return `${weekday} ${day}`
+}
+
+/** TooltipAnchor positions a hover card over a bar without letting it spill
+ *  outside the card. Bars near either edge flip their alignment instead of
+ *  centring, which would clip the card against the panel border. */
+export interface TooltipAnchor {
+  leftPercent: number
+  transform: string
+}
+
+export function tooltipAnchor(index: number, count: number): TooltipAnchor {
+  if (count <= 0) return { leftPercent: 0, transform: 'translateX(0)' }
+  // Centre of the index-th slot, as a percentage of the track width.
+  const leftPercent = ((index + 0.5) / count) * 100
+  if (leftPercent < 20) return { leftPercent, transform: 'translateX(0)' }
+  if (leftPercent > 80) return { leftPercent, transform: 'translateX(-100%)' }
+  return { leftPercent, transform: 'translateX(-50%)' }
+}
+
 /** agentSegmentWidths spreads agent counts proportionally across the bar
  *  width. Zero-count agents are filtered out. The widths are rounded to
  *  one decimal — the residual rounding error is absorbed into the last

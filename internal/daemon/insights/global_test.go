@@ -1,6 +1,7 @@
 package insights
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -234,7 +235,11 @@ func TestComputeGlobalInsights_RespectsWindow(t *testing.T) {
 	}
 }
 
-func TestComputeGlobalInsights_TopProjectsCappedAt5(t *testing.T) {
+// v9.2: TopProjects is no longer truncated server-side — the dashboard reads
+// it for per-project shipped-code lookup, so a project outside the task-count
+// top 5 must still carry its churn. Renderers that want a leaderboard slice to
+// MaxTopProjects themselves; the daemon only guarantees the ordering.
+func TestComputeGlobalInsights_TopProjectsUncappedButOrdered(t *testing.T) {
 	t.Parallel()
 	day := time.Date(2026, 5, 10, 12, 0, 0, 0, time.UTC)
 
@@ -244,7 +249,7 @@ func TestComputeGlobalInsights_TopProjectsCappedAt5(t *testing.T) {
 		id := string(rune('a' + i))
 		entry := models.ProjectEntry{ProjectID: id, Name: id}
 		projects = append(projects, entry)
-		// Higher i → more tasks, so the top 5 should be h, g, f, e, d.
+		// Higher i → more tasks, so the ordering should be h, g, f, e, d, c, b, a.
 		var tasks []*models.Task
 		for j := 0; j < i+1; j++ {
 			tasks = append(tasks, makeTask(j+1, "claude-code", true, day.Add(-time.Minute), day))
@@ -259,11 +264,20 @@ func TestComputeGlobalInsights_TopProjectsCappedAt5(t *testing.T) {
 		func(_ models.ProjectEntry) string { return "" },
 		nil,
 	)
-	if got, want := len(g.TopProjects), MaxTopProjects; got != want {
-		t.Errorf("TopProjects len = %d, want %d", got, want)
+	if got, want := len(g.TopProjects), 8; got != want {
+		t.Errorf("TopProjects len = %d, want %d (every active project)", got, want)
 	}
-	if g.TopProjects[0].ProjectID != "h" || g.TopProjects[4].ProjectID != "d" {
-		t.Errorf("Top-5 ordering wrong: %+v", g.TopProjects)
+	wantOrder := []string{"h", "g", "f", "e", "d", "c", "b", "a"}
+	for i, want := range wantOrder {
+		if g.TopProjects[i].ProjectID != want {
+			t.Fatalf("TopProjects ordering wrong at %d: got %q want %q (%+v)",
+				i, g.TopProjects[i].ProjectID, want, g.TopProjects)
+		}
+	}
+	// The pill-row cap is a renderer concern, but the constant must still
+	// name a prefix of this ordering.
+	if g.TopProjects[MaxTopProjects-1].ProjectID != "d" {
+		t.Errorf("MaxTopProjects prefix wrong: %+v", g.TopProjects[:MaxTopProjects])
 	}
 }
 
@@ -319,5 +333,51 @@ func TestGlobalCacheRoundTrip(t *testing.T) {
 	// Different window → cache miss, original entry still present.
 	if _, ok := readGlobalCache(start.Add(time.Hour), end); ok {
 		t.Errorf("expected cache miss for different window")
+	}
+}
+
+// TestGlobalCacheSchemaMismatchIsAMiss pins the v9.2 cache-versioning
+// guarantee. Uncapping TopProjects changed what an existing field *contains*,
+// not just the field set, so a pre-9.2 `_global.json` holds entries with at
+// most MaxTopProjects rows. Without a schema stamp the daemon would keep
+// serving them until a task happened to complete and cascade an invalidation.
+func TestGlobalCacheSchemaMismatchIsAMiss(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("HOME", tmp)
+
+	start := time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC)
+	end := time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC)
+
+	// Hand-write a file in the pre-v9.2 shape: no "schema" key at all.
+	cacheDir := filepath.Join(tmp, ".watchfire", CacheDirName)
+	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	legacy := fmt.Sprintf(
+		`{"entries":{%q:{"tasks_total":99,"window_start":%q,"window_end":%q}}}`,
+		cacheKey(start, end),
+		start.Format(time.RFC3339Nano),
+		end.Format(time.RFC3339Nano),
+	)
+	cachePath := filepath.Join(cacheDir, GlobalCacheFile)
+	if err := os.WriteFile(cachePath, []byte(legacy), 0o644); err != nil {
+		t.Fatalf("write legacy cache: %v", err)
+	}
+
+	if got, ok := readGlobalCache(start, end); ok {
+		t.Fatalf("expected a miss for a schema-less cache file, got %+v", got)
+	}
+
+	// A write replaces the legacy file wholesale rather than merging into it —
+	// carrying old entries forward under the new stamp would relabel stale
+	// data as fresh.
+	fresh := &GlobalInsights{WindowStart: start, WindowEnd: end, TasksTotal: 7}
+	writeGlobalCache(fresh)
+	got, ok := readGlobalCache(start, end)
+	if !ok {
+		t.Fatalf("expected a hit after rewriting under the current schema")
+	}
+	if got.TasksTotal != 7 {
+		t.Errorf("TasksTotal = %d, want 7 (legacy entry must not survive)", got.TasksTotal)
 	}
 }
