@@ -1,8 +1,8 @@
 # Changelog
 
-## [Unreleased]
+## [9.2.0] Firestorm
 
-Targeted at **9.2.0**. Dashboard legibility: the list view showed different information for different projects for reasons that had nothing to do with the projects, and neither chart in the Fleet insights card rendered a single number.
+Dashboard legibility: the list view showed different information for different projects for reasons that had nothing to do with the projects, and neither chart in the Fleet insights card rendered a single number.
 
 ### Fixed
 
