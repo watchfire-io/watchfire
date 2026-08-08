@@ -1,5 +1,14 @@
 # Changelog
 
+## [9.3.0] Firestorm
+
+Cleanup release: the per-session agent home directories under `~/.watchfire/<agent>-home/` accumulated forever — one directory per session for every non-Claude backend — and deleting a project left all of its directories behind indefinitely (#47).
+
+### Fixed
+
+- **Per-session agent home dirs are removed at session end.** Every non-Claude backend (Codex, Copilot, Cursor, Gemini, opencode) materializes a per-session home under `~/.watchfire/<agent>-home/<session>/` holding the composed `AGENTS.md`/system prompt, config symlinks, and the agent CLI's own session state — and nothing ever deleted it, so the dirs accumulated one per project × mode × task even for live projects. The directory is pure scratch once the session's transcript has been exported to the session log, so `monitorProcess` now removes it right after `writeSessionLog`, guarded so a degenerate session name can never resolve the removal at the home root itself or anywhere outside it. `InstallSystemPrompt` recreates the dir on the next session with the same name, so restarts are unaffected.
+- **Deleting a project sweeps its leftover session homes.** `DeleteProject` deliberately only unregisters the project — its own `.watchfire/` tree survives re-adding — but daemon-side scratch was never considered, which is the leak reported in #47. Session names begin with the project's name slug followed by `:`, so project deletion now sweeps every backend's home root for directories with that prefix, via a new `backend.SessionHomeProvider` interface (implemented by the five session-home backends; Claude, which delivers its prompt via a CLI flag, has no home to clean and implements nothing). Directories belonging to currently running sessions are skipped — they are removed by their own end-of-session cleanup — which also defuses the edge case of two projects sharing a 30-char slug while one is mid-session. Logs, diff-cache, and insights entries are intentionally left alone: they re-attach cleanly if the project is re-added, and deleting them would lose history.
+
 ## [9.2.0] Firestorm
 
 Dashboard legibility: the list view showed different information for different projects for reasons that had nothing to do with the projects, and neither chart in the Fleet insights card rendered a single number.
