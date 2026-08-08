@@ -133,6 +133,16 @@ func copilotSessionHomeForName(sessionName string) (string, error) {
 	return filepath.Join(homeDir, ".watchfire", "copilot-home", sanitizeSessionName(sessionName)), nil
 }
 
+// SessionHomeRoot implements SessionHomeProvider.
+func (c *Copilot) SessionHomeRoot() (string, error) { return sessionHomeRoot("copilot-home") }
+
+// SessionHome implements SessionHomeProvider.
+func (c *Copilot) SessionHome(sessionName string) (string, error) {
+	return copilotSessionHomeForName(sessionName)
+}
+
+var _ SessionHomeProvider = (*Copilot)(nil)
+
 // BuildCommand produces the Copilot PTY invocation. `--allow-all` enables
 // yolo mode; when an initial prompt is present we pass it via `-p` for
 // headless single-shot execution, otherwise the CLI starts its interactive

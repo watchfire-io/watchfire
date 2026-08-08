@@ -441,6 +441,10 @@ func (m *Manager) monitorProcess(projectID string, proc *Process) {
 	// Persist scrollback to log file
 	m.writeSessionLog(ag, proc)
 
+	// Session over and transcript exported — remove the per-session agent
+	// home scratch dir under ~/.watchfire/<agent>-home/ (#47).
+	cleanupSessionHome(ag.ProjectID, ag.BackendName, ag.SessionName)
+
 	// Run post-task cleanup (merge + worktree removal) for any mode with a task.
 	// v5.0 — onTaskDoneFn now returns a structured TaskDoneResult so
 	// monitorProcess can distinguish a clean merge from a silent-halting

@@ -109,12 +109,27 @@ func (s *projectService) UpdateProject(_ context.Context, req *pb.UpdateProjectR
 }
 
 func (s *projectService) DeleteProject(_ context.Context, req *pb.ProjectId) (*emptypb.Empty, error) {
+	// Resolve the project name before unregistering — the session-home
+	// sweep below keys off the name slug (#47).
+	var projectName string
+	if index, idxErr := config.LoadProjectsIndex(); idxErr == nil {
+		if entry := index.FindProject(req.ProjectId); entry != nil {
+			projectName = entry.Name
+		}
+	}
+
 	// Stop any running agent before unregistering
 	_ = s.agentMgr.StopAgent(req.ProjectId)
 
 	err := s.manager.DeleteProject(req.ProjectId)
 	if err != nil {
 		return nil, err
+	}
+
+	// Sweep leftover per-session agent home dirs (~/.watchfire/<agent>-home/)
+	// for this project across all backends (#47).
+	if projectName != "" {
+		s.agentMgr.CleanupProjectSessionHomes(projectName)
 	}
 	return &emptypb.Empty{}, nil
 }

@@ -128,6 +128,16 @@ func opencodeSessionHomeForName(sessionName string) (string, error) {
 	return filepath.Join(homeDir, ".watchfire", "opencode-home", sanitizeSessionName(sessionName)), nil
 }
 
+// SessionHomeRoot implements SessionHomeProvider.
+func (o *Opencode) SessionHomeRoot() (string, error) { return sessionHomeRoot("opencode-home") }
+
+// SessionHome implements SessionHomeProvider.
+func (o *Opencode) SessionHome(sessionName string) (string, error) {
+	return opencodeSessionHomeForName(sessionName)
+}
+
+var _ SessionHomeProvider = (*Opencode)(nil)
+
 func opencodeConfigDir(sessionName string) (string, error) {
 	home, err := opencodeSessionHomeForName(sessionName)
 	if err != nil {

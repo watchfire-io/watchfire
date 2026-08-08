@@ -131,6 +131,16 @@ func geminiSessionHomeForName(sessionName string) (string, error) {
 	return filepath.Join(homeDir, ".watchfire", "gemini-home", sanitizeSessionName(sessionName)), nil
 }
 
+// SessionHomeRoot implements SessionHomeProvider.
+func (g *Gemini) SessionHomeRoot() (string, error) { return sessionHomeRoot("gemini-home") }
+
+// SessionHome implements SessionHomeProvider.
+func (g *Gemini) SessionHome(sessionName string) (string, error) {
+	return geminiSessionHomeForName(sessionName)
+}
+
+var _ SessionHomeProvider = (*Gemini)(nil)
+
 func geminiSystemPromptPath(sessionName string) (string, error) {
 	home, err := geminiSessionHomeForName(sessionName)
 	if err != nil {

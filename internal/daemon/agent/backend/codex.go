@@ -110,6 +110,16 @@ func codexSessionHomeForName(sessionName string) (string, error) {
 	return filepath.Join(homeDir, ".watchfire", "codex-home", sanitizeSessionName(sessionName)), nil
 }
 
+// SessionHomeRoot implements SessionHomeProvider.
+func (c *Codex) SessionHomeRoot() (string, error) { return sessionHomeRoot("codex-home") }
+
+// SessionHome implements SessionHomeProvider.
+func (c *Codex) SessionHome(sessionName string) (string, error) {
+	return codexSessionHomeForName(sessionName)
+}
+
+var _ SessionHomeProvider = (*Codex)(nil)
+
 // sanitizeSessionName replaces characters that are awkward in directory names
 // with '_'. Session names like "proj:task:#0001-foo" stay readable.
 func sanitizeSessionName(name string) string {

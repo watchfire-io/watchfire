@@ -9,6 +9,8 @@ package backend
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -55,6 +57,32 @@ type Backend interface {
 	// FormatTranscript renders the JSONL transcript at jsonlPath into
 	// the plain-text representation used by the log viewer.
 	FormatTranscript(jsonlPath string) (string, error)
+}
+
+// SessionHomeProvider is implemented by backends that materialize a
+// per-session home directory under ~/.watchfire/<agent>-home/ (the
+// composed AGENTS.md / system prompt, config symlinks, and the agent
+// CLI's own session state). Backends that deliver the system prompt via
+// CLI flags (Claude) do not implement it. The daemon uses this to remove
+// session scratch dirs at session end and to sweep a deleted project's
+// leftovers.
+type SessionHomeProvider interface {
+	// SessionHomeRoot returns the backend's home-root directory,
+	// e.g. ~/.watchfire/codex-home.
+	SessionHomeRoot() (string, error)
+
+	// SessionHome returns the per-session directory for sessionName —
+	// always a direct child of SessionHomeRoot().
+	SessionHome(sessionName string) (string, error)
+}
+
+// sessionHomeRoot returns ~/.watchfire/<dirName> (e.g. "codex-home").
+func sessionHomeRoot(dirName string) (string, error) {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(homeDir, ".watchfire", dirName), nil
 }
 
 // CommandOpts carries the inputs BuildCommand needs to assemble a

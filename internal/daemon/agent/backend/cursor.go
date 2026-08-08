@@ -152,6 +152,16 @@ func cursorSessionHomeForName(sessionName string) (string, error) {
 	return filepath.Join(homeDir, ".watchfire", "cursor-home", sanitizeSessionName(sessionName)), nil
 }
 
+// SessionHomeRoot implements SessionHomeProvider.
+func (c *Cursor) SessionHomeRoot() (string, error) { return sessionHomeRoot("cursor-home") }
+
+// SessionHome implements SessionHomeProvider.
+func (c *Cursor) SessionHome(sessionName string) (string, error) {
+	return cursorSessionHomeForName(sessionName)
+}
+
+var _ SessionHomeProvider = (*Cursor)(nil)
+
 // BuildCommand produces the Cursor PTY invocation. `--force` enables yolo
 // mode; when an initial prompt is present we pass `-p` plus the prompt as
 // the trailing positional argument for headless single-shot execution,
