@@ -23,5 +23,12 @@ export const terminalTheme: ITheme = {
   brightWhite: '#ffffff'
 }
 
+// 'Symbols Nerd Font Mono' is bundled (public/fonts/, @font-face in
+// global.css) as the guaranteed last-resort source for Nerd Font icon
+// glyphs (#50): xterm's DOM renderer relies on CSS font fallback, and
+// Chromium never falls back to system fonts for Private Use Area
+// codepoints — so with none of the named fonts installed, icons became
+// tofu boxes. Text glyphs still resolve from the earlier fonts; only
+// codepoints missing from all of them reach the symbols font.
 export const terminalFontFamily =
-  "'MesloLGS NF', 'JetBrainsMono Nerd Font', 'Hack Nerd Font', 'FiraCode Nerd Font', 'JetBrains Mono', 'Fira Code', monospace"
+  "'MesloLGS NF', 'JetBrainsMono Nerd Font', 'Hack Nerd Font', 'FiraCode Nerd Font', 'JetBrains Mono', 'Fira Code', 'Symbols Nerd Font Mono', monospace"

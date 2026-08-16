@@ -2,6 +2,18 @@
 @import "tailwindcss";
 @import "../../../../assets/brand/watchfire-tokens.css" layer(base);
 
+/* Bundled icon-glyph fallback for the embedded terminals (#50). Chromium
+   does no system font fallback for Private Use Area codepoints, so Nerd
+   Font icons render as tofu unless a font in the terminal's font-family
+   stack actually contains them. See public/fonts/README.md. */
+@font-face {
+  font-family: 'Symbols Nerd Font Mono';
+  src: url('/fonts/SymbolsNerdFontMono-Regular.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
   /* Brand color scale — maps to Tailwind utilities like bg-fire-500, text-fire-400 */
   --color-fire-50: #fef6f3;
