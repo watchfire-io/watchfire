@@ -1,5 +1,14 @@
 # Changelog
 
+## [9.4.0] Firestorm
+
+Bug-fix release closing the two open GUI issues: Nerd Font icons rendering as tofu boxes in the embedded terminals (#50), and the notification center being a read-only list (#49).
+
+### Fixed
+
+- **Embedded terminals render Nerd Font glyphs.** The GUI's xterm.js terminals use the DOM renderer, which resolves glyphs through CSS font fallback — and Chromium performs no system-wide fallback for Private Use Area codepoints, the range Nerd Fonts use for file-type/git/powerline icons. Unless the user happened to have one of the six fonts hard-coded in `terminalFontFamily` installed under exactly that name, every icon rendered as a missing-glyph box (#50). The GUI now bundles Symbols Nerd Font Mono (the icons-only Nerd Font, MIT-licensed, converted to woff2) and appends it to the terminal font stack just before `monospace`, so icon codepoints always resolve regardless of which fonts the machine has — while text glyphs still come from the user's real monospace fonts earlier in the stack. The font is preloaded from `index.html` so the first paint can't race the fetch.
+- **Notifications are clickable and can be marked as read.** The bell dropdown's "Recent" entries were static list items, and the badge counted every notification plus every digest forever — there was no way to act on a notification or clear the count (#49). Each entry is now a button: clicking marks it read and routes by kind — `WEEKLY_DIGEST` opens the most recent saved digest, task/run events open (or focus) the project's own window on its Tasks tab — reusing the exact routing path OS-toast clicks already used, so it works from the home window and project windows alike. Records carry a read flag in the notifications store, unread entries show a dot and read ones dim, a "Mark all read" affordance sits in the section header, and the bell badge now counts only unread live notifications (digests are a browsable archive, not pending items).
+
 ## [9.3.0] Firestorm
 
 Cleanup release: the per-session agent home directories under `~/.watchfire/<agent>-home/` accumulated forever — one directory per session for every non-Claude backend — and deleting a project left all of its directories behind indefinitely (#47).
