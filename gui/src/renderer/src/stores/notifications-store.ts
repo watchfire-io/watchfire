@@ -26,7 +26,7 @@ const taskFailedUrl = '/sounds/task-failed.wav'
 
 export { DEFAULT_SOUND_PREFS, shouldPlaySound, playSoundForKind, type NotificationKind }
 
-interface NotificationRecord {
+export interface NotificationRecord {
   id: string
   kind: NotificationKind
   projectId: string
@@ -34,6 +34,11 @@ interface NotificationRecord {
   title: string
   body: string
   emittedAt: number // ms since epoch
+  // Read/unread state for the in-app notification center (#49). In-memory
+  // only, like `recent` itself — the list is populated from the live gRPC
+  // stream and starts empty on each app launch, so persisting read marks
+  // would have nothing to attach to.
+  read: boolean
 }
 
 interface NotificationsStoreState {
@@ -43,6 +48,8 @@ interface NotificationsStoreState {
   recent: NotificationRecord[]
   active: boolean
   notify: (kind: NotificationKind, record?: Partial<NotificationRecord>) => Promise<boolean>
+  markRead: (id: string) => void
+  markAllRead: () => void
   start: () => void
   stop: () => void
 }
@@ -177,7 +184,8 @@ export const useNotificationsStore = create<NotificationsStoreState>((set, get) 
         taskNumber: record?.taskNumber ?? 0,
         title: record?.title ?? '',
         body: record?.body ?? '',
-        emittedAt: record?.emittedAt ?? now
+        emittedAt: record?.emittedAt ?? now,
+        read: false
       }
       const next = [entry, ...get().recent].slice(0, RECENT_CAP)
       set({ recent: next })
@@ -186,6 +194,14 @@ export const useNotificationsStore = create<NotificationsStoreState>((set, get) 
       if (!audios) return false
       const prefs = useSettingsStore.getState().settings?.defaults?.notifications?.sounds
       return playSoundForKind(kind, prefs, audios)
+    },
+    markRead: (id) => {
+      const next = get().recent.map((n) => (n.id === id && !n.read ? { ...n, read: true } : n))
+      set({ recent: next })
+    },
+    markAllRead: () => {
+      if (!get().recent.some((n) => !n.read)) return
+      set({ recent: get().recent.map((n) => (n.read ? n : { ...n, read: true })) })
     },
     start: () => {
       // D1 — single OS-notifier. Each subscribing renderer fires its own OS

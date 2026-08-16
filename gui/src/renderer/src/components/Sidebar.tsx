@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { LayoutDashboard, Plus, Settings, PanelLeftClose, PanelLeft, Wifi, WifiOff, Trash2, Bell, ExternalLink, PictureInPicture2 } from 'lucide-react'
 import { useDigestStore } from '../stores/digest-store'
-import { useNotificationsStore } from '../stores/notifications-store'
+import { useNotificationsStore, type NotificationRecord } from '../stores/notifications-store'
 import { DndContext, closestCenter, type DragEndEvent, PointerSensor, useSensor, useSensors } from '@dnd-kit/core'
 import { SortableContext, verticalListSortingStrategy, useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
@@ -299,6 +299,8 @@ function SidebarItem({ icon, label, active, collapsed, onClick }: SidebarItemPro
 function NotificationCenterButton({ collapsed }: { collapsed: boolean }) {
   const [open, setOpen] = useState(false)
   const recent = useNotificationsStore((s) => s.recent)
+  const markRead = useNotificationsStore((s) => s.markRead)
+  const markAllRead = useNotificationsStore((s) => s.markAllRead)
   const digestList = useDigestStore((s) => s.list)
   const refreshDigests = useDigestStore((s) => s.refreshList)
   const openDigest = useDigestStore((s) => s.open)
@@ -315,6 +317,30 @@ function NotificationCenterButton({ collapsed }: { collapsed: boolean }) {
   }, [open, refreshDigests])
 
   const total = recent.length + digestList.length
+  // The badge counts unread live notifications only (#49) — digests are a
+  // browsable archive, not pending items, and counting them meant the badge
+  // could never be cleared.
+  const unread = recent.filter((n) => !n.read).length
+
+  // Click-through routing (#49). Mirrors the OS-toast click path in
+  // App.tsx/ipc.ts: WEEKLY_DIGEST opens the most recent saved digest;
+  // project events open (or focus) the project's own window routed to its
+  // Tasks tab via the main-process window registry, which works from the
+  // home window and any project window alike.
+  const activateNotification = (n: NotificationRecord): void => {
+    markRead(n.id)
+    setOpen(false)
+    if (n.kind === 'WEEKLY_DIGEST') {
+      void refreshDigests().then(() => {
+        const latest = useDigestStore.getState().list[0]
+        if (latest) void openDigest(latest)
+      })
+      return
+    }
+    if (n.projectId) {
+      void window.watchfire.focusProjectWindow(n.projectId, 'tasks', n.taskNumber || undefined)
+    }
+  }
 
   return (
     <div className="relative" ref={ref}>
@@ -329,9 +355,9 @@ function NotificationCenterButton({ collapsed }: { collapsed: boolean }) {
       >
         <span className="shrink-0 relative flex items-center justify-center w-4 h-4">
           <Bell size={16} />
-          {total > 0 && (
+          {unread > 0 && (
             <span className="absolute -top-1 -right-1 inline-flex items-center justify-center min-w-[14px] h-[14px] px-1 text-[9px] rounded-full bg-fire-500 text-white">
-              {total > 9 ? '9+' : total}
+              {unread > 9 ? '9+' : unread}
             </span>
           )}
         </span>
@@ -363,14 +389,42 @@ function NotificationCenterButton({ collapsed }: { collapsed: boolean }) {
           )}
           {recent.length > 0 && (
             <div>
-              <div className="text-[10px] font-semibold uppercase text-[var(--wf-text-muted)] px-1 mb-1">
-                Recent
+              <div className="flex items-center justify-between px-1 mb-1">
+                <div className="text-[10px] font-semibold uppercase text-[var(--wf-text-muted)]">
+                  Recent
+                </div>
+                {unread > 0 && (
+                  <button
+                    onClick={() => markAllRead()}
+                    className="text-[10px] text-[var(--wf-text-muted)] hover:text-[var(--wf-text-primary)] transition-colors"
+                  >
+                    Mark all read
+                  </button>
+                )}
               </div>
               <ul className="space-y-0.5">
                 {recent.slice(0, 8).map((n) => (
-                  <li key={n.id} className="px-2 py-1 rounded text-xs text-[var(--wf-text-secondary)]">
-                    <div className="font-medium text-[var(--wf-text-primary)] truncate">{n.title || n.kind}</div>
-                    {n.body && <div className="truncate text-[var(--wf-text-muted)]">{n.body}</div>}
+                  <li key={n.id}>
+                    <button
+                      onClick={() => activateNotification(n)}
+                      className={cn(
+                        'w-full text-left px-2 py-1 rounded text-xs transition-colors',
+                        'hover:bg-[var(--wf-bg-primary)]',
+                        n.read ? 'opacity-60' : ''
+                      )}
+                    >
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        {!n.read && (
+                          <span className="shrink-0 w-1.5 h-1.5 rounded-full bg-fire-500" />
+                        )}
+                        <span className="font-medium text-[var(--wf-text-primary)] truncate">
+                          {n.title || n.kind}
+                        </span>
+                      </div>
+                      {n.body && (
+                        <div className="truncate text-[var(--wf-text-muted)]">{n.body}</div>
+                      )}
+                    </button>
                   </li>
                 ))}
               </ul>
