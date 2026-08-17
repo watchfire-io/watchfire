@@ -7,8 +7,15 @@ import (
 	"github.com/watchfire-io/watchfire/internal/config"
 	"github.com/watchfire-io/watchfire/internal/daemon/notify"
 	"github.com/watchfire-io/watchfire/internal/daemon/relay"
+	"github.com/watchfire-io/watchfire/internal/daemon/telegrambot"
 	"github.com/watchfire-io/watchfire/internal/models"
 )
+
+// relayTelegramClient is the shared Bot API client used by the Telegram
+// relay adapter across dispatcher reloads. telegrambot.Client is
+// stateless (the token rides per call), so one instance serves every
+// rebuild and keeps HTTP connection reuse effective.
+var relayTelegramClient = telegrambot.New()
 
 // relayHTTPClient is a single shared client across every adapter the
 // dispatcher builds. 10s timeout matches the per-adapter constructors;
@@ -54,6 +61,15 @@ func buildRelayAdapters() ([]relay.Adapter, error) {
 			continue
 		}
 		out = append(out, a)
+	}
+	// Telegram (v10.0 Torch) is single-instance: register the adapter
+	// only when the bridge is actually deliverable — enabled, token
+	// resolved from the keyring, and at least one paired chat. The
+	// EventIntegrationsChanged → Reload() path rebuilds this list, so
+	// pairing a first chat or toggling `enabled` hot-activates the
+	// adapter with no daemon restart.
+	if tg := cfg.Telegram; tg != nil && tg.Enabled && tg.BotToken != "" && len(tg.PairedChats) > 0 {
+		out = append(out, relay.NewTelegramAdapter(*tg, relayTelegramClient, nil))
 	}
 	return out, nil
 }
