@@ -39,6 +39,7 @@ var helpSections = []helpSection{
 			{"Shift+↑", "Move selected task up"},
 			{"Shift+↓", "Move selected task down"},
 			{"a", "Add new task"},
+			{"A", "Quick add — one task per bullet"},
 			{"e / Enter", "Edit task"},
 			{"s", "Start agent on task"},
 			{"S", "Stop running agent"},

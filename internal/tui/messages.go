@@ -45,6 +45,11 @@ type AgentIssueMsg struct {
 	Issue *pb.AgentIssue
 }
 
+// TasksBatchCreatedMsg signals a quick-add batch was created (v10 Torch).
+type TasksBatchCreatedMsg struct {
+	Tasks []*pb.Task
+}
+
 // TaskSavedMsg signals a task was created or updated.
 type TaskSavedMsg struct {
 	Task *pb.Task

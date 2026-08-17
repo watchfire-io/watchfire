@@ -229,6 +229,17 @@ message BulkRestoreRequest {
   repeated int32 task_numbers = 3;
 }
 
+// CreateTasksBatchRequest carries a free-text quick-add blob (v10 Torch).
+// The daemon parses it — each top-level bullet becomes one task — and
+// creates every task through the same validated path as CreateTask, with
+// consecutive numbers and positions appended in input order.
+message CreateTasksBatchRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+  string text = 3;                              // Free text; bullets become tasks
+  string status = 4;                            // "draft" | "ready" for every created task
+}
+
 message ReorderTasksRequest {
   RequestMeta meta = 1;
   string project_id = 2;
@@ -555,6 +566,7 @@ service TaskService {
   rpc BulkDelete(BulkDeleteRequest) returns (TaskList);
   rpc BulkRestore(BulkRestoreRequest) returns (TaskList);
   rpc ReorderTasks(ReorderTasksRequest) returns (TaskList);
+  rpc CreateTasksBatch(CreateTasksBatchRequest) returns (TaskList);  // v10 Torch quick-add
 }
 
 // DaemonService handles daemon status and lifecycle

@@ -61,6 +61,7 @@ type TaskListKeys struct {
 	MoveUp      key.Binding // v7 — Shift+↑ reorder focused task up
 	MoveDown    key.Binding // v7 — Shift+↓ reorder focused task down
 	Add         key.Binding
+	QuickAdd    key.Binding // v10 Torch — batch task creation from a bullet list
 	Edit        key.Binding
 	Start       key.Binding
 	Stop        key.Binding
@@ -101,6 +102,10 @@ var taskListKeys = TaskListKeys{
 	Add: key.NewBinding(
 		key.WithKeys("a"),
 		key.WithHelp("a", "add task"),
+	),
+	QuickAdd: key.NewBinding(
+		key.WithKeys("A"),
+		key.WithHelp("A", "quick add (batch)"),
 	),
 	Edit: key.NewBinding(
 		key.WithKeys("e"),

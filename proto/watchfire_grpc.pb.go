@@ -591,6 +591,7 @@ const (
 	TaskService_BulkDelete_FullMethodName          = "/watchfire.TaskService/BulkDelete"
 	TaskService_BulkRestore_FullMethodName         = "/watchfire.TaskService/BulkRestore"
 	TaskService_ReorderTasks_FullMethodName        = "/watchfire.TaskService/ReorderTasks"
+	TaskService_CreateTasksBatch_FullMethodName    = "/watchfire.TaskService/CreateTasksBatch"
 )
 
 // TaskServiceClient is the client API for TaskService service.
@@ -612,6 +613,7 @@ type TaskServiceClient interface {
 	BulkDelete(ctx context.Context, in *BulkDeleteRequest, opts ...grpc.CallOption) (*TaskList, error)
 	BulkRestore(ctx context.Context, in *BulkRestoreRequest, opts ...grpc.CallOption) (*TaskList, error)
 	ReorderTasks(ctx context.Context, in *ReorderTasksRequest, opts ...grpc.CallOption) (*TaskList, error)
+	CreateTasksBatch(ctx context.Context, in *CreateTasksBatchRequest, opts ...grpc.CallOption) (*TaskList, error)
 }
 
 type taskServiceClient struct {
@@ -752,6 +754,16 @@ func (c *taskServiceClient) ReorderTasks(ctx context.Context, in *ReorderTasksRe
 	return out, nil
 }
 
+func (c *taskServiceClient) CreateTasksBatch(ctx context.Context, in *CreateTasksBatchRequest, opts ...grpc.CallOption) (*TaskList, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TaskList)
+	err := c.cc.Invoke(ctx, TaskService_CreateTasksBatch_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // TaskServiceServer is the server API for TaskService service.
 // All implementations must embed UnimplementedTaskServiceServer
 // for forward compatibility.
@@ -771,6 +783,7 @@ type TaskServiceServer interface {
 	BulkDelete(context.Context, *BulkDeleteRequest) (*TaskList, error)
 	BulkRestore(context.Context, *BulkRestoreRequest) (*TaskList, error)
 	ReorderTasks(context.Context, *ReorderTasksRequest) (*TaskList, error)
+	CreateTasksBatch(context.Context, *CreateTasksBatchRequest) (*TaskList, error)
 	mustEmbedUnimplementedTaskServiceServer()
 }
 
@@ -819,6 +832,9 @@ func (UnimplementedTaskServiceServer) BulkRestore(context.Context, *BulkRestoreR
 }
 func (UnimplementedTaskServiceServer) ReorderTasks(context.Context, *ReorderTasksRequest) (*TaskList, error) {
 	return nil, status.Error(codes.Unimplemented, "method ReorderTasks not implemented")
+}
+func (UnimplementedTaskServiceServer) CreateTasksBatch(context.Context, *CreateTasksBatchRequest) (*TaskList, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateTasksBatch not implemented")
 }
 func (UnimplementedTaskServiceServer) mustEmbedUnimplementedTaskServiceServer() {}
 func (UnimplementedTaskServiceServer) testEmbeddedByValue()                     {}
@@ -1075,6 +1091,24 @@ func _TaskService_ReorderTasks_Handler(srv interface{}, ctx context.Context, dec
 	return interceptor(ctx, in, info, handler)
 }
 
+func _TaskService_CreateTasksBatch_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateTasksBatchRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TaskServiceServer).CreateTasksBatch(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TaskService_CreateTasksBatch_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TaskServiceServer).CreateTasksBatch(ctx, req.(*CreateTasksBatchRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // TaskService_ServiceDesc is the grpc.ServiceDesc for TaskService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1133,6 +1167,10 @@ var TaskService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ReorderTasks",
 			Handler:    _TaskService_ReorderTasks_Handler,
+		},
+		{
+			MethodName: "CreateTasksBatch",
+			Handler:    _TaskService_CreateTasksBatch_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

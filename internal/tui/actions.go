@@ -20,6 +20,28 @@ func (m *Model) openAddTaskForm() {
 	m.activeOverlay = overlayAddTask
 }
 
+// openQuickAddForm opens the v10 Torch batch-creation overlay: one editor,
+// each top-level bullet becomes a task via TaskService.CreateTasksBatch.
+func (m *Model) openQuickAddForm() {
+	formWidth := m.width - 10
+	if formWidth > 70 {
+		formWidth = 70
+	}
+	m.quickAddForm = NewQuickAddForm(formWidth)
+	m.activeOverlay = overlayQuickAdd
+}
+
+func (m *Model) saveQuickAddForm() tea.Cmd {
+	if m.quickAddForm == nil || m.conn == nil {
+		return nil
+	}
+	if m.quickAddForm.TaskCount() == 0 {
+		m.err = errQuickAddEmpty
+		return clearErrorAfter(3 * time.Second)
+	}
+	return createTasksBatchCmd(m.conn, m.projectID, m.quickAddForm.Text(), m.quickAddForm.Status())
+}
+
 func (m *Model) openEditTaskForm() {
 	t := m.taskList.SelectedTask()
 	if t == nil {

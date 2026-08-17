@@ -290,6 +290,27 @@ func createTaskCmd(conn *grpc.ClientConn, projectID, title, prompt, criteria, st
 	}
 }
 
+// createTasksBatchCmd sends the quick-add text blob to the daemon, which
+// parses it (each top-level bullet becomes one task) and creates every task
+// through the validated TaskService path (v10 Torch).
+func createTasksBatchCmd(conn *grpc.ClientConn, projectID, text, status string) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewTaskServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		list, err := client.CreateTasksBatch(ctx, &pb.CreateTasksBatchRequest{
+			ProjectId: projectID,
+			Text:      text,
+			Status:    status,
+		})
+		if err != nil {
+			return ErrorMsg{Err: fmt.Errorf("failed to create tasks: %w", err)}
+		}
+		return TasksBatchCreatedMsg{Tasks: list.Tasks}
+	}
+}
+
 func updateTaskCmd(conn *grpc.ClientConn, projectID string, taskNumber int32, updates map[string]interface{}) tea.Cmd {
 	return func() tea.Msg {
 		client := pb.NewTaskServiceClient(conn)

@@ -171,6 +171,70 @@ func (m *Manager) CreateTask(projectPath string, opts CreateOptions) (*models.Ta
 	return task, nil
 }
 
+// CreateTasksBatch creates one task per item, numbering them consecutively
+// and appending positions in input order. All tasks are built and validated
+// up front — a bad item fails the whole batch before anything is written.
+// Status applies to every task and must be draft or ready.
+func (m *Manager) CreateTasksBatch(projectPath string, items []QuickAddItem, status string) ([]*models.Task, error) {
+	if len(items) == 0 {
+		return nil, fmt.Errorf("no tasks found in input")
+	}
+	if status == "" {
+		status = string(models.TaskStatusDraft)
+	}
+	if status != string(models.TaskStatusDraft) && status != string(models.TaskStatusReady) {
+		return nil, fmt.Errorf("invalid status: %s", status)
+	}
+
+	// Sync next_task_number in case agents created files directly
+	_ = config.SyncNextTaskNumber(projectPath)
+
+	project, err := config.LoadProject(projectPath)
+	if err != nil {
+		return nil, err
+	}
+	if project == nil {
+		return nil, fmt.Errorf("project not found: %s", projectPath)
+	}
+
+	active, err := config.LoadActiveTasks(projectPath)
+	if err != nil {
+		return nil, err
+	}
+	maxPos := 0
+	for _, t := range active {
+		if t.Position > maxPos {
+			maxPos = t.Position
+		}
+	}
+
+	tasks := make([]*models.Task, 0, len(items))
+	for i, it := range items {
+		t := models.NewTask(generateTaskID(), project.NextTaskNumber+i, it.Title, it.Prompt)
+		t.AcceptanceCriteria = it.AcceptanceCriteria
+		t.Status = models.TaskStatus(status)
+		t.Position = maxPos + 1 + i
+		if err := config.ValidateTask(t); err != nil {
+			return nil, fmt.Errorf("task %d (%q): %w", i+1, it.Title, err)
+		}
+		tasks = append(tasks, t)
+	}
+
+	for _, t := range tasks {
+		if err := config.SaveTask(projectPath, t); err != nil {
+			return nil, err
+		}
+	}
+
+	project.NextTaskNumber += len(items)
+	project.UpdatedAt = time.Now().UTC()
+	if err := config.SaveProject(projectPath, project); err != nil {
+		return nil, err
+	}
+
+	return tasks, nil
+}
+
 // UpdateTask updates an existing task.
 func (m *Manager) UpdateTask(projectPath string, opts UpdateOptions) (*models.Task, error) {
 	task, err := config.LoadTask(projectPath, opts.TaskNumber)

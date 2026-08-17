@@ -65,6 +65,7 @@ type Model struct {
 	settingsForm       *SettingsForm
 	logViewer          *LogViewer
 	taskForm           *TaskForm
+	quickAddForm       *QuickAddForm
 	globalSettingsForm *GlobalSettingsForm
 	exportPicker       *ExportPicker
 	integrationsForm   *IntegrationsForm
@@ -331,6 +332,10 @@ func (m Model) View() string {
 		switch m.activeOverlay {
 		case overlayHelp:
 			overlayContent = renderHelp(m.width)
+		case overlayQuickAdd:
+			if m.quickAddForm != nil {
+				overlayContent = m.quickAddForm.View()
+			}
 		case overlayAddTask, overlayEditTask:
 			if m.taskForm != nil {
 				overlayContent = m.taskForm.View()
@@ -417,6 +422,7 @@ func (m Model) renderRightPanel(width int) string {
 
 // sentinel errors
 var errTitleRequired = errString("title is required")
+var errQuickAddEmpty = errString("nothing to create — add at least one bullet or a line of text")
 
 type errString string
 
