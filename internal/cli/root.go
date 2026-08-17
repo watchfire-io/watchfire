@@ -98,6 +98,10 @@ func init() {
 	// Project lifecycle
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(defineCmd)
+	rootCmd.AddCommand(definitionCmd)
+	definitionCmd.AddCommand(definitionRetrofitCmd)
+	definitionRetrofitCmd.Flags().BoolVar(&retrofitArchive, "archive", false, "After the session, offer to archive the folded done tasks (confirm-gated)")
+	definitionRetrofitCmd.Flags().BoolVar(&retrofitYes, "yes", false, "Skip the archive confirmation prompt (implies non-interactive)")
 	rootCmd.AddCommand(configureCmd)
 
 	// Task management
@@ -111,7 +115,7 @@ func init() {
 	rootCmd.AddCommand(wildfireCmd)
 
 	// Add --sandbox and --no-sandbox flags to all execution commands
-	for _, cmd := range []*cobra.Command{runCmd, chatCmd, planCmd, generateCmd, wildfireCmd} {
+	for _, cmd := range []*cobra.Command{runCmd, chatCmd, planCmd, generateCmd, wildfireCmd, definitionRetrofitCmd} {
 		cmd.Flags().StringVar(&sandboxOverride, "sandbox", "", "Sandbox backend: auto, seatbelt, landlock, bwrap, none")
 		cmd.Flags().BoolVar(&noSandbox, "no-sandbox", false, "Disable sandboxing for this session")
 	}

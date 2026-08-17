@@ -105,6 +105,8 @@ func renderAgentBadge(status *pb.AgentStatus) string {
 		return badgeActiveStyle.Render("● Gen Def")
 	case "generate-tasks":
 		return badgeActiveStyle.Render("● Gen Tasks")
+	case "retrofit-definition":
+		return badgeActiveStyle.Render("● Retrofit Def")
 	default:
 		return badgeActiveStyle.Render("● Active")
 	}

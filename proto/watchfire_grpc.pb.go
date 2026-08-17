@@ -578,20 +578,21 @@ var ProjectService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	TaskService_ListTasks_FullMethodName           = "/watchfire.TaskService/ListTasks"
-	TaskService_ListMalformedTasks_FullMethodName  = "/watchfire.TaskService/ListMalformedTasks"
-	TaskService_GetTask_FullMethodName             = "/watchfire.TaskService/GetTask"
-	TaskService_CreateTask_FullMethodName          = "/watchfire.TaskService/CreateTask"
-	TaskService_UpdateTask_FullMethodName          = "/watchfire.TaskService/UpdateTask"
-	TaskService_DeleteTask_FullMethodName          = "/watchfire.TaskService/DeleteTask"
-	TaskService_RestoreTask_FullMethodName         = "/watchfire.TaskService/RestoreTask"
-	TaskService_PermanentDeleteTask_FullMethodName = "/watchfire.TaskService/PermanentDeleteTask"
-	TaskService_EmptyTrash_FullMethodName          = "/watchfire.TaskService/EmptyTrash"
-	TaskService_BulkUpdateStatus_FullMethodName    = "/watchfire.TaskService/BulkUpdateStatus"
-	TaskService_BulkDelete_FullMethodName          = "/watchfire.TaskService/BulkDelete"
-	TaskService_BulkRestore_FullMethodName         = "/watchfire.TaskService/BulkRestore"
-	TaskService_ReorderTasks_FullMethodName        = "/watchfire.TaskService/ReorderTasks"
-	TaskService_CreateTasksBatch_FullMethodName    = "/watchfire.TaskService/CreateTasksBatch"
+	TaskService_ListTasks_FullMethodName            = "/watchfire.TaskService/ListTasks"
+	TaskService_ListMalformedTasks_FullMethodName   = "/watchfire.TaskService/ListMalformedTasks"
+	TaskService_GetTask_FullMethodName              = "/watchfire.TaskService/GetTask"
+	TaskService_CreateTask_FullMethodName           = "/watchfire.TaskService/CreateTask"
+	TaskService_UpdateTask_FullMethodName           = "/watchfire.TaskService/UpdateTask"
+	TaskService_DeleteTask_FullMethodName           = "/watchfire.TaskService/DeleteTask"
+	TaskService_RestoreTask_FullMethodName          = "/watchfire.TaskService/RestoreTask"
+	TaskService_PermanentDeleteTask_FullMethodName  = "/watchfire.TaskService/PermanentDeleteTask"
+	TaskService_EmptyTrash_FullMethodName           = "/watchfire.TaskService/EmptyTrash"
+	TaskService_BulkUpdateStatus_FullMethodName     = "/watchfire.TaskService/BulkUpdateStatus"
+	TaskService_BulkDelete_FullMethodName           = "/watchfire.TaskService/BulkDelete"
+	TaskService_BulkRestore_FullMethodName          = "/watchfire.TaskService/BulkRestore"
+	TaskService_ReorderTasks_FullMethodName         = "/watchfire.TaskService/ReorderTasks"
+	TaskService_CreateTasksBatch_FullMethodName     = "/watchfire.TaskService/CreateTasksBatch"
+	TaskService_ArchiveRetrofitTasks_FullMethodName = "/watchfire.TaskService/ArchiveRetrofitTasks"
 )
 
 // TaskServiceClient is the client API for TaskService service.
@@ -614,6 +615,12 @@ type TaskServiceClient interface {
 	BulkRestore(ctx context.Context, in *BulkRestoreRequest, opts ...grpc.CallOption) (*TaskList, error)
 	ReorderTasks(ctx context.Context, in *ReorderTasksRequest, opts ...grpc.CallOption) (*TaskList, error)
 	CreateTasksBatch(ctx context.Context, in *CreateTasksBatchRequest, opts ...grpc.CallOption) (*TaskList, error)
+	// v10 Torch definition retrofit — archive (soft-delete) the folded done
+	// tasks at or below the retrofit watermark. dry_run returns the
+	// candidates without archiving so surfaces can render the confirm
+	// prompt ("Archive N folded tasks"). Callers must confirm with the
+	// user before invoking with dry_run=false.
+	ArchiveRetrofitTasks(ctx context.Context, in *ArchiveRetrofitRequest, opts ...grpc.CallOption) (*TaskList, error)
 }
 
 type taskServiceClient struct {
@@ -764,6 +771,16 @@ func (c *taskServiceClient) CreateTasksBatch(ctx context.Context, in *CreateTask
 	return out, nil
 }
 
+func (c *taskServiceClient) ArchiveRetrofitTasks(ctx context.Context, in *ArchiveRetrofitRequest, opts ...grpc.CallOption) (*TaskList, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TaskList)
+	err := c.cc.Invoke(ctx, TaskService_ArchiveRetrofitTasks_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // TaskServiceServer is the server API for TaskService service.
 // All implementations must embed UnimplementedTaskServiceServer
 // for forward compatibility.
@@ -784,6 +801,12 @@ type TaskServiceServer interface {
 	BulkRestore(context.Context, *BulkRestoreRequest) (*TaskList, error)
 	ReorderTasks(context.Context, *ReorderTasksRequest) (*TaskList, error)
 	CreateTasksBatch(context.Context, *CreateTasksBatchRequest) (*TaskList, error)
+	// v10 Torch definition retrofit — archive (soft-delete) the folded done
+	// tasks at or below the retrofit watermark. dry_run returns the
+	// candidates without archiving so surfaces can render the confirm
+	// prompt ("Archive N folded tasks"). Callers must confirm with the
+	// user before invoking with dry_run=false.
+	ArchiveRetrofitTasks(context.Context, *ArchiveRetrofitRequest) (*TaskList, error)
 	mustEmbedUnimplementedTaskServiceServer()
 }
 
@@ -835,6 +858,9 @@ func (UnimplementedTaskServiceServer) ReorderTasks(context.Context, *ReorderTask
 }
 func (UnimplementedTaskServiceServer) CreateTasksBatch(context.Context, *CreateTasksBatchRequest) (*TaskList, error) {
 	return nil, status.Error(codes.Unimplemented, "method CreateTasksBatch not implemented")
+}
+func (UnimplementedTaskServiceServer) ArchiveRetrofitTasks(context.Context, *ArchiveRetrofitRequest) (*TaskList, error) {
+	return nil, status.Error(codes.Unimplemented, "method ArchiveRetrofitTasks not implemented")
 }
 func (UnimplementedTaskServiceServer) mustEmbedUnimplementedTaskServiceServer() {}
 func (UnimplementedTaskServiceServer) testEmbeddedByValue()                     {}
@@ -1109,6 +1135,24 @@ func _TaskService_CreateTasksBatch_Handler(srv interface{}, ctx context.Context,
 	return interceptor(ctx, in, info, handler)
 }
 
+func _TaskService_ArchiveRetrofitTasks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ArchiveRetrofitRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(TaskServiceServer).ArchiveRetrofitTasks(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: TaskService_ArchiveRetrofitTasks_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(TaskServiceServer).ArchiveRetrofitTasks(ctx, req.(*ArchiveRetrofitRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // TaskService_ServiceDesc is the grpc.ServiceDesc for TaskService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1171,6 +1215,10 @@ var TaskService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "CreateTasksBatch",
 			Handler:    _TaskService_CreateTasksBatch_Handler,
+		},
+		{
+			MethodName: "ArchiveRetrofitTasks",
+			Handler:    _TaskService_ArchiveRetrofitTasks_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

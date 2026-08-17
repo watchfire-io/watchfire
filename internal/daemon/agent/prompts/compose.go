@@ -43,6 +43,12 @@ var generateTasksSystemTemplate string
 //go:embed generate-tasks-user.txt
 var generateTasksUserTemplate string
 
+//go:embed retrofit-definition-system.txt
+var retrofitDefinitionSystemTemplate string
+
+//go:embed retrofit-definition-user.txt
+var retrofitDefinitionUserTemplate string
+
 // taskData holds template variables for task-related prompts.
 type taskData struct {
 	TaskNumberPadded   string
@@ -229,4 +235,67 @@ func ComposeGenerateTasksSystemPrompt(project *models.Project) string {
 // ComposeGenerateTasksUserPrompt returns the positional argument for generate-tasks mode.
 func ComposeGenerateTasksUserPrompt() string {
 	return generateTasksUserTemplate
+}
+
+// maxRetrofitPromptLen caps how much of each done task's prompt is inlined
+// into the retrofit system prompt, so a large folded window can't blow the
+// agent's context. Titles and outcomes are never truncated.
+const maxRetrofitPromptLen = 2000
+
+// RetrofitTask is one completed task summarized for the retrofit prompt.
+type RetrofitTask struct {
+	NumberPadded string
+	Title        string
+	Prompt       string
+	Outcome      string
+}
+
+// NewRetrofitTask builds the prompt-facing summary of a done task.
+// success is the task's Success pointer semantics: nil is treated as
+// completed without an explicit flag.
+func NewRetrofitTask(taskNumber int, title, prompt string, success *bool, failureReason string) RetrofitTask {
+	outcome := "completed"
+	switch {
+	case success != nil && *success:
+		outcome = "succeeded"
+	case success != nil && !*success:
+		outcome = "failed"
+		if failureReason != "" {
+			outcome += ": " + failureReason
+		}
+	}
+	if len(prompt) > maxRetrofitPromptLen {
+		prompt = prompt[:maxRetrofitPromptLen] + "\n[... prompt truncated ...]"
+	}
+	return RetrofitTask{
+		NumberPadded: padTaskNumber(taskNumber),
+		Title:        title,
+		Prompt:       prompt,
+		Outcome:      outcome,
+	}
+}
+
+// retrofitData holds template variables for the retrofit-definition prompt.
+type retrofitData struct {
+	Tasks []RetrofitTask
+}
+
+// ComposeRetrofitDefinitionSystemPrompt builds the system prompt for
+// retrofit-definition mode. The agent folds the listed done tasks into an
+// updated project definition. The current definition rides along via the
+// base ComposePrompt (Project Instructions section).
+func ComposeRetrofitDefinitionSystemPrompt(project *models.Project, tasks []RetrofitTask) string {
+	base := ComposePrompt(project)
+
+	var b strings.Builder
+	b.WriteString(base)
+	b.WriteString("\n\n")
+	b.WriteString(executeTemplate(retrofitDefinitionSystemTemplate, retrofitData{Tasks: tasks}))
+
+	return b.String()
+}
+
+// ComposeRetrofitDefinitionUserPrompt returns the positional argument for retrofit-definition mode.
+func ComposeRetrofitDefinitionUserPrompt() string {
+	return retrofitDefinitionUserTemplate
 }

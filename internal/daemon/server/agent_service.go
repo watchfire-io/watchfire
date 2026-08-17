@@ -73,6 +73,8 @@ func (s *agentService) StartAgent(_ context.Context, req *pb.StartAgentRequest) 
 		return s.startGenerateMode(req, entry.Path, proj, agent.ModeGenerateDefinition)
 	case agent.ModeGenerateTasks:
 		return s.startGenerateMode(req, entry.Path, proj, agent.ModeGenerateTasks)
+	case agent.ModeRetrofitDefinition:
+		return s.startRetrofitMode(req, entry.Path, proj)
 	default:
 		taskNumber = req.TaskNumber
 	}
@@ -221,6 +223,48 @@ func (s *agentService) startGenerateMode(req *pb.StartAgentRequest, projectPath 
 		Mode:             mode,
 		TaskPrompt:       taskPrompt,
 		TaskSystemPrompt: taskSystemPrompt,
+		Rows:             int(req.Rows),
+		Cols:             int(req.Cols),
+		Sandbox:          resolveSandbox(req.Sandbox, proj),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if s.watcher != nil {
+		_ = s.watcher.WatchProject(req.ProjectId, projectPath)
+	}
+
+	return buildAgentStatus(running), nil
+}
+
+// startRetrofitMode launches a retrofit-definition session (v10 Torch):
+// the agent folds the done tasks completed since the last retrofit into an
+// updated project definition. Runs chat-scoped at the project root, exactly
+// like the generate modes — visible and interruptible.
+func (s *agentService) startRetrofitMode(req *pb.StartAgentRequest, projectPath string, proj *models.Project) (*pb.AgentStatus, error) {
+	taskMgr := task.NewManager()
+	window, err := taskMgr.RetrofitFoldWindow(projectPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to compute retrofit window: %w", err)
+	}
+	if len(window) == 0 {
+		return nil, fmt.Errorf("no completed tasks to fold since the last retrofit")
+	}
+
+	retrofitTasks := make([]prompts.RetrofitTask, 0, len(window))
+	for _, t := range window {
+		retrofitTasks = append(retrofitTasks, prompts.NewRetrofitTask(t.TaskNumber, t.Title, t.Prompt, t.Success, t.FailureReason))
+	}
+
+	running, err := s.manager.StartAgent(agent.StartOptions{
+		ProjectID:        req.ProjectId,
+		ProjectName:      proj.Name,
+		ProjectPath:      projectPath,
+		ProjectColor:     proj.Color,
+		Mode:             agent.ModeRetrofitDefinition,
+		TaskPrompt:       prompts.ComposeRetrofitDefinitionUserPrompt(),
+		TaskSystemPrompt: prompts.ComposeRetrofitDefinitionSystemPrompt(proj, retrofitTasks),
 		Rows:             int(req.Rows),
 		Cols:             int(req.Cols),
 		Sandbox:          resolveSandbox(req.Sandbox, proj),

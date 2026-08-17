@@ -48,6 +48,9 @@ type Model struct {
 	confirmMode    int
 	confirmTaskNum int32
 	confirmLogID   string
+	// retrofitArchiveCount is the folded-task count behind the
+	// confirmRetrofitArchive prompt (v10 Torch definition retrofit).
+	retrofitArchiveCount int
 
 	// Status display
 	err       error

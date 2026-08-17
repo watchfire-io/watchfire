@@ -42,6 +42,7 @@ message Project {
   string secrets_instructions = 17;             // Content of secrets/instructions.md
   ProjectNotifications notifications = 18;      // Per-project notification overrides
   ProjectIntegrations integrations = 19;        // v6 (#0091) per-project integration bindings
+  int32 last_retrofit_task_number = 20;         // v10 Torch — definition-retrofit watermark (0 = never retrofitted)
 }
 
 // ProjectIntegrations holds per-project bindings that override global
@@ -238,6 +239,17 @@ message CreateTasksBatchRequest {
   string project_id = 2;
   string text = 3;                              // Free text; bullets become tasks
   string status = 4;                            // "draft" | "ready" for every created task
+}
+
+// ArchiveRetrofitRequest asks for the confirm-gated archive of tasks folded
+// into the definition by retrofit-definition runs (v10 Torch). Candidates
+// are always the done, non-deleted tasks with task_number at or below the
+// project's retrofit watermark — the request never names task numbers, so a
+// stale client can't archive outside the folded window.
+message ArchiveRetrofitRequest {
+  RequestMeta meta = 1;
+  string project_id = 2;
+  bool dry_run = 3;                             // true: return candidates only, archive nothing
 }
 
 message ReorderTasksRequest {
@@ -567,6 +579,12 @@ service TaskService {
   rpc BulkRestore(BulkRestoreRequest) returns (TaskList);
   rpc ReorderTasks(ReorderTasksRequest) returns (TaskList);
   rpc CreateTasksBatch(CreateTasksBatchRequest) returns (TaskList);  // v10 Torch quick-add
+  // v10 Torch definition retrofit — archive (soft-delete) the folded done
+  // tasks at or below the retrofit watermark. dry_run returns the
+  // candidates without archiving so surfaces can render the confirm
+  // prompt ("Archive N folded tasks"). Callers must confirm with the
+  // user before invoking with dry_run=false.
+  rpc ArchiveRetrofitTasks(ArchiveRetrofitRequest) returns (TaskList);
 }
 
 // DaemonService handles daemon status and lifecycle

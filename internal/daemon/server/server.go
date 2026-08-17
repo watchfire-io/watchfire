@@ -753,6 +753,8 @@ func (s *Server) processWatcherEvents() {
 			s.handleGenerateModeEnded(event, agent.ModeGenerateDefinition)
 		case watcher.EventTasksDone:
 			s.handleGenerateModeEnded(event, agent.ModeGenerateTasks)
+		case watcher.EventRetrofitDone:
+			s.handleRetrofitDone(event)
 		case watcher.EventGlobalSettingsChanged:
 			// Settings are read on demand by gates that consult them
 			// (notification dispatch, agent resolution, etc.) — config.LoadSettings
@@ -915,6 +917,55 @@ func (s *Server) handleGenerateModeEnded(event watcher.Event, expectedMode agent
 	go func() {
 		if err := s.agentManager.StopAgent(event.ProjectID); err != nil {
 			config.ProjectLogf(event.ProjectID, "Failed to stop agent after %s: %v", expectedMode, err)
+		}
+	}()
+}
+
+// handleRetrofitDone reacts to a retrofit-definition session signalling
+// completion (retrofit_done.yaml created). Advances the project's
+// last-retrofit watermark to the highest done task number — so the next
+// retrofit only folds newer tasks and the confirm-gated archive knows the
+// folded window — then stops the agent (single-shot, no chaining).
+// Archiving itself is NEVER done here: it requires explicit user
+// confirmation from a surface.
+func (s *Server) handleRetrofitDone(event watcher.Event) {
+	config.ProjectLogf(event.ProjectID, "[retrofit-watch] retrofit-definition signal detected")
+
+	running, ok := s.agentManager.GetAgent(event.ProjectID)
+	if !ok {
+		config.ProjectLogf(event.ProjectID, "[retrofit-watch] No agent running")
+		_ = os.Remove(event.Path)
+		return
+	}
+
+	if running.Mode != agent.ModeRetrofitDefinition {
+		config.ProjectLogf(event.ProjectID, "[retrofit-watch] Agent not in retrofit-definition mode (mode: %s)", running.Mode)
+		_ = os.Remove(event.Path)
+		return
+	}
+
+	// Delete the signal file before stopping
+	if err := os.Remove(event.Path); err != nil {
+		config.ProjectLogf(event.ProjectID, "[retrofit-watch] Failed to delete signal file %s: %v", event.Path, err)
+	} else {
+		config.ProjectLogf(event.ProjectID, "[retrofit-watch] Deleted signal file: %s", event.Path)
+	}
+
+	// Advance the watermark before stopping the agent, so any surface that
+	// reacts to the session ending already sees the new boundary when it
+	// asks for archive candidates.
+	if projectPath := s.projectPathForID(event.ProjectID); projectPath != "" {
+		if watermark, err := task.NewManager().AdvanceRetrofitWatermark(projectPath); err != nil {
+			config.ProjectLogf(event.ProjectID, "[retrofit-watch] Failed to advance retrofit watermark: %v", err)
+		} else {
+			config.ProjectLogf(event.ProjectID, "[retrofit-watch] Retrofit watermark advanced to #%04d", watermark)
+		}
+	}
+
+	config.ProjectLogf(event.ProjectID, "retrofit-definition complete — stopping agent")
+	go func() {
+		if err := s.agentManager.StopAgent(event.ProjectID); err != nil {
+			config.ProjectLogf(event.ProjectID, "Failed to stop agent after retrofit-definition: %v", err)
 		}
 	}()
 }

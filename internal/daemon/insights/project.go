@@ -134,7 +134,7 @@ func ComputeProjectInsightsForTasks(
 	var allDurationsMs []int64
 
 	for _, t := range tasks {
-		if t == nil || t.IsDeleted() {
+		if t == nil || t.HiddenFromInsights() {
 			continue
 		}
 		if t.Status != models.TaskStatusDone {

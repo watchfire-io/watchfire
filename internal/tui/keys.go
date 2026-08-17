@@ -220,15 +220,20 @@ var settingsKeys = SettingsKeys{
 
 // DefinitionKeys are active when definition tab is focused.
 type DefinitionKeys struct {
-	Edit key.Binding
-	Up   key.Binding
-	Down key.Binding
+	Edit     key.Binding
+	Retrofit key.Binding
+	Up       key.Binding
+	Down     key.Binding
 }
 
 var definitionKeys = DefinitionKeys{
 	Edit: key.NewBinding(
 		key.WithKeys("e", "enter"),
 		key.WithHelp("e", "edit in $EDITOR"),
+	),
+	Retrofit: key.NewBinding(
+		key.WithKeys("r"),
+		key.WithHelp("r", "retrofit from completed tasks"),
 	),
 	Up: key.NewBinding(
 		key.WithKeys("up", "k"),

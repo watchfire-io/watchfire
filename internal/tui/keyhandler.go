@@ -310,6 +310,15 @@ func (m *Model) handleDefinitionKey(msg tea.KeyMsg) tea.Cmd {
 		if m.project != nil {
 			return launchEditorCmd(m.project.Definition)
 		}
+	case key.Matches(msg, definitionKeys.Retrofit):
+		// Retrofit-definition session (v10 Torch): fold done tasks into
+		// the definition. Runs like any chat-scoped agent — visible in
+		// the terminal pane and interruptible. The confirm-gated archive
+		// offer fires when the session ends (msghandler).
+		if m.conn != nil {
+			rows, cols := m.ptyDimensions()
+			return startAgentCmd(m.conn, m.projectID, "retrofit-definition", 0, rows, cols)
+		}
 	case key.Matches(msg, definitionKeys.Up):
 		m.definitionView.ScrollUp()
 	case key.Matches(msg, definitionKeys.Down):
@@ -732,6 +741,13 @@ func (m *Model) handleConfirmKey(msg tea.KeyMsg) tea.Cmd {
 				return nil
 			}
 			return permanentDeleteTaskCmd(m.conn, m.projectID, num)
+		case confirmRetrofitArchive:
+			m.confirmMode = confirmNone
+			m.retrofitArchiveCount = 0
+			if m.conn == nil {
+				return nil
+			}
+			return archiveRetrofitTasksCmd(m.conn, m.projectID)
 		case confirmSettingsArchive:
 			m.confirmMode = confirmNone
 			if m.conn == nil {

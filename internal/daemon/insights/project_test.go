@@ -175,6 +175,34 @@ func TestComputeProjectInsights_EmptyAndDeleted(t *testing.T) {
 	}
 }
 
+// TestComputeProjectInsights_RetrofitArchivedStillCounts pins the v10 Torch
+// archive contract: a task soft-deleted by the definition-retrofit archive
+// (RetrofitArchived=true) keeps counting in insights, so archiving folded
+// tasks never changes historical totals. An ordinary trashed task next to it
+// stays excluded — the flag, not the deletion, is what preserves the count.
+func TestComputeProjectInsights_RetrofitArchivedStillCounts(t *testing.T) {
+	t.Parallel()
+	day := func(d int) time.Time { return time.Date(2026, 5, d, 12, 0, 0, 0, time.UTC) }
+	deleted := day(3)
+
+	tasks := []*models.Task{
+		{TaskNumber: 1, Status: models.TaskStatusDone, Agent: "claude-code", CompletedAt: timePtr(day(2))},
+		{TaskNumber: 2, Status: models.TaskStatusDone, Agent: "claude-code", CompletedAt: timePtr(day(2)), DeletedAt: &deleted, RetrofitArchived: true},
+		{TaskNumber: 3, Status: models.TaskStatusDone, Agent: "claude-code", CompletedAt: timePtr(day(2)), DeletedAt: &deleted},
+	}
+
+	before := ComputeProjectInsightsForTasks("proj-retro", day(1), day(30), tasks[:1], nil)
+	after := ComputeProjectInsightsForTasks("proj-retro", day(1), day(30), tasks[:2], nil)
+	if after.TasksTotal != before.TasksTotal+1 {
+		t.Errorf("retrofit-archived task must still count: before=%d after=%d", before.TasksTotal, after.TasksTotal)
+	}
+
+	all := ComputeProjectInsightsForTasks("proj-retro", day(1), day(30), tasks, nil)
+	if all.TasksTotal != 2 {
+		t.Errorf("ordinary trashed task must stay excluded; TasksTotal = %d, want 2", all.TasksTotal)
+	}
+}
+
 func TestPercentileInt64_NearestRank(t *testing.T) {
 	t.Parallel()
 	xs := []int64{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}

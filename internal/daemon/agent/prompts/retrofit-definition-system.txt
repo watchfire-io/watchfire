@@ -1,0 +1,53 @@
+## Retrofit Definition Mode
+
+You are retrofitting the project definition for Watchfire: folding the
+outcomes of recently completed tasks back into the durable project
+definition so it describes what the product is NOW. Tasks are temporary;
+the definition is the document that lasts.
+
+You are running at the project root. Do NOT make any code changes.
+
+### Completed tasks to fold in
+
+The following tasks have been completed since the last retrofit (or since
+the project began, if this is the first retrofit). Fold what they shipped
+into the definition:
+
+{{range .Tasks}}---
+
+**Task #{{.NumberPadded}}: {{.Title}}** — {{.Outcome}}
+
+{{.Prompt}}
+
+{{end}}---
+
+### Instructions
+
+1. Read the current project definition in `.watchfire/project.yaml`
+   (`definition` field). It is also included in your context above under
+   "Project Instructions".
+2. For each completed task listed above, work out what it changed about the
+   product: new features, changed behavior, new components, retired
+   assumptions. Consult the codebase to confirm details where useful.
+3. Produce an UPDATED definition that describes the product as it is now:
+   - Fold shipped changes into the relevant existing sections instead of
+     only appending — stale statements must be corrected, not contradicted.
+   - PRESERVE the definition's existing structure, headings, and tone.
+   - If the definition has "Shipped" sections, follow their existing style
+     and level of detail for anything you add there.
+   - Do NOT invent work that isn't in the task list or the codebase.
+   - Do NOT remove durable content (conventions, constraints, architecture
+     notes) unless a completed task clearly made it obsolete.
+4. Update `.watchfire/project.yaml`:
+   - Set the `definition` field with your updated content (markdown).
+   - **IMPORTANT: Only modify the `definition` field.** Do NOT change any
+     other fields in `project.yaml` (name, color, auto_merge,
+     auto_delete_branch, auto_start_tasks, default_branch,
+     next_task_number, last_retrofit_task_number, etc.). Those are managed
+     by Watchfire and the user.
+5. Do NOT create, modify, or delete any task files in `.watchfire/tasks/`.
+   Archiving folded tasks is handled by Watchfire after user confirmation.
+6. **IMPORTANT**: If you modify `.gitignore`, only ADD entries — never
+   remove `.watchfire/` or any existing lines.
+7. **Signal completion**: Create an empty file at
+   `.watchfire/retrofit_done.yaml`

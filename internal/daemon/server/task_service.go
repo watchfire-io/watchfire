@@ -11,6 +11,7 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 
 	"github.com/watchfire-io/watchfire/internal/daemon/task"
+	"github.com/watchfire-io/watchfire/internal/models"
 	pb "github.com/watchfire-io/watchfire/proto"
 )
 
@@ -133,6 +134,36 @@ func (s *taskService) CreateTasksBatch(_ context.Context, req *pb.CreateTasksBat
 		if strings.Contains(err.Error(), "invalid status") {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
+		return nil, err
+	}
+
+	list := &pb.TaskList{Tasks: make([]*pb.Task, 0, len(tasks))}
+	for _, t := range tasks {
+		list.Tasks = append(list.Tasks, modelToProtoTask(t, req.ProjectId))
+	}
+	return list, nil
+}
+
+// ArchiveRetrofitTasks archives (soft-deletes) the done tasks folded into
+// the definition by retrofit-definition runs — every done, non-deleted task
+// at or below the project's retrofit watermark. dry_run returns the
+// candidates without touching anything, so surfaces can render the
+// "Archive N folded tasks" confirmation. The actual archive is reversible
+// from Trash and keeps counting in insights (RetrofitArchived flag).
+// Confirmation is a surface concern: this RPC trusts that the caller asked.
+func (s *taskService) ArchiveRetrofitTasks(_ context.Context, req *pb.ArchiveRetrofitRequest) (*pb.TaskList, error) {
+	projectPath, err := getProjectPath(req.ProjectId)
+	if err != nil {
+		return nil, err
+	}
+
+	var tasks []*models.Task
+	if req.DryRun {
+		tasks, err = s.manager.RetrofitArchiveCandidates(projectPath)
+	} else {
+		tasks, err = s.manager.ArchiveRetrofitTasks(projectPath)
+	}
+	if err != nil {
 		return nil, err
 	}
 

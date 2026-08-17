@@ -20,6 +20,7 @@ const (
 	confirmSettingsResetNumbering = 8
 	confirmSettingsPruneBranches  = 9
 	confirmSettingsUnregister     = 10
+	confirmRetrofitArchive        = 11
 )
 
 func renderStatusBar(m *Model, width int) string {
@@ -58,6 +59,12 @@ func renderStatusBar(m *Model, width int) string {
 	if m.confirmMode == confirmPermanentDelete {
 		return renderConfirmBar(
 			fmt.Sprintf("Permanently delete task #%04d? (y/N)", m.confirmTaskNum),
+			width,
+		)
+	}
+	if m.confirmMode == confirmRetrofitArchive {
+		return renderConfirmBar(
+			fmt.Sprintf("Retrofit complete — archive %d folded task(s) to Trash? Reversible; still counted in insights. (y/N)", m.retrofitArchiveCount),
 			width,
 		)
 	}
@@ -181,7 +188,7 @@ func getKeyHints(m *Model) string {
 				hint{"x", "delete"},
 			)
 		case 1: // Definition
-			context = []hint{{"e", "edit in $EDITOR"}}
+			context = []hint{{"e", "edit in $EDITOR"}, {"r", "retrofit"}}
 		case 2: // Settings
 			// The MCP section has no editable values — Enter installs a
 			// harness or reveals the snippet to paste.

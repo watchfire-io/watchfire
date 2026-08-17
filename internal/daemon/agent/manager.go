@@ -36,6 +36,7 @@ const (
 	ModeWildfire           Mode = "wildfire"
 	ModeGenerateDefinition Mode = "generate-definition"
 	ModeGenerateTasks      Mode = "generate-tasks"
+	ModeRetrofitDefinition Mode = "retrofit-definition"
 )
 
 // WildfirePhase identifies the current phase within wildfire mode.
