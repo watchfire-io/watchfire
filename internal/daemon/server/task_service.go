@@ -112,6 +112,37 @@ func (s *taskService) CreateTask(_ context.Context, req *pb.CreateTaskRequest) (
 	return modelToProtoTask(t, req.ProjectId), nil
 }
 
+// CreateTasksBatch parses a quick-add text blob (each top-level bullet
+// becomes one task — see task.ParseQuickAdd) and creates every task through
+// the validated create path with consecutive numbers and positions appended
+// in input order. v10 Torch: the shared backend for the GUI quick-add modal,
+// the TUI quick-add overlay, and `watchfire task quick`.
+func (s *taskService) CreateTasksBatch(_ context.Context, req *pb.CreateTasksBatchRequest) (*pb.TaskList, error) {
+	projectPath, err := getProjectPath(req.ProjectId)
+	if err != nil {
+		return nil, err
+	}
+
+	items := task.ParseQuickAdd(req.Text)
+	if len(items) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "no tasks found in input")
+	}
+
+	tasks, err := s.manager.CreateTasksBatch(projectPath, items, req.Status)
+	if err != nil {
+		if strings.Contains(err.Error(), "invalid status") {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		return nil, err
+	}
+
+	list := &pb.TaskList{Tasks: make([]*pb.Task, 0, len(tasks))}
+	for _, t := range tasks {
+		list.Tasks = append(list.Tasks, modelToProtoTask(t, req.ProjectId))
+	}
+	return list, nil
+}
+
 func (s *taskService) UpdateTask(_ context.Context, req *pb.UpdateTaskRequest) (*pb.Task, error) {
 	projectPath, err := getProjectPath(req.ProjectId)
 	if err != nil {

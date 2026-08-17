@@ -1,9 +1,10 @@
 import { useState, useCallback } from 'react'
-import { Plus, Search } from 'lucide-react'
+import { ListPlus, Plus, Search } from 'lucide-react'
 import { useTasksStore } from '../../../stores/tasks-store'
 import { Button } from '../../../components/ui/Button'
 import { TaskGroup } from './TaskGroup'
 import { TaskModal } from './TaskModal'
+import { QuickAddModal } from './QuickAddModal'
 
 const EMPTY: never[] = []
 
@@ -15,6 +16,7 @@ export function TasksTab({ projectId }: Props) {
   const tasks = useTasksStore((s) => s.tasks[projectId] ?? EMPTY)
   const reorderTasks = useTasksStore((s) => s.reorderTasks)
   const [modalOpen, setModalOpen] = useState(false)
+  const [quickAddOpen, setQuickAddOpen] = useState(false)
   const [search, setSearch] = useState('')
 
   const handleReorder = useCallback(
@@ -50,6 +52,10 @@ export function TasksTab({ projectId }: Props) {
             className="w-full pl-8 pr-3 py-1.5 text-xs rounded-[var(--wf-radius-md)] bg-[var(--wf-bg-primary)] border border-[var(--wf-border)] text-[var(--wf-text-primary)] placeholder-[var(--wf-text-muted)] focus:outline-none focus:border-fire-500 transition-colors"
           />
         </div>
+        <Button size="sm" variant="ghost" onClick={() => setQuickAddOpen(true)} title="Create several tasks from a bullet list">
+          <ListPlus size={14} />
+          Quick Add
+        </Button>
         <Button size="sm" onClick={() => setModalOpen(true)}>
           <Plus size={14} />
           New Task
@@ -129,6 +135,12 @@ export function TasksTab({ projectId }: Props) {
       <TaskModal
         open={modalOpen}
         onClose={() => setModalOpen(false)}
+        projectId={projectId}
+      />
+
+      <QuickAddModal
+        open={quickAddOpen}
+        onClose={() => setQuickAddOpen(false)}
         projectId={projectId}
       />
     </div>

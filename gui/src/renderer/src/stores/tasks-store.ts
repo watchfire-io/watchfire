@@ -14,6 +14,7 @@ interface TasksState {
     position?: number
     agent?: string
   }) => Promise<Task>
+  createTasksBatch: (projectId: string, text: string, status: string) => Promise<Task[]>
   updateTask: (projectId: string, taskNumber: number, updates: {
     title?: string
     prompt?: string
@@ -61,6 +62,16 @@ export const useTasksStore = create<TasksState>((set, get) => ({
     })
     get().fetchTasks(projectId)
     return task
+  },
+
+  // Quick add (v10 Torch): the daemon parses the free-text blob — each
+  // top-level bullet becomes one task — through the same validated path
+  // as createTask. Returns the created tasks in input order.
+  createTasksBatch: async (projectId, text, status) => {
+    const client = getTaskClient()
+    const resp = await client.createTasksBatch({ projectId, text, status })
+    get().fetchTasks(projectId)
+    return resp.tasks
   },
 
   updateTask: async (projectId, taskNumber, updates) => {

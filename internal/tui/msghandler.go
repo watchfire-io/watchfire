@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -148,6 +149,19 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 		m.activeOverlay = overlayNone
 		m.taskForm = nil
 		cmds = append(cmds, loadTasksCmd(m.conn, m.projectID))
+		return true, tea.Batch(cmds...)
+
+	case TasksBatchCreatedMsg:
+		m.activeOverlay = overlayNone
+		m.quickAddForm = nil
+		numbers := make([]string, 0, len(msg.Tasks))
+		for _, t := range msg.Tasks {
+			numbers = append(numbers, fmt.Sprintf("#%04d", t.TaskNumber))
+		}
+		m.statusMessage = fmt.Sprintf("Created %d task%s: %s",
+			len(msg.Tasks), plural(len(msg.Tasks)), strings.Join(numbers, " "))
+		m.showSaved = true
+		cmds = append(cmds, loadTasksCmd(m.conn, m.projectID), clearSavedAfter(clearSavedTimeout))
 		return true, tea.Batch(cmds...)
 
 	case TaskDeletedMsg:

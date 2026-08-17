@@ -20,6 +20,7 @@ const (
 	overlayTaskDiff        = 8  // v6.0 Ember inline diff viewer overlay
 	overlayIntegrations    = 9  // v7.0 Relay integrations settings overlay
 	overlayBranches        = 10 // v6 Branches list / merge / delete / prune overlay
+	overlayQuickAdd        = 11 // v10 Torch quick-add batch task creation overlay
 )
 
 // renderOverlay renders an overlay centered on top of the base view.

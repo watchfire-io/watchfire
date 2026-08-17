@@ -264,6 +264,8 @@ func (m *Model) handleTaskListKey(msg tea.KeyMsg) tea.Cmd {
 		m.taskList.MoveDown()
 	case key.Matches(msg, taskListKeys.Add):
 		m.openAddTaskForm()
+	case key.Matches(msg, taskListKeys.QuickAdd):
+		m.openQuickAddForm()
 	case key.Matches(msg, taskListKeys.Edit), key.Matches(msg, taskListKeys.Enter):
 		m.openEditTaskForm()
 	case key.Matches(msg, taskListKeys.Stop):
@@ -783,6 +785,9 @@ func (m *Model) handleOverlayKey(msg tea.KeyMsg) tea.Cmd {
 
 	case overlayAddTask, overlayEditTask:
 		return m.handleTaskFormKey(msg)
+
+	case overlayQuickAdd:
+		return m.handleQuickAddKey(msg)
 
 	case overlayGlobalSettings:
 		return m.handleGlobalSettingsKey(msg)
@@ -1439,6 +1444,41 @@ func (m *Model) handleGlobalSettingsKey(msg tea.KeyMsg) tea.Cmd {
 		}
 		return nil
 	}
+	return nil
+}
+
+// handleQuickAddKey routes input while the quick-add overlay is open
+// (v10 Torch): Ctrl+s creates the batch, Tab flips between the editor and
+// the draft/ready toggle, Esc cancels.
+func (m *Model) handleQuickAddKey(msg tea.KeyMsg) tea.Cmd {
+	if m.quickAddForm == nil {
+		return nil
+	}
+
+	switch {
+	case key.Matches(msg, overlayKeys.Save):
+		return m.saveQuickAddForm()
+	case key.Matches(msg, overlayKeys.Cancel):
+		m.activeOverlay = overlayNone
+		m.quickAddForm = nil
+		return nil
+	case key.Matches(msg, overlayKeys.Tab):
+		m.quickAddForm.FocusNext()
+		return nil
+	}
+
+	// Status field: toggle on space/enter
+	if m.quickAddForm.FocusIndex() == quickAddFocusStatus {
+		if msg.Type == tea.KeySpace || msg.Type == tea.KeyEnter {
+			m.quickAddForm.ToggleStatus()
+		}
+		return nil
+	}
+
+	// Forward everything else to the editor.
+	ta := m.quickAddForm.TextArea()
+	newTA, _ := ta.Update(msg)
+	*ta = newTA
 	return nil
 }
 
