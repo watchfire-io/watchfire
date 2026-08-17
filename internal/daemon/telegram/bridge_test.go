@@ -578,7 +578,7 @@ func TestNewFromConfigGating(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := NewFromConfig(tc.cfg, pairing, "h", nil, nil, nil)
+			got := NewFromConfig(tc.cfg, pairing, "h", nil, nil, nil, nil)
 			if (got != nil) != tc.want {
 				t.Fatalf("NewFromConfig = %v, want bridge=%v", got, tc.want)
 			}

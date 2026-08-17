@@ -1,11 +1,11 @@
-// Paired-chat command dispatch (v10.0 Torch, task 0137). Read-only
-// surface: /projects /use /status /tasks /help, plus the inline-button
-// tap that mirrors /use, plus /watch (live conversation relay — task
-// 0141, watch.go). Everything routes through the echo command
-// callbacks (the same production implementations Slack and Discord
-// use) — /status in particular reuses echo.Route verbatim. Run-control
-// verbs (/run /say …) arrive in 0142; until then /help advertises them
-// as "(soon)" and the dispatcher answers them with the same hint.
+// Paired-chat command dispatch (v10.0 Torch, task 0137). The read
+// surface — /projects /use /status /tasks /help, the inline-button tap
+// that mirrors /use, and /watch (live conversation relay — task 0141,
+// watch.go) — routes through the echo command callbacks (the same
+// production implementations Slack and Discord use); /status reuses
+// echo.Route verbatim. The run-control verbs (/run /runall /retry
+// /cancel /screen /say /mute /unmute — task 0142) live in
+// runcontrol.go and are dispatched here.
 package telegram
 
 import (
@@ -25,24 +25,23 @@ const tasksLimit = 10
 // keyboards (0142 run controls) can share the callback pipe.
 const callbackUsePrefix = "use:"
 
-// soonCommands are the 0142 run-control verbs — advertised in /help,
-// answered with a hint instead of "unknown" when tried early.
-// (/watch went live in 0141.)
-var soonCommands = map[string]bool{
-	"/run": true, "/runall": true, "/retry": true, "/cancel": true,
-	"/screen": true, "/say": true, "/mute": true, "/unmute": true,
-}
-
-// botCommands is the set registered via setMyCommands for Telegram's
-// autocomplete menu. Only live commands — advertising the 0142 verbs
-// in autocomplete before they work would be a lie the client caches.
+// botCommands is the full verb set registered via setMyCommands for
+// Telegram's autocomplete menu (complete as of task 0142).
 func botCommands() []telegrambot.BotCommand {
 	return []telegrambot.BotCommand{
 		{Command: "projects", Description: "List registered projects"},
 		{Command: "use", Description: "Select the active project for this chat"},
 		{Command: "status", Description: "Status of the active project"},
 		{Command: "tasks", Description: "Top active tasks of the active project"},
+		{Command: "run", Description: "Start a task (refuses while an agent runs)"},
+		{Command: "runall", Description: "Run every ready task in sequence"},
+		{Command: "retry", Description: "Re-queue a failed task"},
+		{Command: "cancel", Description: "Cancel a running or queued task"},
+		{Command: "screen", Description: "Plain-text snapshot of the live session"},
+		{Command: "say", Description: "Send text to the running agent"},
 		{Command: "watch", Description: "Toggle the live conversation relay (on|off)"},
+		{Command: "mute", Description: "Pause event pushes to this chat"},
+		{Command: "unmute", Description: "Resume event pushes to this chat"},
 		{Command: "help", Description: "Show available commands"},
 		{Command: "pair", Description: "Pair this chat with a one-time code"},
 	}
@@ -61,15 +60,30 @@ func (b *Bridge) dispatchCommand(ctx context.Context, msg *telegrambot.Message, 
 		b.cmdStatus(ctx, chatID, userID)
 	case "/tasks":
 		b.cmdTasks(ctx, chatID, userID)
+	case "/run":
+		b.cmdRun(ctx, chatID, rest)
+	case "/runall":
+		b.cmdRunAll(ctx, chatID)
+	case "/retry":
+		b.cmdRouteVerb(ctx, chatID, userID, "retry", rest)
+	case "/cancel":
+		b.cmdRouteVerb(ctx, chatID, userID, "cancel", rest)
+	case "/screen":
+		b.cmdScreen(ctx, chatID)
+	case "/say":
+		// /say gets the VERBATIM remainder of the original message —
+		// the normalized rest would collapse the whitespace the user
+		// meant to type into the session.
+		b.cmdSay(ctx, chatID, sayVerbatim(msg.Text))
+	case "/mute":
+		b.cmdMute(ctx, chatID, true)
+	case "/unmute":
+		b.cmdMute(ctx, chatID, false)
 	case "/watch":
 		b.cmdWatch(ctx, chatID, rest)
 	case "/help":
 		b.reply(ctx, chatID, helpHTML())
 	default:
-		if soonCommands[cmd] {
-			b.reply(ctx, chatID, EscapeHTML(cmd)+" isn't available yet — coming soon. Send /help for what works today.")
-			return
-		}
 		b.reply(ctx, chatID, "Unknown command "+EscapeHTML(cmd)+" — send /help for the list.")
 	}
 }
@@ -81,15 +95,16 @@ func helpHTML() string {
 		"/use &lt;name|number&gt; — select the active project for this chat",
 		"/status — status of the active project",
 		"/tasks — top active tasks of the active project",
+		"/run &lt;n&gt; — start a task (refuses while an agent is running)",
+		"/runall — run every ready task in sequence",
+		"/retry &lt;n&gt; — re-queue a failed task",
+		"/cancel &lt;n&gt; — cancel a running or queued task",
+		"/screen — plain-text snapshot of the live session",
+		"/say &lt;text&gt; — send text to the running agent",
 		"/watch on|off — relay the live agent conversation here",
+		"/mute, /unmute — pause/resume event pushes to this chat",
 		"/pair &lt;code&gt; — pair this chat with a one-time code",
 		"/help — this list",
-		"",
-		"<i>/run &lt;n&gt;, /runall — start tasks (soon)</i>",
-		"<i>/retry &lt;n&gt;, /cancel &lt;n&gt; — task lifecycle (soon)</i>",
-		"<i>/screen — live session snapshot (soon)</i>",
-		"<i>/say &lt;text&gt; — send text to the running agent (soon)</i>",
-		"<i>/mute, /unmute — pause event pushes (soon)</i>",
 	}, "\n")
 }
 
@@ -292,11 +307,8 @@ func (b *Bridge) activeProject(ctx context.Context, chatID, userID int64) (echo.
 	if !ok {
 		return echo.CommandContext{}, "", false
 	}
-	b.mu.Lock()
-	projectID := b.paired[chatID].DefaultProjectID
-	b.mu.Unlock()
-	if projectID == "" {
-		b.reply(ctx, chatID, "No project selected yet — send /projects, then /use &lt;name|number&gt;.")
+	projectID, ok := b.chatProject(ctx, chatID)
+	if !ok {
 		return echo.CommandContext{}, "", false
 	}
 	return cc, projectID, true

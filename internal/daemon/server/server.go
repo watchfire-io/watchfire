@@ -678,7 +678,8 @@ func (s *Server) startTelegramBridge() {
 	}
 	hostname, _ := os.Hostname()
 	bridge := telegram.NewFromConfig(cfg, s.telegramPairing, hostname, s.telegramCommandContextFor,
-		&agentSessionSource{mgr: s.agentManager}, log.Default())
+		&agentSessionSource{mgr: s.agentManager},
+		&agentRunController{mgr: s.agentManager, watcher: s.watcher}, log.Default())
 	if bridge == nil {
 		return
 	}
