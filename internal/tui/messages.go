@@ -160,6 +160,26 @@ type IntegrationTestedMsg struct {
 	StatusCode int32
 }
 
+// TelegramPairingBeganMsg carries the result of a BeginTelegramPairing
+// RPC (v10.0 Torch). Err is set on failure — most commonly the
+// FailedPrecondition "bridge not running" case, which is a normal
+// user-facing state surfaced in the overlay's status line rather than
+// as a global error.
+type TelegramPairingBeganMsg struct {
+	Resp *pb.BeginTelegramPairingResponse
+	Err  error
+}
+
+// TelegramPairingStatusMsg carries a polled Telegram pairing status.
+// The integrations overlay polls every 2s while a code is pending.
+type TelegramPairingStatusMsg struct {
+	Status *pb.TelegramPairingStatus
+}
+
+// telegramPairingPollTickMsg fires 2s after the previous pairing-status
+// poll (or after BeginTelegramPairing) to trigger the next one.
+type telegramPairingPollTickMsg struct{}
+
 // InboundStatusLoadedMsg carries the v8.0 Echo InboundStatus from
 // GetInboundStatus / SaveInboundConfig RPCs. The Inbound tab in the
 // integrations overlay reads this to refresh the listening pill +

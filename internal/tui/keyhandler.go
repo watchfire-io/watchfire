@@ -979,7 +979,8 @@ func (m *Model) handleIntegrationsKey(msg tea.KeyMsg) tea.Cmd {
 		return nil
 	case "e":
 		row := f.CurrentRow()
-		if row.Kind == integrationsRowGitHub {
+		switch row.Kind {
+		case integrationsRowGitHub:
 			// Edit-as-add: pre-populate the add form with current
 			// GitHub state. A future polish task can add a dedicated
 			// edit step that updates the existing entry in place.
@@ -991,7 +992,11 @@ func (m *Model) handleIntegrationsKey(msg tea.KeyMsg) tea.Cmd {
 				f.addEvents.TaskFailed = gh.GetEnabled()
 				f.addEvents.RunComplete = gh.GetDraftDefault()
 			}
-		} else {
+		case integrationsRowTelegram, integrationsRowTelegramChat:
+			// Chat rows edit the parent Telegram config too — the
+			// per-chat toggles have their own m/w shortcuts.
+			f.StartTelegramEdit()
+		default:
 			f.StartAdd()
 			f.addKind = row.Kind
 		}
@@ -1014,7 +1019,33 @@ func (m *Model) handleIntegrationsKey(msg tea.KeyMsg) tea.Cmd {
 			return testIntegrationCmd(m.conn, pb.IntegrationKind_DISCORD, row.ID)
 		case integrationsRowGitHub:
 			return testIntegrationCmd(m.conn, pb.IntegrationKind_GITHUB, "")
+		case integrationsRowTelegram, integrationsRowTelegramChat:
+			return testIntegrationCmd(m.conn, pb.IntegrationKind_TELEGRAM, "telegram")
 		}
+	case "p":
+		// v10.0 Torch — mint a Telegram pairing code. Available from
+		// anywhere in the outbound list; the daemon rejects it with a
+		// clear message when the bridge isn't running.
+		if m.conn == nil {
+			return nil
+		}
+		f.SetStatus("Requesting pairing code…")
+		return beginTelegramPairingCmd(m.conn)
+	case "m", "w":
+		row := f.CurrentRow()
+		if row.Kind != integrationsRowTelegramChat || m.conn == nil {
+			return nil
+		}
+		flag := "mute"
+		if msg.String() == "w" {
+			flag = "watch"
+		}
+		payload := telegramChatTogglePayload(f.cfg.GetTelegram(), row.ChatID, flag)
+		if payload == nil {
+			return nil
+		}
+		f.SetStatus("Saving…")
+		return saveIntegrationCmd(m.conn, payload)
 	}
 	return nil
 }
@@ -1026,11 +1057,18 @@ func (m *Model) handleIntegrationsAddKey(msg tea.KeyMsg) tea.Cmd {
 		f.CancelAdd()
 		return nil
 	case "left", "h":
-		f.CycleAddKind(-1)
-		return nil
+		// Only claim h/l for kind cycling on the picker step —
+		// otherwise "h" could never be typed into the URL / token
+		// inputs ("https://…").
+		if f.addStep == addFieldKind {
+			f.CycleAddKind(-1)
+			return nil
+		}
 	case "right", "l":
-		f.CycleAddKind(+1)
-		return nil
+		if f.addStep == addFieldKind {
+			f.CycleAddKind(+1)
+			return nil
+		}
 	case "1":
 		if f.addStep == addFieldEvents {
 			f.ToggleAddEvent(0)
@@ -1044,6 +1082,13 @@ func (m *Model) handleIntegrationsAddKey(msg tea.KeyMsg) tea.Cmd {
 	case "3":
 		if f.addStep == addFieldEvents {
 			f.ToggleAddEvent(2)
+			return nil
+		}
+	case "4":
+		// Telegram's events step carries a fourth toggle (Enabled at
+		// index 0 shifts the events down); harmless no-op elsewhere.
+		if f.addStep == addFieldEvents {
+			f.ToggleAddEvent(3)
 			return nil
 		}
 	}
@@ -1128,6 +1173,11 @@ func (m *Model) handleIntegrationsConfirmDeleteKey(msg tea.KeyMsg) tea.Cmd {
 		if !ok || m.conn == nil {
 			return nil
 		}
+		// Telegram chat rows are revoked (allowlist removal), not
+		// deleted — a different RPC from the config delete below.
+		if row.Kind == integrationsRowTelegramChat {
+			return revokeTelegramChatCmd(m.conn, row.ChatID)
+		}
 		var kind pb.IntegrationKind
 		switch row.Kind {
 		case integrationsRowWebhook:
@@ -1138,6 +1188,8 @@ func (m *Model) handleIntegrationsConfirmDeleteKey(msg tea.KeyMsg) tea.Cmd {
 			kind = pb.IntegrationKind_DISCORD
 		case integrationsRowGitHub:
 			kind = pb.IntegrationKind_GITHUB
+		case integrationsRowTelegram:
+			kind = pb.IntegrationKind_TELEGRAM
 		}
 		return deleteIntegrationCmd(m.conn, kind, row.ID)
 	case "n", "N", "esc":
@@ -1149,11 +1201,14 @@ func (m *Model) handleIntegrationsConfirmDeleteKey(msg tea.KeyMsg) tea.Cmd {
 func (m *Model) dispatchIntegrationsAdd() tea.Cmd {
 	f := m.integrationsForm
 	kind, url, label, events, mutes := f.AddSnapshot()
+	telegramPayload := f.TelegramAddSnapshot()
 	f.CancelAdd()
 	if m.conn == nil {
 		return nil
 	}
 	switch kind {
+	case integrationsRowTelegram:
+		return saveIntegrationCmd(m.conn, telegramPayload)
 	case integrationsRowWebhook:
 		return saveIntegrationCmd(m.conn, &pb.WebhookIntegration{
 			Label:          label,

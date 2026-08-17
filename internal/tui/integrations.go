@@ -22,6 +22,11 @@ const (
 	integrationsRowSlack
 	integrationsRowDiscord
 	integrationsRowGitHub
+	integrationsRowTelegram // v10.0 Torch — single-instance bridge config
+	// integrationsRowTelegramChat rows sit under the Telegram summary row,
+	// one per paired chat. Deliberately after integrationsRowTelegram so the
+	// add-form kind cycle (which stops at Telegram) never offers them.
+	integrationsRowTelegramChat
 )
 
 // integrationsRow captures one selectable row in the overlay list.
@@ -32,6 +37,7 @@ type integrationsRow struct {
 	URLLabel string // masked
 	Events   *pb.IntegrationEvents
 	Muted    int
+	ChatID   int64 // Telegram chat rows only
 }
 
 // integrationsAddField captures one input field in the stacked add-form
@@ -75,6 +81,18 @@ type IntegrationsForm struct {
 	addMutes     []string
 	statusLine   string
 	deleteCursor int
+	// v10.0 Torch — Telegram add/edit state. The add form reuses the URL
+	// step as a masked bot-token input (write-only convention: empty =
+	// keep the stored token) and folds an Enabled toggle into the events
+	// step, so only these two extra fields are needed.
+	addTelegramEnabled bool
+	addTelegramToken   string
+	// Pairing display state: non-nil while a pairing code is live on
+	// screen. The model layer drives the 2s status polling; the form only
+	// renders code + deep link + countdown and the terminal states.
+	pairing      *pb.BeginTelegramPairingResponse
+	pairingState pb.TelegramPairingState
+	pairedChat   *pb.TelegramPairedChatInfo
 	// projectIDs is the list of registered project IDs surfaced in the
 	// project-mute multi-select. The model layer populates this from the
 	// active GUI's projects-store equivalent — for the TUI we wire it
@@ -413,9 +431,15 @@ func (f *IntegrationsForm) Reset() {
 	f.addLabel = ""
 	f.addEvents = pb.IntegrationEvents{TaskFailed: true, RunComplete: true}
 	f.addMutes = nil
+	f.addTelegramEnabled = true
+	f.addTelegramToken = ""
+	f.pairing = nil
+	f.pairingState = pb.TelegramPairingState_TELEGRAM_PAIRING_NONE
+	f.pairedChat = nil
 	f.statusLine = ""
 	f.input.Blur()
 	f.input.SetValue("")
+	f.input.EchoMode = textinput.EchoNormal
 }
 
 // SetStatus sets a transient status line shown at the bottom of the
@@ -455,6 +479,28 @@ func (f *IntegrationsForm) StartAdd() {
 	f.addLabel = ""
 	f.addEvents = pb.IntegrationEvents{TaskFailed: true, RunComplete: true}
 	f.addMutes = nil
+	f.addTelegramEnabled = true
+	f.addTelegramToken = ""
+	f.input.EchoMode = textinput.EchoNormal
+}
+
+// StartTelegramEdit opens the add form pre-populated with the current
+// Telegram config and jumps straight to the token step. The token input
+// starts empty (write-only convention — leaving it empty keeps the
+// stored token); Enabled + event toggles reflect what's saved today.
+func (f *IntegrationsForm) StartTelegramEdit() {
+	f.StartAdd()
+	f.addKind = integrationsRowTelegram
+	if tg := f.cfg.GetTelegram(); tg != nil {
+		f.addTelegramEnabled = tg.GetEnabled()
+		ev := tg.GetEnabledEvents()
+		f.addEvents = pb.IntegrationEvents{
+			TaskFailed:   ev.GetTaskFailed(),
+			RunComplete:  ev.GetRunComplete(),
+			WeeklyDigest: ev.GetWeeklyDigest(),
+		}
+	}
+	f.AdvanceAdd() // kind → token input
 }
 
 // CycleAddKind moves the add-form's kind picker forward / backward.
@@ -464,9 +510,9 @@ func (f *IntegrationsForm) CycleAddKind(delta int) {
 	}
 	idx := int(f.addKind) + delta
 	if idx < 0 {
-		idx = int(integrationsRowGitHub)
+		idx = int(integrationsRowTelegram)
 	}
-	if idx > int(integrationsRowGitHub) {
+	if idx > int(integrationsRowTelegram) {
 		idx = 0
 	}
 	f.addKind = integrationsRowKind(idx)
@@ -485,11 +531,33 @@ func (f *IntegrationsForm) AdvanceAdd() bool {
 			return false
 		}
 		f.input.Reset()
-		f.input.Placeholder = "https://hooks.slack.com/services/..."
+		if f.addKind == integrationsRowTelegram {
+			// Reuse the URL step as the masked bot-token input.
+			f.input.EchoMode = textinput.EchoPassword
+			if f.cfg.GetTelegram().GetTokenSet() {
+				f.input.Placeholder = "(empty = keep current token)"
+			} else {
+				f.input.Placeholder = "Bot token from @BotFather"
+			}
+		} else {
+			f.input.EchoMode = textinput.EchoNormal
+			f.input.Placeholder = "https://hooks.slack.com/services/..."
+		}
 		f.input.SetValue("")
 		f.input.Focus()
 		f.addStep = addFieldURL
 	case addFieldURL:
+		if f.addKind == integrationsRowTelegram {
+			// Empty is legal here: write-only convention, keep the
+			// stored token. Skip the label step — Telegram is
+			// single-instance and unlabelled.
+			f.addTelegramToken = strings.TrimSpace(f.input.Value())
+			f.input.Blur()
+			f.input.SetValue("")
+			f.input.EchoMode = textinput.EchoNormal
+			f.addStep = addFieldEvents
+			return false
+		}
 		f.addURL = strings.TrimSpace(f.input.Value())
 		if f.addURL == "" {
 			return false
@@ -504,6 +572,12 @@ func (f *IntegrationsForm) AdvanceAdd() bool {
 		f.input.Blur()
 		f.addStep = addFieldEvents
 	case addFieldEvents:
+		// Telegram has no project-mute step (mutes are per-chat) —
+		// events confirm is the terminal step.
+		if f.addKind == integrationsRowTelegram {
+			f.addStep = addFieldDone
+			return true
+		}
 		// Events / GitHub-toggles are confirmed in-step via space; Tab
 		// advances to mutes.
 		f.addStep = addFieldMutes
@@ -530,6 +604,21 @@ func (f *IntegrationsForm) ToggleAddEvent(idx int) {
 		}
 		return
 	}
+	if f.addKind == integrationsRowTelegram {
+		// Telegram folds the master Enabled toggle in at index 0; the
+		// three event bits shift down by one.
+		switch idx {
+		case 0:
+			f.addTelegramEnabled = !f.addTelegramEnabled
+		case 1:
+			f.addEvents.TaskFailed = !f.addEvents.TaskFailed
+		case 2:
+			f.addEvents.RunComplete = !f.addEvents.RunComplete
+		case 3:
+			f.addEvents.WeeklyDigest = !f.addEvents.WeeklyDigest
+		}
+		return
+	}
 	switch idx {
 	case 0:
 		f.addEvents.TaskFailed = !f.addEvents.TaskFailed
@@ -546,6 +635,7 @@ func (f *IntegrationsForm) CancelAdd() {
 	f.addStep = addFieldKind
 	f.input.Blur()
 	f.input.SetValue("")
+	f.input.EchoMode = textinput.EchoNormal
 }
 
 // StartDeleteConfirm flips into a y/n confirm prompt for the current row.
@@ -589,6 +679,95 @@ func (f *IntegrationsForm) AddSnapshot() (kind integrationsRowKind, url, label s
 	return f.addKind, f.addURL, f.addLabel, ev, append([]string(nil), f.addMutes...)
 }
 
+// TelegramAddSnapshot rolls the staged Telegram add/edit values into a
+// SaveIntegration payload. BotToken follows the write-only convention:
+// empty means "keep the stored token". PairedChats is deliberately nil —
+// the daemon-side upsert never adds or removes chats from a Save, and
+// omitting them leaves the per-chat toggles untouched.
+func (f *IntegrationsForm) TelegramAddSnapshot() *pb.TelegramIntegration {
+	return &pb.TelegramIntegration{
+		Enabled:  f.addTelegramEnabled,
+		BotToken: f.addTelegramToken,
+		EnabledEvents: &pb.IntegrationEvents{
+			TaskFailed:   f.addEvents.TaskFailed,
+			RunComplete:  f.addEvents.RunComplete,
+			WeeklyDigest: f.addEvents.WeeklyDigest,
+		},
+	}
+}
+
+// StartPairing stores a freshly-minted pairing code for display. The
+// model layer kicks off the 2s status polling alongside.
+func (f *IntegrationsForm) StartPairing(resp *pb.BeginTelegramPairingResponse) {
+	f.pairing = resp
+	f.pairingState = pb.TelegramPairingState_TELEGRAM_PAIRING_PENDING
+	f.pairedChat = nil
+}
+
+// LoadPairingStatus folds a polled pairing status into the display
+// state. Only meaningful while a pairing block is on screen.
+func (f *IntegrationsForm) LoadPairingStatus(st *pb.TelegramPairingStatus) {
+	if f.pairing == nil || st == nil {
+		return
+	}
+	f.pairingState = st.GetState()
+	if st.GetState() == pb.TelegramPairingState_TELEGRAM_PAIRING_PAIRED {
+		f.pairedChat = st.GetChat()
+	}
+}
+
+// PairingActive reports whether a pairing code is live and unredeemed —
+// the model layer keeps the 2s poll loop running exactly while this
+// holds.
+func (f *IntegrationsForm) PairingActive() bool {
+	return f.pairing != nil && f.pairingState == pb.TelegramPairingState_TELEGRAM_PAIRING_PENDING
+}
+
+// telegramChatTogglePayload builds the SaveIntegration payload that
+// flips one per-chat flag ("mute" or "watch") while preserving the
+// integration's enabled state, events, stored token (empty BotToken =
+// keep), and every other chat's toggles + default project. Returns nil
+// when the chat isn't in the paired list.
+func telegramChatTogglePayload(tg *pb.TelegramIntegration, chatID int64, flag string) *pb.TelegramIntegration {
+	if tg == nil {
+		return nil
+	}
+	found := false
+	chats := make([]*pb.TelegramPairedChatInfo, 0, len(tg.GetPairedChats()))
+	for _, pc := range tg.GetPairedChats() {
+		out := &pb.TelegramPairedChatInfo{
+			ChatId:           pc.GetChatId(),
+			Username:         pc.GetUsername(),
+			DefaultProjectId: pc.GetDefaultProjectId(),
+			Muted:            pc.GetMuted(),
+			Watch:            pc.GetWatch(),
+		}
+		if pc.GetChatId() == chatID {
+			found = true
+			switch flag {
+			case "mute":
+				out.Muted = !out.Muted
+			case "watch":
+				out.Watch = !out.Watch
+			}
+		}
+		chats = append(chats, out)
+	}
+	if !found {
+		return nil
+	}
+	ev := tg.GetEnabledEvents()
+	return &pb.TelegramIntegration{
+		Enabled: tg.GetEnabled(),
+		EnabledEvents: &pb.IntegrationEvents{
+			TaskFailed:   ev.GetTaskFailed(),
+			RunComplete:  ev.GetRunComplete(),
+			WeeklyDigest: ev.GetWeeklyDigest(),
+		},
+		PairedChats: chats,
+	}
+}
+
 // rebuildRows flattens the IntegrationsConfig into the row list.
 func (f *IntegrationsForm) rebuildRows() {
 	rows := make([]integrationsRow, 0)
@@ -627,7 +806,69 @@ func (f *IntegrationsForm) rebuildRows() {
 		Kind:  integrationsRowGitHub,
 		Label: githubRowLabel(f.cfg.GetGithub()),
 	})
+	// Telegram single-instance row is always present too (v10.0 Torch);
+	// paired chats hang off it as their own selectable rows so revoke /
+	// mute / watch target one chat at a time.
+	tg := f.cfg.GetTelegram()
+	tgRow := integrationsRow{
+		Kind:  integrationsRowTelegram,
+		Label: telegramRowLabel(tg),
+	}
+	if tg != nil {
+		tgRow.Events = tg.GetEnabledEvents()
+	}
+	rows = append(rows, tgRow)
+	for _, pc := range tg.GetPairedChats() {
+		rows = append(rows, integrationsRow{
+			Kind:     integrationsRowTelegramChat,
+			Label:    telegramChatDisplayName(pc),
+			URLLabel: telegramChatDetail(pc),
+			ChatID:   pc.GetChatId(),
+		})
+	}
 	f.rows = rows
+}
+
+// telegramRowLabel summarizes the single-instance Telegram config for
+// its list row, mirroring githubRowLabel's shape.
+func telegramRowLabel(tg *pb.TelegramIntegration) string {
+	if tg == nil {
+		return "Telegram bridge (not configured)"
+	}
+	token := "token not set"
+	if tg.GetTokenSet() {
+		token = "token set"
+	}
+	state := "disabled"
+	if tg.GetEnabled() {
+		state = "enabled"
+	}
+	return fmt.Sprintf("Telegram bridge — %s, %s, %d chat(s)", state, token, len(tg.GetPairedChats()))
+}
+
+// telegramChatDisplayName renders a paired chat's identity: @username
+// when Telegram knows one, the raw chat id otherwise.
+func telegramChatDisplayName(pc *pb.TelegramPairedChatInfo) string {
+	if u := pc.GetUsername(); u != "" {
+		return "@" + u
+	}
+	return fmt.Sprintf("chat %d", pc.GetChatId())
+}
+
+// telegramChatDetail renders the per-chat detail column: default
+// project + muted/watch flags.
+func telegramChatDetail(pc *pb.TelegramPairedChatInfo) string {
+	parts := []string{fmt.Sprintf("id %d", pc.GetChatId())}
+	if p := pc.GetDefaultProjectId(); p != "" {
+		parts = append(parts, "project "+p)
+	}
+	if pc.GetMuted() {
+		parts = append(parts, "muted")
+	}
+	if pc.GetWatch() {
+		parts = append(parts, "watch")
+	}
+	return strings.Join(parts, " · ")
 }
 
 func (f *IntegrationsForm) deriveLabel(label, fallback string) string {
@@ -661,6 +902,10 @@ func kindLabel(k integrationsRowKind) string {
 		return "Discord"
 	case integrationsRowGitHub:
 		return "GitHub"
+	case integrationsRowTelegram:
+		return "Telegram"
+	case integrationsRowTelegramChat:
+		return "Chat"
 	}
 	return "?"
 }
@@ -964,12 +1209,17 @@ func (f *IntegrationsForm) renderList() string {
 	} else {
 		for i, row := range f.rows {
 			labelWidth := 22
-			// GitHub's row label embeds the entire status string ("Auto-PR
-			// — draft, all projects"), so let it take the URL column too.
-			if row.Kind == integrationsRowGitHub {
+			// GitHub's / Telegram's row labels embed the entire status
+			// string ("Auto-PR — draft, all projects"), so let them take
+			// the URL column too.
+			if row.Kind == integrationsRowGitHub || row.Kind == integrationsRowTelegram {
 				labelWidth = 50
 			}
 			line := fmt.Sprintf("%-8s %-*s %s", kindLabel(row.Kind), labelWidth, truncate(row.Label, labelWidth), row.URLLabel)
+			if row.Kind == integrationsRowTelegramChat {
+				// Paired chats indent under the Telegram summary row.
+				line = fmt.Sprintf("  · %-18s %s", truncate(row.Label, 18), lipgloss.NewStyle().Foreground(colorDim).Render(row.URLLabel))
+			}
 			line = strings.TrimRight(line, " ")
 			if row.Events != nil {
 				line += "  " + eventChips(row.Events)
@@ -987,13 +1237,65 @@ func (f *IntegrationsForm) renderList() string {
 		}
 	}
 
+	if p := f.renderPairing(); p != "" {
+		b.WriteString("\n")
+		b.WriteString(p)
+	}
+
 	b.WriteString("\n")
 	if f.statusLine != "" {
 		b.WriteString(lipgloss.NewStyle().Foreground(colorCyan).Render(f.statusLine))
 		b.WriteString("\n")
 	}
-	b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render("a add · e edit · d delete · t test · ↑↓ move · Esc close"))
+	b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render("a add · e edit · d delete/revoke · t test · p pair telegram · m/w mute/watch chat · ↑↓ move · Esc close"))
 	return b.String()
+}
+
+// renderPairing draws the live Telegram pairing block (code + deep link
+// + countdown) below the row list. Empty string when no pairing is on
+// screen. The QR the GUI shows has no terminal equivalent here — the
+// deep link is displayed as text instead.
+func (f *IntegrationsForm) renderPairing() string {
+	if f.pairing == nil {
+		return ""
+	}
+	var b strings.Builder
+	switch f.pairingState {
+	case pb.TelegramPairingState_TELEGRAM_PAIRING_PAIRED:
+		who := "chat"
+		if f.pairedChat != nil {
+			who = telegramChatDisplayName(f.pairedChat)
+		}
+		b.WriteString(lipgloss.NewStyle().Foreground(colorCyan).Render(fmt.Sprintf("✓ Paired with %s — project data now flows to this chat.", who)))
+		b.WriteString("\n")
+	case pb.TelegramPairingState_TELEGRAM_PAIRING_EXPIRED, pb.TelegramPairingState_TELEGRAM_PAIRING_NONE:
+		b.WriteString(lipgloss.NewStyle().Foreground(colorRed).Render("✗ Pairing code expired unredeemed — press p to mint a new one."))
+		b.WriteString("\n")
+	default:
+		countdown := countdownLabel(f.pairing.GetExpiresAt().AsTime(), time.Now())
+		b.WriteString(lipgloss.NewStyle().Foreground(colorCyan).Render(
+			fmt.Sprintf("Telegram pairing — code %s (expires in %s)", f.pairing.GetCode(), countdown)))
+		b.WriteString("\n")
+		b.WriteString(fmt.Sprintf("  Open on your phone: %s\n", f.pairing.GetDeepLink()))
+		b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render(
+			fmt.Sprintf("  …or send @%s:  /pair %s", f.pairing.GetBotUsername(), f.pairing.GetCode())))
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// countdownLabel renders the time remaining until `until` as seen from
+// `now` — "9m58s" / "45s" — or "expired" once the deadline has passed.
+func countdownLabel(until, now time.Time) string {
+	d := until.Sub(now)
+	if d <= 0 {
+		return "expired"
+	}
+	d = d.Round(time.Second)
+	if d < time.Minute {
+		return fmt.Sprintf("%ds", int(d.Seconds()))
+	}
+	return fmt.Sprintf("%dm%02ds", int(d.Minutes()), int(d.Seconds())%60)
 }
 
 func (f *IntegrationsForm) renderAdd() string {
@@ -1007,6 +1309,17 @@ func (f *IntegrationsForm) renderAdd() string {
 		b.WriteString("\n\n")
 		b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render("← / → cycle · Tab next · Esc cancel"))
 	case addFieldURL:
+		if f.addKind == integrationsRowTelegram {
+			b.WriteString("Bot token (from @BotFather):\n")
+			b.WriteString(f.input.View())
+			b.WriteString("\n\n")
+			hint := "Tab next · Esc cancel"
+			if f.cfg.GetTelegram().GetTokenSet() {
+				hint = "empty keeps the stored token · Tab next · Esc cancel"
+			}
+			b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render(hint))
+			break
+		}
 		b.WriteString("URL:\n")
 		b.WriteString(f.input.View())
 		b.WriteString("\n\n")
@@ -1022,6 +1335,12 @@ func (f *IntegrationsForm) renderAdd() string {
 			b.WriteString(checkbox("Enabled", f.addEvents.TaskFailed) + "\n")
 			b.WriteString(checkbox("Open as draft", f.addEvents.RunComplete) + "\n")
 			b.WriteString("\n" + lipgloss.NewStyle().Foreground(colorDim).Render("Space toggles · Tab next · Esc cancel"))
+		} else if f.addKind == integrationsRowTelegram {
+			b.WriteString(checkbox("Enabled", f.addTelegramEnabled) + "\n")
+			b.WriteString(checkbox("TASK_FAILED", f.addEvents.TaskFailed) + "\n")
+			b.WriteString(checkbox("RUN_COMPLETE", f.addEvents.RunComplete) + "\n")
+			b.WriteString(checkbox("WEEKLY_DIGEST", f.addEvents.WeeklyDigest) + "\n")
+			b.WriteString("\n" + lipgloss.NewStyle().Foreground(colorDim).Render("1/2/3/4 toggle · Enter saves · Esc cancel"))
 		} else {
 			b.WriteString(checkbox("TASK_FAILED", f.addEvents.TaskFailed) + "\n")
 			b.WriteString(checkbox("RUN_COMPLETE", f.addEvents.RunComplete) + "\n")
@@ -1043,13 +1362,20 @@ func (f *IntegrationsForm) renderAdd() string {
 
 func (f *IntegrationsForm) renderConfirmDelete() string {
 	var b strings.Builder
-	b.WriteString(overlayTitleStyle.Render("Delete integration?"))
-	b.WriteString("\n\n")
 	row := integrationsRow{}
 	if f.deleteCursor >= 0 && f.deleteCursor < len(f.rows) {
 		row = f.rows[f.deleteCursor]
 	}
+	title := "Delete integration?"
+	if row.Kind == integrationsRowTelegramChat {
+		title = "Revoke Telegram chat?"
+	}
+	b.WriteString(overlayTitleStyle.Render(title))
+	b.WriteString("\n\n")
 	b.WriteString(fmt.Sprintf("%s — %s\n\n", kindLabel(row.Kind), row.Label))
+	if row.Kind == integrationsRowTelegramChat {
+		b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render("The chat loses access immediately; re-pair to restore it.") + "\n\n")
+	}
 	b.WriteString(lipgloss.NewStyle().Foreground(colorDim).Render("y confirm · n cancel"))
 	return b.String()
 }
