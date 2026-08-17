@@ -791,6 +791,8 @@ func saveIntegrationCmd(conn *grpc.ClientConn, payload interface{}) tea.Cmd {
 			req.Payload = &pb.SaveIntegrationRequest_Discord{Discord: p}
 		case *pb.GitHubIntegration:
 			req.Payload = &pb.SaveIntegrationRequest_Github{Github: p}
+		case *pb.TelegramIntegration:
+			req.Payload = &pb.SaveIntegrationRequest_Telegram{Telegram: p}
 		default:
 			return ErrorMsg{Err: fmt.Errorf("save: unknown payload type")}
 		}
@@ -860,6 +862,62 @@ func saveInboundConfigCmd(conn *grpc.ClientConn, cfg *pb.InboundConfig) tea.Cmd 
 			return ErrorMsg{Err: fmt.Errorf("save inbound config: %w", err)}
 		}
 		return InboundStatusLoadedMsg{Status: st}
+	}
+}
+
+// beginTelegramPairingCmd mints a one-time Telegram pairing code
+// (v10.0 Torch). RPC errors ride back inside the message — the common
+// failure ("bridge not running — enable Telegram and store a token
+// first") is a normal state the overlay reports inline.
+func beginTelegramPairingCmd(conn *grpc.ClientConn) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewIntegrationsServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		resp, err := client.BeginTelegramPairing(ctx, &pb.BeginTelegramPairingRequest{})
+		if err != nil {
+			return TelegramPairingBeganMsg{Err: err}
+		}
+		return TelegramPairingBeganMsg{Resp: resp}
+	}
+}
+
+// getTelegramPairingStatusCmd polls the Telegram pairing lifecycle.
+func getTelegramPairingStatusCmd(conn *grpc.ClientConn) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewIntegrationsServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		st, err := client.GetTelegramPairingStatus(ctx, &pb.GetTelegramPairingStatusRequest{})
+		if err != nil {
+			return ErrorMsg{Err: fmt.Errorf("get telegram pairing status: %w", err)}
+		}
+		return TelegramPairingStatusMsg{Status: st}
+	}
+}
+
+// telegramPairingPollTick schedules the next pairing-status poll. The
+// msg handler re-arms it only while the overlay is open and the code is
+// still pending, so the loop dies naturally on pair / expiry / close.
+func telegramPairingPollTick() tea.Cmd {
+	return tea.Tick(2*time.Second, func(time.Time) tea.Msg {
+		return telegramPairingPollTickMsg{}
+	})
+}
+
+// revokeTelegramChatCmd removes one chat from the paired allowlist.
+// Returns the refreshed IntegrationsConfig through the standard
+// IntegrationsLoadedMsg so the rows rebuild.
+func revokeTelegramChatCmd(conn *grpc.ClientConn, chatID int64) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewIntegrationsServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		cfg, err := client.RevokeTelegramChat(ctx, &pb.RevokeTelegramChatRequest{ChatId: chatID})
+		if err != nil {
+			return ErrorMsg{Err: fmt.Errorf("revoke telegram chat: %w", err)}
+		}
+		return IntegrationsLoadedMsg{Config: cfg}
 	}
 }
 

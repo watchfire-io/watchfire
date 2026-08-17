@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"os"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	pb "github.com/watchfire-io/watchfire/proto"
 )
@@ -18,7 +20,10 @@ import (
 var integrationsCmd = &cobra.Command{
 	Use:   "integrations",
 	Short: "Manage outbound integrations (Webhook / Slack / Discord / GitHub / Telegram)",
-	Long:  `Inspect and exercise the outbound integrations configured in ~/.watchfire/integrations.yaml.`,
+	Long: `Inspect and exercise the outbound integrations configured in ~/.watchfire/integrations.yaml.
+
+For the Telegram bridge, chat pairing and status live under their own
+command group: 'watchfire telegram pair' / 'watchfire telegram status'.`,
 }
 
 var integrationsListCmd = &cobra.Command{
@@ -47,6 +52,137 @@ var integrationsListCmd = &cobra.Command{
 	},
 }
 
+// telegramAddToken holds the --token flag for `integrations add telegram`
+// so scripted setups can skip the interactive prompt.
+var telegramAddToken string
+
+var integrationsAddCmd = &cobra.Command{
+	Use:   "add <kind>",
+	Short: "Add an outbound integration (telegram)",
+	Long: `Configure a new outbound integration from the terminal.
+
+Currently only the Telegram bridge can be added here:
+
+  watchfire integrations add telegram              # prompts for the bot token
+  watchfire integrations add telegram --token ...  # non-interactive
+
+Create the bot with @BotFather first, then paste its token at the prompt.
+The token is stored in the OS keyring (write-only — 'watchfire integrations
+list' reports only whether one is set). The integration is saved enabled;
+on a fresh add the TASK_FAILED + RUN_COMPLETE events default on, while
+re-adding over an existing config only rotates the token and keeps the
+configured events.
+
+Next steps: authorize your chat with 'watchfire telegram pair', then check
+bridge health and paired chats with 'watchfire telegram status'.
+
+Other kinds (webhook / slack / discord / github) are added in Settings →
+Integrations (GUI or TUI).`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		kind := strings.ToLower(args[0])
+		if kind != "telegram" {
+			return fmt.Errorf("adding %q from the CLI is not supported — use Settings → Integrations in the GUI/TUI (only 'telegram' can be added here)", args[0])
+		}
+
+		token := strings.TrimSpace(telegramAddToken)
+		if token == "" {
+			var err error
+			token, err = promptSecret("Bot token (from @BotFather): ")
+			if err != nil {
+				return err
+			}
+		}
+		if token == "" {
+			return fmt.Errorf("no token provided — create a bot with @BotFather and paste its token")
+		}
+
+		if err := EnsureDaemon(); err != nil {
+			return err
+		}
+		conn, err := ConnectDaemon()
+		if err != nil {
+			return err
+		}
+		defer func() { _ = conn.Close() }()
+		client := pb.NewIntegrationsServiceClient(conn)
+
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+
+		// Preserve the configured events on token rotation; fresh adds
+		// get the default event set.
+		existing, err := client.ListIntegrations(ctx, &pb.ListIntegrationsRequest{})
+		if err != nil {
+			return fmt.Errorf("list integrations: %w", err)
+		}
+		payload := buildTelegramAddPayload(existing.GetTelegram(), token)
+
+		cfg, err := client.SaveIntegration(ctx, &pb.SaveIntegrationRequest{
+			Payload: &pb.SaveIntegrationRequest_Telegram{Telegram: payload},
+		})
+		if err != nil {
+			return fmt.Errorf("save integration: %w", err)
+		}
+
+		tg := cfg.GetTelegram()
+		fmt.Printf("✓ telegram integration saved (enabled, token %s, %d paired chat(s))\n",
+			map[bool]string{true: "stored in keyring", false: "NOT stored"}[tg.GetTokenSet()],
+			len(tg.GetPairedChats()),
+		)
+		if len(tg.GetPairedChats()) == 0 {
+			fmt.Println("Next: run 'watchfire telegram pair' to authorize your chat.")
+		}
+		return nil
+	},
+}
+
+// buildTelegramAddPayload rolls a bot token into a SaveIntegration
+// payload. Fresh add: enabled with the default event set (TASK_FAILED +
+// RUN_COMPLETE). Existing config: the add only rotates the token —
+// events are preserved — but the integration always comes out enabled
+// (the command's purpose is a working bridge). PairedChats stays nil:
+// the daemon-side upsert never touches chats it isn't handed.
+func buildTelegramAddPayload(existing *pb.TelegramIntegration, token string) *pb.TelegramIntegration {
+	out := &pb.TelegramIntegration{
+		Enabled:  true,
+		BotToken: token,
+		EnabledEvents: &pb.IntegrationEvents{
+			TaskFailed:  true,
+			RunComplete: true,
+		},
+	}
+	if existing != nil && existing.GetEnabledEvents() != nil {
+		ev := existing.GetEnabledEvents()
+		out.EnabledEvents = &pb.IntegrationEvents{
+			TaskFailed:   ev.GetTaskFailed(),
+			RunComplete:  ev.GetRunComplete(),
+			WeeklyDigest: ev.GetWeeklyDigest(),
+		}
+	}
+	return out
+}
+
+// promptSecret reads a secret from stdin — without echo when stdin is a
+// real terminal, as a plain line otherwise (pipes, heredocs, CI).
+func promptSecret(prompt string) (string, error) {
+	fmt.Fprint(os.Stderr, prompt)
+	fd := int(os.Stdin.Fd())
+	if term.IsTerminal(fd) {
+		raw, err := term.ReadPassword(fd)
+		fmt.Fprintln(os.Stderr)
+		if err != nil {
+			return "", fmt.Errorf("read token: %w", err)
+		}
+		return strings.TrimSpace(string(raw)), nil
+	}
+	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
+	if err != nil && line == "" {
+		return "", fmt.Errorf("read token: %w", err)
+	}
+	return strings.TrimSpace(line), nil
+}
+
 var integrationsTestCmd = &cobra.Command{
 	Use:   "test [kind] <id>",
 	Short: "Send a synthetic notification through an integration",
@@ -62,11 +198,14 @@ two-arg form pins the kind explicitly when an id is reused across kinds:
   watchfire integrations test slack    <id>
   watchfire integrations test discord  <id>
   watchfire integrations test github   _
+  watchfire integrations test telegram
 
 For Discord / Slack endpoints, the test sends one POST per supported
 notification kind (TASK_FAILED, RUN_COMPLETE, WEEKLY_DIGEST) so every
-template is exercised in a single command. The github form has no id
-(single-instance config); pass any placeholder.`,
+template is exercised in a single command. The github and telegram
+forms are single-instance and need no id. A telegram test delivers a
+sample message to every paired chat (pair one first with 'watchfire
+telegram pair').`,
 	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		var kind pb.IntegrationKind
@@ -260,6 +399,8 @@ func trimDisplay(s string) string {
 }
 
 func init() {
+	integrationsAddCmd.Flags().StringVar(&telegramAddToken, "token", "", "bot token (skips the interactive prompt)")
+	integrationsCmd.AddCommand(integrationsAddCmd)
 	integrationsCmd.AddCommand(integrationsListCmd)
 	integrationsCmd.AddCommand(integrationsTestCmd)
 	rootCmd.AddCommand(integrationsCmd)

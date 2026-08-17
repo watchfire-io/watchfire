@@ -6,9 +6,22 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	grpcstatus "google.golang.org/grpc/status"
 
 	pb "github.com/watchfire-io/watchfire/proto"
 )
+
+// grpcErrText strips the "rpc error: code = … desc = …" wrapper off a
+// gRPC error so overlay status lines show only the human message.
+func grpcErrText(err error) string {
+	if err == nil {
+		return ""
+	}
+	if st, ok := grpcstatus.FromError(err); ok {
+		return st.Message()
+	}
+	return err.Error()
+}
 
 // sameActiveTaskSet reports whether the two task slices contain the same
 // active (non-deleted) task numbers, ignoring order. Used by the
@@ -371,6 +384,46 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 			cmds = append(cmds, listBranchesCmd(m.conn, m.projectID))
 		}
 		return true, tea.Batch(cmds...)
+
+	// ── v10.0 Torch — Telegram pairing ─────────────────────────────
+	case TelegramPairingBeganMsg:
+		if m.integrationsForm != nil {
+			if msg.Err != nil {
+				m.integrationsForm.SetStatus("Pair ✗ " + grpcErrText(msg.Err))
+				return true, nil
+			}
+			m.integrationsForm.StartPairing(msg.Resp)
+			m.integrationsForm.SetStatus("")
+			return true, telegramPairingPollTick()
+		}
+		return true, nil
+
+	case telegramPairingPollTickMsg:
+		// Re-armed only while the overlay is open and a code is pending;
+		// otherwise the poll loop dies here.
+		if m.activeOverlay == overlayIntegrations && m.integrationsForm != nil &&
+			m.integrationsForm.PairingActive() && m.conn != nil {
+			return true, getTelegramPairingStatusCmd(m.conn)
+		}
+		return true, nil
+
+	case TelegramPairingStatusMsg:
+		if m.integrationsForm == nil {
+			return true, nil
+		}
+		m.integrationsForm.LoadPairingStatus(msg.Status)
+		switch msg.Status.GetState() {
+		case pb.TelegramPairingState_TELEGRAM_PAIRING_PAIRED:
+			// Refresh the rows so the new chat appears immediately.
+			if m.conn != nil {
+				return true, listIntegrationsCmd(m.conn)
+			}
+		case pb.TelegramPairingState_TELEGRAM_PAIRING_PENDING:
+			if m.activeOverlay == overlayIntegrations {
+				return true, telegramPairingPollTick()
+			}
+		}
+		return true, nil
 
 	// ── v8.0 Echo inbound status ────────────────────────────────────
 	case InboundStatusLoadedMsg:
