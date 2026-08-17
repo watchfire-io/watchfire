@@ -56,6 +56,10 @@ const (
 	// this event so URL / mute / event-bitmask edits land without a
 	// daemon restart.
 	EventIntegrationsChanged
+	// EventRetrofitDone fires when retrofit_done.yaml is created — the
+	// v10 Torch retrofit-definition session finished folding done tasks
+	// into the definition.
+	EventRetrofitDone
 )
 
 // Signal file names for phase completion.
@@ -64,6 +68,7 @@ const (
 	GenerateDoneFile   = "generate_done.yaml"
 	DefinitionDoneFile = "definition_done.yaml"
 	TasksDoneFile      = "tasks_done.yaml"
+	RetrofitDoneFile   = "retrofit_done.yaml"
 )
 
 // Event represents a file system change event.
@@ -332,6 +337,14 @@ func (w *Watcher) processFileChange(path string, op fsnotify.Op) {
 		if dir == projectDir && filename == TasksDoneFile {
 			w.eventsChan <- Event{
 				Type:      EventTasksDone,
+				ProjectID: projectID,
+				Path:      path,
+			}
+			return
+		}
+		if dir == projectDir && filename == RetrofitDoneFile {
+			w.eventsChan <- Event{
+				Type:      EventRetrofitDone,
 				ProjectID: projectID,
 				Path:      path,
 			}

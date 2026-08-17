@@ -36,7 +36,8 @@ type Task struct {
 	StartedAt          *time.Time `yaml:"started_at,omitempty"`   // When agent first started
 	CompletedAt        *time.Time `yaml:"completed_at,omitempty"` // When status changed to done
 	UpdatedAt          time.Time  `yaml:"updated_at"`
-	DeletedAt          *time.Time `yaml:"deleted_at,omitempty"` // Soft delete timestamp
+	DeletedAt          *time.Time `yaml:"deleted_at,omitempty"`        // Soft delete timestamp
+	RetrofitArchived   bool       `yaml:"retrofit_archived,omitempty"` // v10 Torch — soft-deleted by the definition-retrofit archive (still counted in insights)
 }
 
 // NewTask creates a new task with default values. Position is left at the
@@ -71,7 +72,16 @@ func (t *Task) Delete() {
 // Restore restores a soft deleted task.
 func (t *Task) Restore() {
 	t.DeletedAt = nil
+	t.RetrofitArchived = false
 	t.UpdatedAt = time.Now().UTC()
+}
+
+// HiddenFromInsights reports whether insights/metrics rollups should skip
+// this task. Ordinary trashed tasks are excluded (pre-v10 behavior), but
+// tasks archived by the definition-retrofit flow keep counting — archiving
+// folded work is bookkeeping, not a retraction of shipped output.
+func (t *Task) HiddenFromInsights() bool {
+	return t.IsDeleted() && !t.RetrofitArchived
 }
 
 // MarkDone marks the task as done.

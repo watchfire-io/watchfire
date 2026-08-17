@@ -15,11 +15,13 @@ export function AgentBadge({ status, className }: AgentBadgeProps) {
       ? `Wildfire${status.wildfirePhase ? ` (${status.wildfirePhase})` : ''}`
       : status.mode === 'generate-definition'
         ? 'Generating Definition'
-        : status.mode === 'generate-tasks'
-          ? 'Planning Tasks'
-          : status.mode === 'start-all'
-            ? `Start All (T${formatTaskNumber(status.taskNumber)})`
-            : `Task ${formatTaskNumber(status.taskNumber)}`
+        : status.mode === 'retrofit-definition'
+          ? 'Retrofitting Definition'
+          : status.mode === 'generate-tasks'
+            ? 'Planning Tasks'
+            : status.mode === 'start-all'
+              ? `Start All (T${formatTaskNumber(status.taskNumber)})`
+              : `Task ${formatTaskNumber(status.taskNumber)}`
 
   return (
     <span

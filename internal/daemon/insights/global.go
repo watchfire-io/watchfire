@@ -166,7 +166,7 @@ func ComputeGlobalInsightsForTasks(
 		tally := rollupProjTally{entry: entry, color: colorFor(entry)}
 		tasks := tasksFor(entry)
 		for _, t := range tasks {
-			if t == nil || t.IsDeleted() {
+			if t == nil || t.HiddenFromInsights() {
 				continue
 			}
 			if t.Status != models.TaskStatusDone {

@@ -132,6 +132,8 @@ func printStartupMessage(mode string, status *pb.AgentStatus, taskNumber int32) 
 		fmt.Printf("Agent started for %s (generating project definition)\n", status.ProjectName)
 	case "generate-tasks":
 		fmt.Printf("Agent started for %s (generating tasks)\n", status.ProjectName)
+	case "retrofit-definition":
+		fmt.Printf("Agent started for %s (retrofitting project definition from completed tasks)\n", status.ProjectName)
 	default:
 		fmt.Printf("Agent started for %s (chat mode)\n", status.ProjectName)
 	}

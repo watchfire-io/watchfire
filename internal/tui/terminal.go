@@ -235,6 +235,8 @@ func (t *Terminal) renderModeHeader() string {
 		label = "Generate Definition"
 	case "generate-tasks":
 		label = "Generate Tasks"
+	case "retrofit-definition":
+		label = "Retrofit Definition"
 	default:
 		label = s.Mode
 	}

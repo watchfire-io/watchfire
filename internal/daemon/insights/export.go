@@ -197,7 +197,7 @@ func buildProjectData(projectID, projectName string, tasks []*models.Task, windo
 	}
 	stats := newWindowStats(windowStart, windowEnd)
 	for _, t := range tasks {
-		if t == nil || t.IsDeleted() {
+		if t == nil || t.HiddenFromInsights() {
 			continue
 		}
 		var m *models.TaskMetrics
@@ -248,7 +248,7 @@ func LoadGlobalData(windowStart, windowEnd time.Time) (GlobalData, error) {
 		}
 		ps := projectCount{id: entry.ProjectID, name: entry.Name}
 		for _, t := range tasks {
-			if t == nil || t.IsDeleted() {
+			if t == nil || t.HiddenFromInsights() {
 				continue
 			}
 			m := readMetricsBestEffort(entry.Path, t)

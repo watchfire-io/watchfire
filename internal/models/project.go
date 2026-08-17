@@ -84,6 +84,11 @@ type Project struct {
 	CreatedAt           time.Time            `yaml:"created_at"`
 	UpdatedAt           time.Time            `yaml:"updated_at"`
 	NextTaskNumber      int                  `yaml:"next_task_number"`
+	// LastRetrofitTaskNumber is the definition-retrofit watermark (v10 Torch):
+	// the highest done task number folded into the definition by the most
+	// recent `retrofit-definition` run. 0 = never retrofitted. Additive and
+	// omitempty so pre-v10 project.yaml files are untouched until first use.
+	LastRetrofitTaskNumber int `yaml:"last_retrofit_task_number,omitempty"`
 }
 
 // ProjectEntry represents an entry in the global projects.yaml index.

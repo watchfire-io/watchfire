@@ -268,6 +268,23 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 		cmds = append(cmds, clearSavedAfter(clearSavedTimeout))
 		return true, tea.Batch(cmds...)
 
+	// ── Definition retrofit (v10 Torch) ───────────────────────────
+	case RetrofitCandidatesMsg:
+		if msg.Count > 0 && m.confirmMode == confirmNone {
+			m.retrofitArchiveCount = msg.Count
+			m.confirmMode = confirmRetrofitArchive
+		}
+		return true, nil
+
+	case RetrofitArchivedMsg:
+		m.statusMessage = fmt.Sprintf("Archived %d folded task(s) to Trash", msg.Count)
+		m.showSaved = true
+		cmds = append(cmds,
+			clearSavedAfter(clearSavedTimeout),
+			loadTasksCmd(m.conn, m.projectID),
+		)
+		return true, tea.Batch(cmds...)
+
 	// ── Export (v6.0 Ember) ───────────────────────────────────────
 	case ExportCompletedMsg:
 		m.statusMessage = "Exported " + msg.Filename
@@ -493,6 +510,17 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 // handleAgentStatus processes agent status messages.
 func (m *Model) handleAgentStatus(msg AgentStatusMsg) tea.Cmd {
 	var cmds []tea.Cmd
+
+	// Retrofit-definition session just ended (v10 Torch): fetch the folded
+	// archive candidates so the confirm-gated "Archive N folded tasks"
+	// prompt can be offered. Only the natural-completion transition lands
+	// here — an explicit user stop clears agentStatus via AgentStoppedMsg
+	// before any poll, so an interrupted retrofit never offers the archive.
+	prev := m.agentStatus
+	if prev != nil && prev.IsRunning && prev.Mode == "retrofit-definition" &&
+		(msg.Status == nil || !msg.Status.IsRunning) && m.conn != nil {
+		cmds = append(cmds, retrofitCandidatesCmd(m.conn, m.projectID))
+	}
 
 	m.agentStatus = msg.Status
 	m.taskList.SetAgentStatus(msg.Status)

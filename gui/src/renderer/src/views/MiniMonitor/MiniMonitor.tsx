@@ -160,6 +160,8 @@ function workingLabel(status: AgentStatus | undefined): string {
       return status.wildfirePhase ? `Wildfire · ${status.wildfirePhase}` : 'Wildfire'
     case 'generate-definition':
       return 'Generating definition'
+    case 'retrofit-definition':
+      return 'Retrofitting definition'
     case 'generate-tasks':
       return 'Planning tasks'
     default:

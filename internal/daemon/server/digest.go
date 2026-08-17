@@ -280,7 +280,7 @@ func renderDigestMarkdown(windowStart, windowEnd time.Time) (body, summary strin
 			}
 			ps := projectStats{Name: entry.Name}
 			for _, t := range tasks {
-				if t == nil || t.IsDeleted() {
+				if t == nil || t.HiddenFromInsights() {
 					continue
 				}
 				if t.CreatedAt.After(windowStart) && !t.CreatedAt.After(windowEnd) {

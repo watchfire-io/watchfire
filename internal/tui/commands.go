@@ -400,6 +400,45 @@ func deleteTaskCmd(conn *grpc.ClientConn, projectID string, taskNumber int32) te
 	}
 }
 
+// retrofitCandidatesCmd fetches the folded-task archive candidates after a
+// retrofit-definition session (dry run — nothing is archived). The count
+// drives the confirm-gated "Archive N folded tasks" prompt.
+func retrofitCandidatesCmd(conn *grpc.ClientConn, projectID string) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewTaskServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+
+		list, err := client.ArchiveRetrofitTasks(ctx, &pb.ArchiveRetrofitRequest{
+			ProjectId: projectID,
+			DryRun:    true,
+		})
+		if err != nil {
+			return ErrorMsg{Err: fmt.Errorf("failed to list folded tasks: %w", err)}
+		}
+		return RetrofitCandidatesMsg{Count: len(list.Tasks)}
+	}
+}
+
+// archiveRetrofitTasksCmd archives the folded done tasks to Trash. Only
+// dispatched after the user confirmed the confirmRetrofitArchive prompt.
+func archiveRetrofitTasksCmd(conn *grpc.ClientConn, projectID string) tea.Cmd {
+	return func() tea.Msg {
+		client := pb.NewTaskServiceClient(conn)
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+
+		list, err := client.ArchiveRetrofitTasks(ctx, &pb.ArchiveRetrofitRequest{
+			ProjectId: projectID,
+			DryRun:    false,
+		})
+		if err != nil {
+			return ErrorMsg{Err: fmt.Errorf("failed to archive folded tasks: %w", err)}
+		}
+		return RetrofitArchivedMsg{Count: len(list.Tasks)}
+	}
+}
+
 // reorderTasksCmd dispatches TaskService.ReorderTasks with the full new
 // ordered list of active task numbers. On success the dispatcher accepts
 // the response as authoritative; on failure the dispatcher reverts the

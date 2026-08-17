@@ -76,6 +76,18 @@ type AgentStoppedMsg struct{}
 // ScreenEndedMsg signals the screen subscription stream ended.
 type ScreenEndedMsg struct{}
 
+// RetrofitCandidatesMsg carries the folded-task count after a
+// retrofit-definition session ends (v10 Torch). Count > 0 arms the
+// confirm-gated "Archive N folded tasks" prompt.
+type RetrofitCandidatesMsg struct {
+	Count int
+}
+
+// RetrofitArchivedMsg signals the folded tasks were archived to Trash.
+type RetrofitArchivedMsg struct {
+	Count int
+}
+
 // TaskDeletedMsg signals a task was deleted.
 type TaskDeletedMsg struct{}
 
