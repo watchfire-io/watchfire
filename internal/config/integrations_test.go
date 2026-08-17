@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/watchfire-io/watchfire/internal/models"
 )
@@ -281,4 +282,99 @@ func contains(s, sub string) bool {
 		}
 	}
 	return false
+}
+
+func TestIntegrationsRoundTripTelegramTokenViaKeyring(t *testing.T) {
+	tmp := withTempHome(t)
+	fk := withFakeKeyring(t)
+
+	pairedAt := time.Date(2026, 8, 17, 10, 0, 0, 0, time.UTC)
+	cfg := &models.IntegrationsConfig{
+		Telegram: &models.TelegramConfig{
+			Enabled:  true,
+			BotToken: "123456:tg-secret-token",
+			EnabledEvents: models.EventBitmask{
+				TaskFailed:  true,
+				RunComplete: true,
+			},
+			PairedChats: []models.TelegramPairedChat{{
+				ChatID:           987654321,
+				UserID:           987654321,
+				Username:         "nuno",
+				PairedAt:         pairedAt,
+				DefaultProjectID: "proj-1",
+				Muted:            false,
+				Watch:            true,
+			}},
+		},
+	}
+	if err := SaveIntegrations(cfg); err != nil {
+		t.Fatalf("SaveIntegrations: %v", err)
+	}
+
+	// The caller's runtime token must survive the save untouched.
+	if cfg.Telegram.BotToken != "123456:tg-secret-token" {
+		t.Fatalf("caller's runtime token clobbered: %q", cfg.Telegram.BotToken)
+	}
+
+	// The YAML on disk must carry only the reference — never the token.
+	yamlPath := filepath.Join(tmp, ".watchfire", "integrations.yaml")
+	raw, err := os.ReadFile(yamlPath)
+	if err != nil {
+		t.Fatalf("read yaml: %v", err)
+	}
+	if contains(string(raw), "tg-secret-token") {
+		t.Fatalf("telegram token leaked into YAML:\n%s", raw)
+	}
+	if !contains(string(raw), "bot_token_ref") {
+		t.Fatalf("bot_token_ref missing from YAML:\n%s", raw)
+	}
+
+	loaded, err := LoadIntegrations()
+	if err != nil {
+		t.Fatalf("LoadIntegrations: %v", err)
+	}
+	tg := loaded.Telegram
+	if tg == nil {
+		t.Fatal("telegram config missing after round-trip")
+	}
+	if !tg.Enabled {
+		t.Fatal("enabled flag lost")
+	}
+	if tg.BotTokenRef != SecretKeyForIntegration("telegram", "bot_token") {
+		t.Fatalf("bot_token_ref = %q", tg.BotTokenRef)
+	}
+	if tg.BotToken != "123456:tg-secret-token" {
+		t.Fatalf("token not resolved from secret store on load: %q", tg.BotToken)
+	}
+	if !tg.EnabledEvents.TaskFailed || !tg.EnabledEvents.RunComplete || tg.EnabledEvents.WeeklyDigest {
+		t.Fatalf("event bitmask mismatch: %+v", tg.EnabledEvents)
+	}
+	if len(tg.PairedChats) != 1 {
+		t.Fatalf("expected 1 paired chat, got %d", len(tg.PairedChats))
+	}
+	pc := tg.PairedChats[0]
+	if pc.ChatID != 987654321 || pc.UserID != 987654321 || pc.Username != "nuno" ||
+		pc.DefaultProjectID != "proj-1" || pc.Muted || !pc.Watch || !pc.PairedAt.Equal(pairedAt) {
+		t.Fatalf("paired chat round-trip mismatch: %+v", pc)
+	}
+	if v, ok := fk.Get(tg.BotTokenRef); !ok || v != "123456:tg-secret-token" {
+		t.Fatalf("keyring token round-trip failed: ok=%v v=%q", ok, v)
+	}
+}
+
+func TestIntegrationsNoTelegramKeyStaysNil(t *testing.T) {
+	withTempHome(t)
+	withFakeKeyring(t)
+
+	if err := SaveIntegrations(&models.IntegrationsConfig{}); err != nil {
+		t.Fatalf("SaveIntegrations: %v", err)
+	}
+	loaded, err := LoadIntegrations()
+	if err != nil {
+		t.Fatalf("LoadIntegrations: %v", err)
+	}
+	if loaded.Telegram != nil {
+		t.Fatalf("expected nil Telegram config on a telegram-less install, got %+v", loaded.Telegram)
+	}
 }

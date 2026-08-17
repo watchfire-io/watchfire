@@ -974,6 +974,7 @@ enum IntegrationKind {
   SLACK = 1;
   DISCORD = 2;
   GITHUB = 3;
+  TELEGRAM = 4;                        // v10.0 Torch — Telegram bot bridge
 }
 
 // IntegrationEvents is the per-integration event-bitmask. Mirrors the
@@ -1034,6 +1035,31 @@ message GitHubIntegration {
   repeated string project_scopes = 3;
 }
 
+// TelegramPairedChatInfo is one paired Telegram chat as surfaced to the
+// settings UIs. `username` is display-only — authorization is by chat_id
+// membership in the paired list, never by username.
+message TelegramPairedChatInfo {
+  int64 chat_id = 1;
+  string username = 2;                 // Display only, never trusted for auth
+  google.protobuf.Timestamp paired_at = 3;
+  string default_project_id = 4;       // Project selected via /use, persisted per chat
+  bool muted = 5;                      // Outbound events paused for this chat
+  bool watch = 6;                      // Live conversation relay enabled
+}
+
+// TelegramIntegration is the single-instance Telegram bridge config
+// (v10.0 Torch). The bot token follows the write-only secret convention:
+// Save accepts `bot_token` (pushes it to the keyring); List + the Save
+// response return only `token_set`. An empty `bot_token` on update means
+// "keep the stored token".
+message TelegramIntegration {
+  bool enabled = 1;
+  string bot_token = 2;                // Write-only — never returned by List
+  bool token_set = 3;                  // True if the keyring carries a token
+  IntegrationEvents enabled_events = 4;
+  repeated TelegramPairedChatInfo paired_chats = 5;
+}
+
 // IntegrationsConfig is the root document the IntegrationsService
 // returns from List + as the response to Save / Delete.
 message IntegrationsConfig {
@@ -1041,6 +1067,7 @@ message IntegrationsConfig {
   repeated SlackIntegration slack = 2;
   repeated DiscordIntegration discord = 3;
   GitHubIntegration github = 4;
+  TelegramIntegration telegram = 5;    // v10.0 Torch — unset when unconfigured
 }
 
 message ListIntegrationsRequest {
@@ -1058,6 +1085,7 @@ message SaveIntegrationRequest {
     SlackIntegration slack = 3;
     DiscordIntegration discord = 4;
     GitHubIntegration github = 5;
+    TelegramIntegration telegram = 6;  // v10.0 Torch
   }
 }
 
