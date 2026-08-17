@@ -1145,6 +1145,61 @@ service IntegrationsService {
   // the install end-to-end. Returns ok=false when the bot token is
   // missing / the channel is invalid / the upstream call fails.
   rpc PostOAuthHello(PostOAuthHelloRequest) returns (PostOAuthHelloResponse);
+
+  // v10.0 Torch (task 0136): Telegram pairing. Pairing is the Telegram
+  // bridge's security boundary — bots are globally reachable, so only
+  // chats that redeem a one-time code become part of the allowlist.
+  // BeginTelegramPairing requires the bridge to be running (Telegram
+  // enabled + bot token stored) and returns FAILED_PRECONDITION
+  // otherwise. RevokeTelegramChat removes a chat from the allowlist,
+  // persists, and drops it from the live bridge immediately.
+  rpc BeginTelegramPairing(BeginTelegramPairingRequest) returns (BeginTelegramPairingResponse);
+  rpc GetTelegramPairingStatus(GetTelegramPairingStatusRequest) returns (TelegramPairingStatus);
+  rpc RevokeTelegramChat(RevokeTelegramChatRequest) returns (IntegrationsConfig);
+}
+
+// ============================================================================
+// Telegram Pairing Messages (v10.0 Torch, task 0136)
+// ============================================================================
+
+message BeginTelegramPairingRequest {
+  RequestMeta meta = 1;
+}
+
+message BeginTelegramPairingResponse {
+  string code = 1;                       // 8-char one-time code (unambiguous alphabet)
+  google.protobuf.Timestamp expires_at = 2;
+  string deep_link = 3;                  // https://t.me/<bot_username>?start=<code>
+  string bot_username = 4;               // from getMe, cached daemon-side
+}
+
+message GetTelegramPairingStatusRequest {
+  RequestMeta meta = 1;
+}
+
+// TelegramPairingState is the lifecycle of the single active pairing
+// attempt. NONE = no code has been issued (or the daemon restarted);
+// PENDING = a code is live and unredeemed; PAIRED = the most recent code
+// was redeemed (chat carries the result); EXPIRED = the code's 10-minute
+// TTL lapsed unredeemed.
+enum TelegramPairingState {
+  TELEGRAM_PAIRING_NONE = 0;
+  TELEGRAM_PAIRING_PENDING = 1;
+  TELEGRAM_PAIRING_PAIRED = 2;
+  TELEGRAM_PAIRING_EXPIRED = 3;
+}
+
+message TelegramPairingStatus {
+  TelegramPairingState state = 1;
+  google.protobuf.Timestamp expires_at = 2;  // set while state == PENDING
+  TelegramPairedChatInfo chat = 3;           // set when state == PAIRED
+  bool bridge_running = 4;                   // long-poll goroutine alive
+  string bot_username = 5;                   // cached getMe result; empty if unresolved
+}
+
+message RevokeTelegramChatRequest {
+  RequestMeta meta = 1;
+  int64 chat_id = 2;
 }
 
 // OAuthProvider identifies which OAuth bot-token install flow a

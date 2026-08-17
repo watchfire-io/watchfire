@@ -7,6 +7,7 @@ import (
 	"github.com/watchfire-io/watchfire/internal/config"
 	"github.com/watchfire-io/watchfire/internal/daemon/discord"
 	"github.com/watchfire-io/watchfire/internal/daemon/echo"
+	"github.com/watchfire-io/watchfire/internal/daemon/telegram"
 	pb "github.com/watchfire-io/watchfire/proto"
 )
 
@@ -14,14 +15,20 @@ import (
 // live Echo server. The status RPC degrades gracefully when EchoServer
 // returns nil — no listening, no last-delivery timestamps.
 type fakeInboundProvider struct {
-	srv         *echo.Server
-	registrar   *discord.Registrar
-	restartHits int
+	srv                 *echo.Server
+	registrar           *discord.Registrar
+	restartHits         int
+	bridge              *telegram.Bridge
+	pairing             *telegram.Pairing
+	telegramRestartHits int
 }
 
 func (f *fakeInboundProvider) EchoServer() *echo.Server             { return f.srv }
 func (f *fakeInboundProvider) DiscordRegistrar() *discord.Registrar { return f.registrar }
 func (f *fakeInboundProvider) restartEchoServer()                   { f.restartHits++ }
+func (f *fakeInboundProvider) TelegramBridge() *telegram.Bridge     { return f.bridge }
+func (f *fakeInboundProvider) TelegramPairing() *telegram.Pairing   { return f.pairing }
+func (f *fakeInboundProvider) restartTelegramBridge()               { f.telegramRestartHits++ }
 
 // TestSaveInboundConfigRoundTrip: SaveInboundConfig persists the listen
 // address + public URL + per-provider secrets, scrubs plaintext secrets

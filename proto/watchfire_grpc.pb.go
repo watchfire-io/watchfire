@@ -2949,16 +2949,19 @@ var InsightsService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	IntegrationsService_ListIntegrations_FullMethodName  = "/watchfire.IntegrationsService/ListIntegrations"
-	IntegrationsService_SaveIntegration_FullMethodName   = "/watchfire.IntegrationsService/SaveIntegration"
-	IntegrationsService_DeleteIntegration_FullMethodName = "/watchfire.IntegrationsService/DeleteIntegration"
-	IntegrationsService_TestIntegration_FullMethodName   = "/watchfire.IntegrationsService/TestIntegration"
-	IntegrationsService_GetInboundStatus_FullMethodName  = "/watchfire.IntegrationsService/GetInboundStatus"
-	IntegrationsService_SaveInboundConfig_FullMethodName = "/watchfire.IntegrationsService/SaveInboundConfig"
-	IntegrationsService_BeginOAuth_FullMethodName        = "/watchfire.IntegrationsService/BeginOAuth"
-	IntegrationsService_GetOAuthStatus_FullMethodName    = "/watchfire.IntegrationsService/GetOAuthStatus"
-	IntegrationsService_CancelOAuth_FullMethodName       = "/watchfire.IntegrationsService/CancelOAuth"
-	IntegrationsService_PostOAuthHello_FullMethodName    = "/watchfire.IntegrationsService/PostOAuthHello"
+	IntegrationsService_ListIntegrations_FullMethodName         = "/watchfire.IntegrationsService/ListIntegrations"
+	IntegrationsService_SaveIntegration_FullMethodName          = "/watchfire.IntegrationsService/SaveIntegration"
+	IntegrationsService_DeleteIntegration_FullMethodName        = "/watchfire.IntegrationsService/DeleteIntegration"
+	IntegrationsService_TestIntegration_FullMethodName          = "/watchfire.IntegrationsService/TestIntegration"
+	IntegrationsService_GetInboundStatus_FullMethodName         = "/watchfire.IntegrationsService/GetInboundStatus"
+	IntegrationsService_SaveInboundConfig_FullMethodName        = "/watchfire.IntegrationsService/SaveInboundConfig"
+	IntegrationsService_BeginOAuth_FullMethodName               = "/watchfire.IntegrationsService/BeginOAuth"
+	IntegrationsService_GetOAuthStatus_FullMethodName           = "/watchfire.IntegrationsService/GetOAuthStatus"
+	IntegrationsService_CancelOAuth_FullMethodName              = "/watchfire.IntegrationsService/CancelOAuth"
+	IntegrationsService_PostOAuthHello_FullMethodName           = "/watchfire.IntegrationsService/PostOAuthHello"
+	IntegrationsService_BeginTelegramPairing_FullMethodName     = "/watchfire.IntegrationsService/BeginTelegramPairing"
+	IntegrationsService_GetTelegramPairingStatus_FullMethodName = "/watchfire.IntegrationsService/GetTelegramPairingStatus"
+	IntegrationsService_RevokeTelegramChat_FullMethodName       = "/watchfire.IntegrationsService/RevokeTelegramChat"
 )
 
 // IntegrationsServiceClient is the client API for IntegrationsService service.
@@ -2996,6 +2999,16 @@ type IntegrationsServiceClient interface {
 	// the install end-to-end. Returns ok=false when the bot token is
 	// missing / the channel is invalid / the upstream call fails.
 	PostOAuthHello(ctx context.Context, in *PostOAuthHelloRequest, opts ...grpc.CallOption) (*PostOAuthHelloResponse, error)
+	// v10.0 Torch (task 0136): Telegram pairing. Pairing is the Telegram
+	// bridge's security boundary — bots are globally reachable, so only
+	// chats that redeem a one-time code become part of the allowlist.
+	// BeginTelegramPairing requires the bridge to be running (Telegram
+	// enabled + bot token stored) and returns FAILED_PRECONDITION
+	// otherwise. RevokeTelegramChat removes a chat from the allowlist,
+	// persists, and drops it from the live bridge immediately.
+	BeginTelegramPairing(ctx context.Context, in *BeginTelegramPairingRequest, opts ...grpc.CallOption) (*BeginTelegramPairingResponse, error)
+	GetTelegramPairingStatus(ctx context.Context, in *GetTelegramPairingStatusRequest, opts ...grpc.CallOption) (*TelegramPairingStatus, error)
+	RevokeTelegramChat(ctx context.Context, in *RevokeTelegramChatRequest, opts ...grpc.CallOption) (*IntegrationsConfig, error)
 }
 
 type integrationsServiceClient struct {
@@ -3106,6 +3119,36 @@ func (c *integrationsServiceClient) PostOAuthHello(ctx context.Context, in *Post
 	return out, nil
 }
 
+func (c *integrationsServiceClient) BeginTelegramPairing(ctx context.Context, in *BeginTelegramPairingRequest, opts ...grpc.CallOption) (*BeginTelegramPairingResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(BeginTelegramPairingResponse)
+	err := c.cc.Invoke(ctx, IntegrationsService_BeginTelegramPairing_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *integrationsServiceClient) GetTelegramPairingStatus(ctx context.Context, in *GetTelegramPairingStatusRequest, opts ...grpc.CallOption) (*TelegramPairingStatus, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(TelegramPairingStatus)
+	err := c.cc.Invoke(ctx, IntegrationsService_GetTelegramPairingStatus_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *integrationsServiceClient) RevokeTelegramChat(ctx context.Context, in *RevokeTelegramChatRequest, opts ...grpc.CallOption) (*IntegrationsConfig, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(IntegrationsConfig)
+	err := c.cc.Invoke(ctx, IntegrationsService_RevokeTelegramChat_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // IntegrationsServiceServer is the server API for IntegrationsService service.
 // All implementations must embed UnimplementedIntegrationsServiceServer
 // for forward compatibility.
@@ -3141,6 +3184,16 @@ type IntegrationsServiceServer interface {
 	// the install end-to-end. Returns ok=false when the bot token is
 	// missing / the channel is invalid / the upstream call fails.
 	PostOAuthHello(context.Context, *PostOAuthHelloRequest) (*PostOAuthHelloResponse, error)
+	// v10.0 Torch (task 0136): Telegram pairing. Pairing is the Telegram
+	// bridge's security boundary — bots are globally reachable, so only
+	// chats that redeem a one-time code become part of the allowlist.
+	// BeginTelegramPairing requires the bridge to be running (Telegram
+	// enabled + bot token stored) and returns FAILED_PRECONDITION
+	// otherwise. RevokeTelegramChat removes a chat from the allowlist,
+	// persists, and drops it from the live bridge immediately.
+	BeginTelegramPairing(context.Context, *BeginTelegramPairingRequest) (*BeginTelegramPairingResponse, error)
+	GetTelegramPairingStatus(context.Context, *GetTelegramPairingStatusRequest) (*TelegramPairingStatus, error)
+	RevokeTelegramChat(context.Context, *RevokeTelegramChatRequest) (*IntegrationsConfig, error)
 	mustEmbedUnimplementedIntegrationsServiceServer()
 }
 
@@ -3180,6 +3233,15 @@ func (UnimplementedIntegrationsServiceServer) CancelOAuth(context.Context, *Canc
 }
 func (UnimplementedIntegrationsServiceServer) PostOAuthHello(context.Context, *PostOAuthHelloRequest) (*PostOAuthHelloResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method PostOAuthHello not implemented")
+}
+func (UnimplementedIntegrationsServiceServer) BeginTelegramPairing(context.Context, *BeginTelegramPairingRequest) (*BeginTelegramPairingResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method BeginTelegramPairing not implemented")
+}
+func (UnimplementedIntegrationsServiceServer) GetTelegramPairingStatus(context.Context, *GetTelegramPairingStatusRequest) (*TelegramPairingStatus, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetTelegramPairingStatus not implemented")
+}
+func (UnimplementedIntegrationsServiceServer) RevokeTelegramChat(context.Context, *RevokeTelegramChatRequest) (*IntegrationsConfig, error) {
+	return nil, status.Error(codes.Unimplemented, "method RevokeTelegramChat not implemented")
 }
 func (UnimplementedIntegrationsServiceServer) mustEmbedUnimplementedIntegrationsServiceServer() {}
 func (UnimplementedIntegrationsServiceServer) testEmbeddedByValue()                             {}
@@ -3382,6 +3444,60 @@ func _IntegrationsService_PostOAuthHello_Handler(srv interface{}, ctx context.Co
 	return interceptor(ctx, in, info, handler)
 }
 
+func _IntegrationsService_BeginTelegramPairing_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(BeginTelegramPairingRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IntegrationsServiceServer).BeginTelegramPairing(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IntegrationsService_BeginTelegramPairing_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IntegrationsServiceServer).BeginTelegramPairing(ctx, req.(*BeginTelegramPairingRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IntegrationsService_GetTelegramPairingStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetTelegramPairingStatusRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IntegrationsServiceServer).GetTelegramPairingStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IntegrationsService_GetTelegramPairingStatus_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IntegrationsServiceServer).GetTelegramPairingStatus(ctx, req.(*GetTelegramPairingStatusRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _IntegrationsService_RevokeTelegramChat_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RevokeTelegramChatRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(IntegrationsServiceServer).RevokeTelegramChat(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: IntegrationsService_RevokeTelegramChat_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(IntegrationsServiceServer).RevokeTelegramChat(ctx, req.(*RevokeTelegramChatRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // IntegrationsService_ServiceDesc is the grpc.ServiceDesc for IntegrationsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -3428,6 +3544,18 @@ var IntegrationsService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PostOAuthHello",
 			Handler:    _IntegrationsService_PostOAuthHello_Handler,
+		},
+		{
+			MethodName: "BeginTelegramPairing",
+			Handler:    _IntegrationsService_BeginTelegramPairing_Handler,
+		},
+		{
+			MethodName: "GetTelegramPairingStatus",
+			Handler:    _IntegrationsService_GetTelegramPairingStatus_Handler,
+		},
+		{
+			MethodName: "RevokeTelegramChat",
+			Handler:    _IntegrationsService_RevokeTelegramChat_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
