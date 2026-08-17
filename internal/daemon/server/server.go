@@ -412,7 +412,7 @@ func (s *Server) startEchoServer() {
 		cfg = models.NewIntegrationsConfig()
 	}
 	srv := echo.New(cfg.Inbound, log.Default())
-	registerInboundProviderHandlers(srv, cfg.Inbound, s.notifyBus)
+	s.registerInboundProviderHandlers(srv, cfg.Inbound)
 	ctx, cancel := context.WithCancel(context.Background())
 	s.echoServer = srv
 	s.echoCancel = cancel
@@ -424,11 +424,14 @@ func (s *Server) startEchoServer() {
 }
 
 // registerInboundProviderHandlers wires the v5.0+ inbound webhook
-// handlers (GitHub + GitLab + Bitbucket) onto the Echo server. Each
-// handler is registered only when the inbound config carries the
-// corresponding secret reference — this keeps the surface to the
-// providers the user has actually configured and avoids a 401-flood
-// from a misrouted scanner.
+// handlers (GitHub + GitLab + Bitbucket) and — since v10.0 Torch — the
+// Slack slash-command / interactivity and Discord interactions handlers
+// onto the Echo server. Each handler is registered only when the
+// inbound config carries the corresponding secret reference — this
+// keeps the surface to the providers the user has actually configured
+// and avoids a 401-flood from a misrouted scanner. Registration is not
+// activation: with no inbound config the echo mux serves exactly the
+// health route, byte-for-byte as before.
 //
 // `Inbound.GitHost` selects which Git host this Watchfire is paired
 // with; the other handlers stay registered regardless because their
@@ -442,7 +445,8 @@ func (s *Server) startEchoServer() {
 // Bitbucket do not emit on flush — their inbound paths are reachable
 // from non-auto-PR projects, and the user-visible "merged" signal there
 // flows through the existing watcher → handleTaskChanged path.
-func registerInboundProviderHandlers(srv *echo.Server, in models.InboundConfig, bus *notify.Bus) {
+func (s *Server) registerInboundProviderHandlers(srv *echo.Server, in models.InboundConfig) {
+	bus := s.notifyBus
 	flush := newTaskFlusher()
 	if in.GitHubSecretRef != "" {
 		ref := in.GitHubSecretRef
@@ -507,6 +511,67 @@ func registerInboundProviderHandlers(srv *echo.Server, in models.InboundConfig, 
 		})
 		srv.RegisterProvider(http.MethodPost, "/echo/bitbucket/webhook", bh)
 		log.Printf("INFO: echo: bitbucket webhook handler registered")
+	}
+	// v10.0 Torch — Slack slash commands + interactivity. Written and
+	// tested in v5.x but never registered until now. Gated on the same
+	// pattern as the Git hosts: the handler only exists on the mux when
+	// the signing-secret reference is configured, and the secret itself
+	// resolves through the keyring per request so a rotation in Settings
+	// takes effect without a daemon restart.
+	if in.SlackSecretRef != "" {
+		ref := in.SlackSecretRef
+		resolveSlackSecret := echo.ResolveSigningSecretFromKeyring(func() (string, error) {
+			v, ok := config.LookupIntegrationSecret(ref)
+			if !ok {
+				return "", fmt.Errorf("slack signing secret not in keyring")
+			}
+			return v, nil
+		})
+		cmds := echo.NewSlackCommandsHandler(echo.SlackCommandsHandlerConfig{
+			ResolveSigningSecret: resolveSlackSecret,
+			Idempotency:          echo.NewCache(0, 0),
+			CommandContextFor:    s.slackCommandContextFor,
+			RefundOnReplay: func(r *http.Request) {
+				srv.RefundRateLimit(r)
+			},
+			RecordDelivery: func() { srv.RecordDelivery("slack") },
+			Logger:         log.Default(),
+		})
+		srv.RegisterProvider(http.MethodPost, "/echo/slack/commands", cmds)
+		interactivity := echo.NewSlackInteractivityHandler(echo.SlackHandlerConfig{
+			ResolveSigningSecret: resolveSlackSecret,
+			Idempotency:          echo.NewCache(0, 0),
+			CommandContextFor:    s.slackCommandContextFor,
+			RefundOnReplay: func(r *http.Request) {
+				srv.RefundRateLimit(r)
+			},
+			Logger: log.Default(),
+		})
+		srv.RegisterProvider(http.MethodPost, "/echo/slack/interactivity", interactivity)
+		log.Printf("INFO: echo: slack commands + interactivity handlers registered")
+	}
+	// v10.0 Torch — Discord interactions. Same registration ≠ activation
+	// contract: only present on the mux when the application's Ed25519
+	// public-key reference is configured.
+	if in.DiscordPublicKeyRef != "" {
+		ref := in.DiscordPublicKeyRef
+		dh := echo.NewDiscordHandler(echo.DiscordHandlerConfig{
+			ResolvePublicKey: echo.ResolvePublicKeyFromHex(func() (string, error) {
+				v, ok := config.LookupIntegrationSecret(ref)
+				if !ok {
+					return "", fmt.Errorf("discord public key not in keyring")
+				}
+				return v, nil
+			}),
+			Idempotency:       echo.NewCache(0, 0),
+			CommandContextFor: s.discordCommandContextFor,
+			RefundOnReplay: func(r *http.Request) {
+				srv.RefundRateLimit(r)
+			},
+			Logger: log.Default(),
+		})
+		srv.RegisterProvider(http.MethodPost, "/echo/discord/interactions", dh)
+		log.Printf("INFO: echo: discord interactions handler registered")
 	}
 }
 
