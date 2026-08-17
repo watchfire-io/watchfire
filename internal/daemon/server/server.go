@@ -31,6 +31,7 @@ import (
 	"github.com/watchfire-io/watchfire/internal/daemon/project"
 	"github.com/watchfire-io/watchfire/internal/daemon/relay"
 	"github.com/watchfire-io/watchfire/internal/daemon/task"
+	"github.com/watchfire-io/watchfire/internal/daemon/telegram"
 	"github.com/watchfire-io/watchfire/internal/daemon/tray"
 	"github.com/watchfire-io/watchfire/internal/daemon/watcher"
 	"github.com/watchfire-io/watchfire/internal/models"
@@ -59,8 +60,15 @@ type Server struct {
 	// or when the gateway client has been torn down for restart.
 	discordRegistrar *discord.Registrar
 	discordGwCancel  context.CancelFunc
-	integrationsSvc  *integrationsService
-	updateState      UpdateState
+	// v10.0 Torch — Telegram long-poll bridge. nil unless Telegram is
+	// enabled AND a bot token resolves from the keyring. The pairing
+	// manager is server-owned (not bridge-owned) so a bridge restart on
+	// config save doesn't strand an in-flight pairing code.
+	telegramBridge  *telegram.Bridge
+	telegramCancel  context.CancelFunc
+	telegramPairing *telegram.Pairing
+	integrationsSvc *integrationsService
+	updateState     UpdateState
 }
 
 // New creates a new server listening on the specified port.
@@ -304,6 +312,8 @@ func New(port int) (*Server, error) {
 	// "Listening status" pill turns red.
 	srv.startEchoServer()
 	srv.startDiscordRegistrar()
+	srv.telegramPairing = telegram.NewPairing()
+	srv.startTelegramBridge()
 	srv.integrationsSvc.bindEchoServer(srv)
 
 	// Start watcher event processing loop
@@ -386,6 +396,10 @@ func (s *Server) Stop() {
 	// Tear down the v8.x Discord auto-registrar's gateway connection.
 	if s.discordGwCancel != nil {
 		s.discordGwCancel()
+	}
+	// Tear down the v10.0 Torch Telegram long-poll bridge.
+	if s.telegramCancel != nil {
+		s.telegramCancel()
 	}
 	// Stop watcher before agents (prevents new task-done events during shutdown)
 	if s.watcher != nil {
@@ -651,6 +665,49 @@ func (s *Server) restartDiscordRegistrar() {
 	s.discordRegistrar = nil
 	s.startDiscordRegistrar()
 }
+
+// startTelegramBridge (v10.0 Torch) launches the Telegram long-poll
+// bridge in a background goroutine. No-op unless Telegram is enabled in
+// integrations.yaml AND the bot token resolves from the keyring — an
+// unconfigured install starts no goroutine and dials nothing.
+func (s *Server) startTelegramBridge() {
+	cfg, err := config.LoadIntegrations()
+	if err != nil {
+		log.Printf("WARN: telegram bridge: load integrations failed: %v — bridge disabled", err)
+		return
+	}
+	hostname, _ := os.Hostname()
+	bridge := telegram.NewFromConfig(cfg, s.telegramPairing, hostname, log.Default())
+	if bridge == nil {
+		return
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	s.telegramBridge = bridge
+	s.telegramCancel = cancel
+	go bridge.Run(ctx)
+	log.Printf("INFO: telegram bridge: long-poll started")
+}
+
+// restartTelegramBridge tears down the running bridge and re-spawns it
+// against the freshly-saved config. Invoked from SaveIntegration /
+// DeleteIntegration when the Telegram config changes, mirroring
+// restartEchoServer / restartDiscordRegistrar.
+func (s *Server) restartTelegramBridge() {
+	if s.telegramCancel != nil {
+		s.telegramCancel()
+		s.telegramCancel = nil
+	}
+	s.telegramBridge = nil
+	s.startTelegramBridge()
+}
+
+// TelegramBridge exposes the live bridge for the IntegrationsService
+// pairing RPCs. Returns nil when the bridge is not running (Telegram
+// disabled or token absent) — callers must nil-check.
+func (s *Server) TelegramBridge() *telegram.Bridge { return s.telegramBridge }
+
+// TelegramPairing exposes the server-owned pairing manager.
+func (s *Server) TelegramPairing() *telegram.Pairing { return s.telegramPairing }
 
 // DiscordRegistrar exposes the Discord auto-registrar so the
 // IntegrationsService can surface per-guild registration status in

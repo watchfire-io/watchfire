@@ -16,6 +16,7 @@ import (
 	"github.com/watchfire-io/watchfire/internal/daemon/echo"
 	"github.com/watchfire-io/watchfire/internal/daemon/notify"
 	"github.com/watchfire-io/watchfire/internal/daemon/relay"
+	"github.com/watchfire-io/watchfire/internal/daemon/telegram"
 	"github.com/watchfire-io/watchfire/internal/daemon/telegrambot"
 	"github.com/watchfire-io/watchfire/internal/models"
 	pb "github.com/watchfire-io/watchfire/proto"
@@ -54,6 +55,13 @@ type inboundProvider interface {
 	EchoServer() *echo.Server
 	DiscordRegistrar() *discord.Registrar
 	restartEchoServer()
+
+	// v10.0 Torch — Telegram bridge access for the pairing RPCs +
+	// restart-on-config-change. TelegramBridge returns nil when the
+	// bridge is not running.
+	TelegramBridge() *telegram.Bridge
+	TelegramPairing() *telegram.Pairing
+	restartTelegramBridge()
 }
 
 func newIntegrationsService() *integrationsService {
@@ -113,6 +121,12 @@ func (s *integrationsService) SaveIntegration(_ context.Context, req *pb.SaveInt
 	if err := config.SaveIntegrations(cfg); err != nil {
 		return nil, fmt.Errorf("save integrations: %w", err)
 	}
+	// A Telegram save may have flipped enabled / rotated the token —
+	// bounce the long-poll bridge so it takes effect without a daemon
+	// restart (mirrors restartEchoServer on SaveInboundConfig).
+	if _, isTelegram := req.GetPayload().(*pb.SaveIntegrationRequest_Telegram); isTelegram && s.server != nil {
+		s.server.restartTelegramBridge()
+	}
 	// Reload so the response reflects what's actually on disk (handles
 	// any scrubbing the save path applied).
 	cfg, err = config.LoadIntegrations()
@@ -159,6 +173,11 @@ func (s *integrationsService) DeleteIntegration(_ context.Context, req *pb.Delet
 
 	if err := config.SaveIntegrations(cfg); err != nil {
 		return nil, err
+	}
+	// Deleting the Telegram integration must stop the long-poll bridge
+	// immediately.
+	if req.GetKind() == pb.IntegrationKind_TELEGRAM && s.server != nil {
+		s.server.restartTelegramBridge()
 	}
 	cfg, err = config.LoadIntegrations()
 	if err != nil {
