@@ -9,29 +9,38 @@ import (
 	"testing"
 )
 
-// The v10 Torch ground rule for the Telegram bridge is that it only
-// ever READS from agent sessions: it must never resize the PTY (that
-// would fight the TUI/GUI) and never write to it (input injection is
-// the explicit /say path, task 0142 — and even that will live behind
-// its own guarded seam). Watch mode observes sessions through the
+// The v10 Torch ground rule for the Telegram bridge is that it never
+// resizes the PTY (that would fight the TUI/GUI) and never writes to
+// it — with a single exception: the explicit /say verb (task 0142),
+// whose injection lives in exactly one function so it can be
+// allowlisted precisely. Watch mode observes sessions through the
 // SessionSource interface, which exposes snapshots and outcomes only.
 //
 // This test is the guard, in the style of the MCP server's stdio-only
 // source check: it parses the telegram package's own source and fails
-// on any reference to Resize or SendInput, and on any import of the
+// on any reference to Resize, on any SendInput reference outside the
+// one sanctioned /say call site, and on any import of the
 // agent-manager package (whose Process would hand back the PTY).
 
 // forbiddenSelectors are method/field names the telegram package must
 // never reference — each one is a write path into a live session.
 var forbiddenSelectors = map[string]string{
-	"Resize":    "resizing the PTY would fight an attached TUI/GUI",
-	"SendInput": "PTY writes are reserved for the explicit /say path (task 0142)",
+	"Resize": "resizing the PTY would fight an attached TUI/GUI",
 }
+
+// The single sanctioned PTY write: Bridge.injectSay in runcontrol.go —
+// the /say path (task 0142). Exactly one SendInput reference must
+// exist in the package, and it must be there.
+const (
+	sayFile = "runcontrol.go"
+	sayFunc = "injectSay"
+)
 
 // forbiddenImports are packages that would hand the bridge a live
 // Process (and with it the PTY). Session observation must go through
-// the read-only SessionSource seam instead. The backend subpackage
-// (transcript discovery) is deliberately allowed.
+// the read-only SessionSource seam, and run control / input injection
+// through the RunController seam. The backend subpackage (transcript
+// discovery) is deliberately allowed.
 var forbiddenImports = []string{
 	"github.com/watchfire-io/watchfire/internal/daemon/agent",
 }
@@ -43,6 +52,7 @@ func TestBridgeNeverWritesToThePTY(t *testing.T) {
 	}
 	fset := token.NewFileSet()
 	checked := 0
+	sayCallSites := 0
 	for _, e := range entries {
 		name := e.Name()
 		if e.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
@@ -64,18 +74,38 @@ func TestBridgeNeverWritesToThePTY(t *testing.T) {
 			}
 		}
 
-		ast.Inspect(file, func(n ast.Node) bool {
-			sel, ok := n.(*ast.SelectorExpr)
-			if !ok {
+		// Walk per top-level declaration so SendInput references can be
+		// attributed to their enclosing function.
+		for _, decl := range file.Decls {
+			funcName := ""
+			if fd, ok := decl.(*ast.FuncDecl); ok {
+				funcName = fd.Name.Name
+			}
+			ast.Inspect(decl, func(n ast.Node) bool {
+				sel, ok := n.(*ast.SelectorExpr)
+				if !ok {
+					return true
+				}
+				if why, banned := forbiddenSelectors[sel.Sel.Name]; banned {
+					t.Errorf("%s: references %s — %s", fset.Position(sel.Pos()), sel.Sel.Name, why)
+				}
+				if sel.Sel.Name == "SendInput" {
+					if name == sayFile && funcName == sayFunc {
+						sayCallSites++
+					} else {
+						t.Errorf("%s: references SendInput — PTY writes are reserved for the single /say path (%s in %s)",
+							fset.Position(sel.Pos()), sayFunc, sayFile)
+					}
+				}
 				return true
-			}
-			if why, banned := forbiddenSelectors[sel.Sel.Name]; banned {
-				t.Errorf("%s: references %s — %s", fset.Position(sel.Pos()), sel.Sel.Name, why)
-			}
-			return true
-		})
+			})
+		}
 	}
 	if checked == 0 {
 		t.Fatal("no source files checked — the guard would pass vacuously")
+	}
+	if sayCallSites != 1 {
+		t.Errorf("expected exactly 1 sanctioned SendInput call site (%s in %s), found %d — the /say path must stay in one guarded function",
+			sayFunc, sayFile, sayCallSites)
 	}
 }

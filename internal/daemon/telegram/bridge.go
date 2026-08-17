@@ -52,16 +52,23 @@ type Config struct {
 	// sessions. nil disables live relays; /watch still persists its
 	// toggle so the setting is ready when a source is wired in.
 	Sessions SessionSource
+	// Runner is the run-control seam (task 0142): /run and /runall
+	// start sessions through it, /say writes input through it. nil
+	// disables those verbs with a clear reply — production always
+	// wires the server implementation in.
+	Runner RunController
 }
 
 // Bridge owns the getUpdates long-poll loop. Pairing (/start, /pair —
 // task 0136) admits chats onto the allowlist; paired chats get the
-// read-only command surface (/projects /use /status /tasks /help —
-// task 0137) plus the live conversation relay (/watch — task 0141).
-// Run-control verbs (/run, /say, …) arrive in 0142.
+// command surface (/projects /use /status /tasks /help — task 0137),
+// the live conversation relay (/watch — task 0141), and the
+// run-control verbs (/run /runall /retry /cancel /screen /say /mute —
+// task 0142, runcontrol.go).
 //
-// The bridge only ever reads from the daemon: it never calls
-// AgentService.Resize and never writes to any agent PTY.
+// The bridge never calls AgentService.Resize, and the only PTY write
+// in the whole package is the explicit /say path (injectSay) — both
+// enforced by the watch_guard_test source guard.
 type Bridge struct {
 	token       string
 	pairing     *Pairing
@@ -70,6 +77,7 @@ type Bridge struct {
 	client      *telegrambot.Client
 	logger      *log.Logger
 	cmdCtxFor   CommandContextFactory
+	runner      RunController
 
 	mu     sync.Mutex
 	paired map[int64]models.TelegramPairedChat
@@ -97,12 +105,14 @@ type Bridge struct {
 	tailPoll      time.Duration
 	outcomeRetry  time.Duration
 
-	// sleepFn + persistFn + setDefaultFn + persistWatchFn + tailerForFn
-	// are test seams; production uses the defaults set in New.
+	// sleepFn + persistFn + setDefaultFn + persistWatchFn +
+	// persistMutedFn + tailerForFn are test seams; production uses the
+	// defaults set in New.
 	sleepFn        func(ctx context.Context, d time.Duration)
 	persistFn      func(chat models.TelegramPairedChat) error
 	setDefaultFn   func(chatID int64, projectID string) error
 	persistWatchFn func(chatID int64, watch bool) error
+	persistMutedFn func(chatID int64, muted bool) error
 	tailerForFn    func(sess *WatchedSession) (TailableTranscript, bool)
 }
 
@@ -128,6 +138,7 @@ func New(cfg Config) *Bridge {
 		client:         client,
 		logger:         logger,
 		cmdCtxFor:      cfg.CommandContextFor,
+		runner:         cfg.Runner,
 		paired:         paired,
 		lastProjects:   make(map[int64][]echo.ProjectInfo),
 		sessions:       cfg.Sessions,
@@ -142,6 +153,7 @@ func New(cfg Config) *Bridge {
 		persistFn:      persistPairedChat,
 		setDefaultFn:   persistDefaultProject,
 		persistWatchFn: persistWatch,
+		persistMutedFn: persistMuted,
 		tailerForFn:    defaultTailerFor,
 	}
 }
@@ -149,7 +161,7 @@ func New(cfg Config) *Bridge {
 // NewFromConfig builds the production Bridge from the loaded
 // integrations config. Returns nil — meaning "do not start anything" —
 // unless Telegram is enabled AND a bot token resolved from the keyring.
-func NewFromConfig(cfg *models.IntegrationsConfig, pairing *Pairing, hostname string, cmdCtxFor CommandContextFactory, sessions SessionSource, logger *log.Logger) *Bridge {
+func NewFromConfig(cfg *models.IntegrationsConfig, pairing *Pairing, hostname string, cmdCtxFor CommandContextFactory, sessions SessionSource, runner RunController, logger *log.Logger) *Bridge {
 	if cfg == nil || cfg.Telegram == nil || !cfg.Telegram.Enabled {
 		return nil
 	}
@@ -166,6 +178,7 @@ func NewFromConfig(cfg *models.IntegrationsConfig, pairing *Pairing, hostname st
 		PairedChats:       cfg.Telegram.PairedChats,
 		CommandContextFor: cmdCtxFor,
 		Sessions:          sessions,
+		Runner:            runner,
 		Logger:            logger,
 	})
 }
@@ -298,7 +311,10 @@ func (b *Bridge) handleUpdate(ctx context.Context, u telegrambot.Update) {
 		return // unpaired silence — unchanged from 0136
 	}
 	if cmd == "" {
-		return // plain text from a paired chat; /say arrives in 0142
+		// Plain text from a paired chat is dropped: input reaches an
+		// agent session only through the explicit /say verb, never
+		// implicitly.
+		return
 	}
 	b.dispatchCommand(ctx, msg, cmd, rest)
 }

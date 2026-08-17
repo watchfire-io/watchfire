@@ -69,7 +69,11 @@ func TestBridgeSetMyCommandsOnStart(t *testing.T) {
 
 	waitFor(t, "setMyCommands", func() bool { return len(fake.recordedMyCommands()) >= 1 })
 	got := fake.recordedMyCommands()[0]
-	for _, cmd := range []string{"projects", "use", "status", "tasks", "help", "pair"} {
+	for _, cmd := range []string{
+		"projects", "use", "status", "tasks",
+		"run", "runall", "retry", "cancel", "screen", "say", "watch", "mute", "unmute",
+		"help", "pair",
+	} {
 		if !strings.Contains(got, `"`+cmd+`"`) {
 			t.Fatalf("setMyCommands payload missing %q: %s", cmd, got)
 		}
@@ -347,9 +351,10 @@ func TestBridgeTasksCommand(t *testing.T) {
 	}
 }
 
-// TestBridgeHelpAndUnknown: /help lists live commands and marks 0142
-// verbs (soon); unknown commands point at /help; a 0142 verb tried
-// early gets the coming-soon hint; plain text stays silent.
+// TestBridgeHelpAndUnknown: /help lists the full 0142 verb set with no
+// "(soon)" markers; unknown commands point at /help; a run-control verb
+// on a bridge built without a RunController draws a clear reply; plain
+// text stays silent.
 func TestBridgeHelpAndUnknown(t *testing.T) {
 	withTestEnv(t)
 	fake := newFakeBotAPI(t,
@@ -370,19 +375,26 @@ func TestBridgeHelpAndUnknown(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	sent := fake.sentMessages()
 	if len(sent) != 3 {
-		t.Fatalf("expected 3 replies (help, unknown, soon) — plain text must stay silent: %+v", sent)
+		t.Fatalf("expected 3 replies (help, unknown, no-runner) — plain text must stay silent: %+v", sent)
 	}
 	help := sent[0].Text
-	for _, want := range []string{"/projects", "/use", "/status", "/tasks", "/help", "(soon)", "/say"} {
+	for _, want := range []string{
+		"/projects", "/use", "/status", "/tasks",
+		"/run", "/runall", "/retry", "/cancel", "/screen", "/say", "/watch", "/mute", "/unmute",
+		"/pair", "/help",
+	} {
 		if !strings.Contains(help, want) {
 			t.Fatalf("/help missing %q: %q", want, help)
 		}
 	}
+	if strings.Contains(help, "soon") {
+		t.Fatalf("/help still carries a coming-soon marker: %q", help)
+	}
 	if !strings.Contains(sent[1].Text, "/help") || !strings.Contains(sent[1].Text, "Unknown command") {
 		t.Fatalf("unknown-command reply: %q", sent[1].Text)
 	}
-	if !strings.Contains(sent[2].Text, "soon") {
-		t.Fatalf("/say should draw the coming-soon hint: %q", sent[2].Text)
+	if !strings.Contains(sent[2].Text, "not wired up") {
+		t.Fatalf("/say without a RunController should say so: %q", sent[2].Text)
 	}
 }
 
