@@ -2,6 +2,7 @@ package telegram
 
 import (
 	"context"
+	"fmt"
 	"html"
 	"log"
 	"strings"
@@ -9,9 +10,16 @@ import (
 	"time"
 
 	"github.com/watchfire-io/watchfire/internal/config"
+	"github.com/watchfire-io/watchfire/internal/daemon/echo"
 	"github.com/watchfire-io/watchfire/internal/daemon/telegrambot"
 	"github.com/watchfire-io/watchfire/internal/models"
 )
+
+// CommandContextFactory builds the echo.CommandContext a paired chat's
+// commands run against. The production factory is the daemon server's
+// telegramCommandContextFor (built on the task-0133 callbacks); tests
+// inject fakes.
+type CommandContextFactory func(chatID, userID int64) echo.CommandContext
 
 // maxBackoff caps the exponential backoff between failed getUpdates
 // polls.
@@ -36,11 +44,16 @@ type Config struct {
 	Client *telegrambot.Client
 	// Logger receives bridge lifecycle + error lines (nil → log.Default()).
 	Logger *log.Logger
+	// CommandContextFor scopes paired-chat commands. nil disables the
+	// command surface (pairing still works) — production always wires
+	// the server factory in.
+	CommandContextFor CommandContextFactory
 }
 
-// Bridge owns the getUpdates long-poll loop. In this task (0136) its
-// dispatcher handles exactly /start <code> and /pair <code>; every
-// other update is ignored. Full command dispatch arrives in 0137.
+// Bridge owns the getUpdates long-poll loop. Pairing (/start, /pair —
+// task 0136) admits chats onto the allowlist; paired chats get the
+// read-only command surface (/projects /use /status /tasks /help —
+// task 0137). Run-control verbs (/run, /say, …) arrive in 0142.
 //
 // The bridge only ever reads from the daemon: it never calls
 // AgentService.Resize and never writes to any agent PTY.
@@ -51,19 +64,26 @@ type Bridge struct {
 	pollTimeout time.Duration
 	client      *telegrambot.Client
 	logger      *log.Logger
+	cmdCtxFor   CommandContextFactory
 
 	mu     sync.Mutex
 	paired map[int64]models.TelegramPairedChat
+	// lastProjects remembers, per chat, the ordering of the most recent
+	// /projects listing so "/use 2" means "the 2nd row of the list I'm
+	// looking at". In-memory only — after a restart /use falls back to
+	// the live FindProjects order, which /projects prints from anyway.
+	lastProjects map[int64][]echo.ProjectInfo
 	// offset is the next getUpdates offset (highest seen update_id + 1).
 	// Kept in memory only — a daemon restart re-reads the backlog, and
 	// Telegram drops acknowledged updates server-side.
 	offset  int64
 	botUser string // cached getMe username
 
-	// sleepFn + persistFn are test seams; production uses the defaults
-	// set in New.
-	sleepFn   func(ctx context.Context, d time.Duration)
-	persistFn func(chat models.TelegramPairedChat) error
+	// sleepFn + persistFn + setDefaultFn are test seams; production
+	// uses the defaults set in New.
+	sleepFn      func(ctx context.Context, d time.Duration)
+	persistFn    func(chat models.TelegramPairedChat) error
+	setDefaultFn func(chatID int64, projectID string) error
 }
 
 // New builds a Bridge from an explicit Config.
@@ -81,22 +101,25 @@ func New(cfg Config) *Bridge {
 		paired[c.ChatID] = c
 	}
 	return &Bridge{
-		token:       cfg.Token,
-		pairing:     cfg.Pairing,
-		hostname:    cfg.Hostname,
-		pollTimeout: cfg.PollTimeout,
-		client:      client,
-		logger:      logger,
-		paired:      paired,
-		sleepFn:     sleepCtx,
-		persistFn:   persistPairedChat,
+		token:        cfg.Token,
+		pairing:      cfg.Pairing,
+		hostname:     cfg.Hostname,
+		pollTimeout:  cfg.PollTimeout,
+		client:       client,
+		logger:       logger,
+		cmdCtxFor:    cfg.CommandContextFor,
+		paired:       paired,
+		lastProjects: make(map[int64][]echo.ProjectInfo),
+		sleepFn:      sleepCtx,
+		persistFn:    persistPairedChat,
+		setDefaultFn: persistDefaultProject,
 	}
 }
 
 // NewFromConfig builds the production Bridge from the loaded
 // integrations config. Returns nil — meaning "do not start anything" —
 // unless Telegram is enabled AND a bot token resolved from the keyring.
-func NewFromConfig(cfg *models.IntegrationsConfig, pairing *Pairing, hostname string, logger *log.Logger) *Bridge {
+func NewFromConfig(cfg *models.IntegrationsConfig, pairing *Pairing, hostname string, cmdCtxFor CommandContextFactory, logger *log.Logger) *Bridge {
 	if cfg == nil || cfg.Telegram == nil || !cfg.Telegram.Enabled {
 		return nil
 	}
@@ -107,11 +130,12 @@ func NewFromConfig(cfg *models.IntegrationsConfig, pairing *Pairing, hostname st
 		return nil
 	}
 	return New(Config{
-		Token:       cfg.Telegram.BotToken,
-		Pairing:     pairing,
-		Hostname:    hostname,
-		PairedChats: cfg.Telegram.PairedChats,
-		Logger:      logger,
+		Token:             cfg.Telegram.BotToken,
+		Pairing:           pairing,
+		Hostname:          hostname,
+		PairedChats:       cfg.Telegram.PairedChats,
+		CommandContextFor: cmdCtxFor,
+		Logger:            logger,
 	})
 }
 
@@ -119,6 +143,11 @@ func NewFromConfig(cfg *models.IntegrationsConfig, pairing *Pairing, hostname st
 // errors back off exponentially (1s doubling to 60s); 429s honour the
 // server's retry_after instead.
 func (b *Bridge) Run(ctx context.Context) {
+	// Register the command set for Telegram's client-side autocomplete.
+	// Best-effort: a failure costs autocompletion, not functionality.
+	if err := b.client.SetMyCommands(ctx, b.token, botCommands()); err != nil && ctx.Err() == nil {
+		b.logger.Printf("WARN: telegram bridge: setMyCommands failed: %v", err)
+	}
 	backoff := time.Second
 	for {
 		if ctx.Err() != nil {
@@ -204,20 +233,43 @@ func (b *Bridge) IsPaired(chatID int64) bool {
 	return ok
 }
 
-// handleUpdate dispatches one getUpdates entry. Task-0136 scope: only
-// plain messages carrying /start or /pair are acted on; everything else
-// — edited messages, callbacks, media, and any text from unpaired
-// chats — is dropped without a reply, so an unpaired stranger probing
-// the bot learns nothing.
+// handleUpdate dispatches one getUpdates entry. /start and /pair are
+// handled for everyone (they're the only way onto the allowlist);
+// paired chats additionally get the command surface and inline-button
+// callbacks. Everything else — edited messages, media, and any text
+// from unpaired chats — is dropped without a reply, so an unpaired
+// stranger probing the bot learns nothing.
 func (b *Bridge) handleUpdate(ctx context.Context, u telegrambot.Update) {
+	if u.CallbackQuery != nil {
+		b.handleCallback(ctx, u.CallbackQuery)
+		return
+	}
 	msg := u.Message
 	if msg == nil || msg.From == nil || msg.Text == "" {
 		return
 	}
-	cmd, arg := parseCommand(msg.Text)
-	if cmd != "/start" && cmd != "/pair" {
+	cmd, rest := splitCommand(msg.Text)
+	if cmd == "/start" || cmd == "/pair" {
+		arg := ""
+		if fields := strings.Fields(rest); len(fields) > 0 {
+			arg = fields[0]
+		}
+		b.handlePairing(ctx, msg, arg)
 		return
 	}
+	if !b.IsPaired(msg.Chat.ID) {
+		return // unpaired silence — unchanged from 0136
+	}
+	if cmd == "" {
+		return // plain text from a paired chat; /say arrives in 0142
+	}
+	b.dispatchCommand(ctx, msg, cmd, rest)
+}
+
+// handlePairing runs the /start / /pair flow for one message (any
+// chat, paired or not — redeeming a fresh code from an already-paired
+// chat simply refreshes its record).
+func (b *Bridge) handlePairing(ctx context.Context, msg *telegrambot.Message, arg string) {
 	chatID := msg.Chat.ID
 
 	if b.pairing != nil && b.pairing.Consume(arg) {
@@ -258,11 +310,13 @@ func (b *Bridge) reply(ctx context.Context, chatID int64, text string) {
 	}
 }
 
-// parseCommand splits a message into its leading bot command and the
-// first argument. Telegram appends "@botname" to commands in group
-// chats — that suffix is stripped so "/pair@WatchfireBot ABC" parses
-// the same as "/pair ABC".
-func parseCommand(text string) (cmd, arg string) {
+// splitCommand splits a message into its leading bot command and the
+// remainder of the line (whitespace-normalized — project names keep
+// their internal single spaces). Telegram appends "@botname" to
+// commands in group chats — that suffix is stripped so
+// "/pair@WatchfireBot ABC" parses the same as "/pair ABC". Non-command
+// text returns cmd == "".
+func splitCommand(text string) (cmd, rest string) {
 	fields := strings.Fields(strings.TrimSpace(text))
 	if len(fields) == 0 || !strings.HasPrefix(fields[0], "/") {
 		return "", ""
@@ -271,8 +325,15 @@ func parseCommand(text string) (cmd, arg string) {
 	if at := strings.IndexByte(cmd, '@'); at >= 0 {
 		cmd = cmd[:at]
 	}
-	if len(fields) > 1 {
-		arg = fields[1]
+	return cmd, strings.Join(fields[1:], " ")
+}
+
+// parseCommand is splitCommand narrowed to the first argument — the
+// shape the single-token pairing flow wants.
+func parseCommand(text string) (cmd, arg string) {
+	cmd, rest := splitCommand(text)
+	if fields := strings.Fields(rest); len(fields) > 0 {
+		arg = fields[0]
 	}
 	return cmd, arg
 }
@@ -309,6 +370,28 @@ func persistPairedChat(chat models.TelegramPairedChat) error {
 		cfg.Telegram.PairedChats = append(cfg.Telegram.PairedChats, chat)
 	}
 	return config.SaveIntegrations(cfg)
+}
+
+// persistDefaultProject is the production /use persist hook: load →
+// set the chat's default_project_id → save. Same
+// config.SaveIntegrations path as pairing, so the selection lands in
+// integrations.yaml and survives daemon restarts.
+func persistDefaultProject(chatID int64, projectID string) error {
+	cfg, err := config.LoadIntegrations()
+	if err != nil {
+		return err
+	}
+	if cfg.Telegram == nil {
+		return fmt.Errorf("telegram is not configured")
+	}
+	for i := range cfg.Telegram.PairedChats {
+		if cfg.Telegram.PairedChats[i].ChatID != chatID {
+			continue
+		}
+		cfg.Telegram.PairedChats[i].DefaultProjectID = projectID
+		return config.SaveIntegrations(cfg)
+	}
+	return fmt.Errorf("chat %d is not paired", chatID)
 }
 
 // sleepCtx sleeps for d or until ctx is cancelled, whichever comes

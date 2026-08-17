@@ -111,10 +111,19 @@ type CommandContext struct {
 // ProjectInfo is the minimum project metadata the router needs for
 // rendering. The daemon's FindProjects implementation populates it
 // from the projects index; tests populate it inline.
+//
+// AgentRunning / AgentTaskNumber are additive (v10.0 Torch): live
+// agent state so chat transports can render a status glyph next to
+// each project. AgentTaskNumber is the task the running agent is
+// working on (0 in chat/generate modes); both stay zero-valued when
+// no agent is running.
 type ProjectInfo struct {
 	ID    string
 	Name  string
 	Color string
+
+	AgentRunning    bool
+	AgentTaskNumber int
 }
 
 // ErrTaskNotFound is returned by `LookupTask` when no task matches

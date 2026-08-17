@@ -22,6 +22,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strconv"
 
 	"github.com/watchfire-io/watchfire/internal/config"
 	"github.com/watchfire-io/watchfire/internal/daemon/echo"
@@ -30,12 +31,16 @@ import (
 )
 
 // commandScope identifies the calling chat surface for one request.
-// Exactly one of GuildID (Discord) / TeamID (Slack) is set; the other
-// is empty. UserID is carried for audit logging only.
+// Exactly one of GuildID (Discord) / TeamID (Slack) / Telegram is set.
+// Telegram carries no id: a Telegram chat only reaches the router
+// after pairing, and pairing binds the chat to the daemon owner — so
+// the flag alone is the scope (see resolveMappedProjects). UserID is
+// carried for audit logging only.
 type commandScope struct {
-	GuildID string
-	TeamID  string
-	UserID  string
+	GuildID  string
+	TeamID   string
+	Telegram bool
+	UserID   string
 }
 
 // commandContextDeps is the seam tests use to inject fake loaders /
@@ -101,6 +106,19 @@ func (s *Server) discordCommandContextFor(guildID, userID string) echo.CommandCo
 	return newCommandContext(commandScope{GuildID: guildID, UserID: userID}, s.commandContextDeps())
 }
 
+// telegramCommandContextFor is the factory wired into the Telegram
+// bridge (v10.0 Torch, task 0137). Telegram chats are paired to the
+// daemon owner — pairing is the authorization boundary, enforced by
+// the bridge before any command reaches the router — so unlike the
+// guild/team-scoped Slack/Discord factories this scope sees every
+// registered project. chatID is accepted for symmetry with the bridge
+// callback shape but deliberately unused: per-chat state (the active
+// project) lives in the bridge, not in project visibility.
+func (s *Server) telegramCommandContextFor(chatID, userID int64) echo.CommandContext {
+	_ = chatID
+	return newCommandContext(commandScope{Telegram: true, UserID: strconv.FormatInt(userID, 10)}, s.commandContextDeps())
+}
+
 // mappedProject pairs the router-facing ProjectInfo with the on-disk
 // path the task lifecycle callbacks need.
 type mappedProject struct {
@@ -123,7 +141,15 @@ func newCommandContext(scope commandScope, deps commandContextDeps) echo.Command
 			}
 			infos := make([]echo.ProjectInfo, 0, len(mapped))
 			for _, m := range mapped {
-				infos = append(infos, m.info)
+				info := m.info
+				// Live agent state for status glyphs (v10.0 Torch,
+				// additive on ProjectInfo — renderers that don't care
+				// simply ignore the fields).
+				if n, running := deps.AgentTaskNumber(info.ID); running {
+					info.AgentRunning = true
+					info.AgentTaskNumber = n
+				}
+				infos = append(infos, info)
 			}
 			return infos, nil
 		},
@@ -257,6 +283,8 @@ func defaultCancelReason(scope commandScope) string {
 		return "cancelled via Slack"
 	case scope.GuildID != "":
 		return "cancelled via Discord"
+	case scope.Telegram:
+		return "cancelled via Telegram"
 	default:
 		return "cancelled via chat command"
 	}
@@ -282,11 +310,16 @@ func defaultCancelReason(scope commandScope) string {
 //     opt in individually via the per-project `integrations.slack_channel`
 //     binding.
 //
+// Telegram (scope.Telegram set) — every active project is visible.
+// Telegram chats reach the router only after redeeming a one-time
+// pairing code minted on the daemon's own machine, which binds the
+// chat to the daemon owner; there is no guild/team to narrow by.
+//
 // Archived projects are never visible. A project whose YAML fails to
 // load is skipped with a WARN — one broken project.yaml shouldn't take
 // chat commands down for the rest of the fleet.
 func resolveMappedProjects(scope commandScope, deps commandContextDeps) ([]mappedProject, error) {
-	if scope.GuildID == "" && scope.TeamID == "" {
+	if scope.GuildID == "" && scope.TeamID == "" && !scope.Telegram {
 		return nil, nil
 	}
 	cfg, err := deps.LoadIntegrations()
@@ -331,6 +364,8 @@ func resolveMappedProjects(scope commandScope, deps commandContextDeps) ([]mappe
 
 		visible := false
 		switch {
+		case scope.Telegram:
+			visible = true
 		case scope.GuildID != "":
 			if proj.Integrations.DiscordGuildID == scope.GuildID {
 				visible = true
