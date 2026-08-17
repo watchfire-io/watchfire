@@ -1,6 +1,7 @@
 package server
 
 import (
+	"os"
 	"testing"
 	"time"
 
@@ -82,7 +83,28 @@ func TestHandleTaskChangedStampsCompletedAt(t *testing.T) {
 		TaskNumber: taskNumber,
 	}
 
+	// Each handleTaskChanged call detaches a metrics.CaptureFromTask
+	// goroutine that reads the CaptureWait globals the Cleanup above
+	// restores — racing them. Capture's single WriteMetrics is its final
+	// act, so the metrics file (re)appearing is an exact join point.
+	metricsPath := config.MetricsFile(projectPath, taskNumber)
+	waitForCapture := func() {
+		t.Helper()
+		deadline := time.Now().Add(2 * time.Second)
+		for time.Now().Before(deadline) {
+			if config.FileExists(metricsPath) {
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		t.Fatal("metrics capture goroutine did not finish")
+	}
+
 	srv.handleTaskChanged(event)
+	waitForCapture()
+	if err := os.Remove(metricsPath); err != nil {
+		t.Fatalf("reset metrics file: %v", err)
+	}
 
 	got, err := config.LoadTask(projectPath, taskNumber)
 	if err != nil {
@@ -106,6 +128,7 @@ func TestHandleTaskChangedStampsCompletedAt(t *testing.T) {
 
 	// Second event — what our own re-save triggers via the watcher.
 	srv.handleTaskChanged(event)
+	waitForCapture()
 
 	got, err = config.LoadTask(projectPath, taskNumber)
 	if err != nil {
