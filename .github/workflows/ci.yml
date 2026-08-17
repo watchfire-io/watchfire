@@ -72,6 +72,9 @@ jobs:
       - name: Install dependencies
         working-directory: gui
         run: npm ci
+      - name: Run GUI tests
+        working-directory: gui
+        run: npm test
       - name: Build GUI
         working-directory: gui
         run: npm run build
@@ -111,6 +114,9 @@ jobs:
       - name: Install dependencies
         working-directory: gui
         run: npm ci
+      - name: Run GUI tests
+        working-directory: gui
+        run: npm test
       - name: Build GUI
         working-directory: gui
         run: npm run build
