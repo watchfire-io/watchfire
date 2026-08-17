@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { Send } from 'lucide-react'
 import type {
   WebhookIntegration,
   SlackIntegration,
@@ -12,12 +13,14 @@ import { WebhookDetail } from './integrations/WebhookDetail'
 import { SlackDetail } from './integrations/SlackDetail'
 import { DiscordDetail } from './integrations/DiscordDetail'
 import { GitHubDetail } from './integrations/GitHubDetail'
+import { TelegramDetail } from './integrations/TelegramDetail'
 
 type DetailTarget =
   | { kind: IntegrationKind.WEBHOOK; id: string | null }
   | { kind: IntegrationKind.SLACK; id: string | null }
   | { kind: IntegrationKind.DISCORD; id: string | null }
   | { kind: IntegrationKind.GITHUB }
+  | { kind: IntegrationKind.TELEGRAM }
   | null
 
 function formatEvents(events?: IntegrationEvents): string {
@@ -36,11 +39,14 @@ interface CardProps {
   events?: IntegrationEvents
   muteCount: number
   onEdit: () => void
+  /** Optional settings-search anchor (data-setting-field-id). */
+  fieldId?: string
 }
 
-function IntegrationCard({ kind, label, urlLabel, events, muteCount, onEdit }: CardProps) {
+function IntegrationCard({ kind, label, urlLabel, events, muteCount, onEdit, fieldId }: CardProps) {
   return (
     <div
+      data-setting-field-id={fieldId}
       className="flex flex-col gap-1 p-3 rounded-[var(--wf-radius-md)] border border-[var(--wf-border)] hover:border-fire-500/50 cursor-pointer bg-[var(--wf-bg-primary)]"
       onClick={onEdit}
       role="button"
@@ -107,6 +113,12 @@ export function IntegrationsSection() {
         : undefined
       return <DiscordDetail initial={initial} onClose={closeDetail} />
     }
+    if (target.kind === IntegrationKind.TELEGRAM) {
+      // Single-instance; `telegram` is unset when unconfigured (or when
+      // the daemon predates v10 Telegram support) — the panel renders
+      // its blank state in both cases.
+      return <TelegramDetail initial={config?.telegram} onClose={closeDetail} />
+    }
     return null
   }
 
@@ -153,6 +165,23 @@ export function IntegrationsSection() {
             onEdit={() => setTarget({ kind: IntegrationKind.DISCORD, id: d.id })}
           />
         ))}
+        {config?.telegram && (
+          <IntegrationCard
+            kind="Telegram"
+            fieldId="integrations-telegram"
+            label={
+              config.telegram.enabled
+                ? config.telegram.tokenSet
+                  ? 'Bot bridge enabled'
+                  : 'Enabled (no token)'
+                : 'Bot bridge (disabled)'
+            }
+            urlLabel={`${config.telegram.pairedChats?.length ?? 0} paired chat(s)`}
+            events={config.telegram.enabledEvents}
+            muteCount={(config.telegram.pairedChats ?? []).filter((c) => c.muted).length}
+            onEdit={() => setTarget({ kind: IntegrationKind.TELEGRAM })}
+          />
+        )}
         <IntegrationCard
           kind="GitHub"
           label={config?.github?.enabled ? 'Auto-PR enabled' : 'Auto-PR (disabled)'}
@@ -177,20 +206,22 @@ export function IntegrationsSection() {
                 { label: 'Webhook', kind: IntegrationKind.WEBHOOK },
                 { label: 'Slack', kind: IntegrationKind.SLACK },
                 { label: 'Discord', kind: IntegrationKind.DISCORD },
+                { label: 'Telegram', kind: IntegrationKind.TELEGRAM, icon: Send },
                 { label: 'GitHub Auto-PR', kind: IntegrationKind.GITHUB }
               ].map((p) => (
                 <button
                   key={p.label}
-                  className="block w-full text-left px-3 py-1.5 text-sm hover:bg-[var(--wf-bg-primary)] text-[var(--wf-text-primary)]"
+                  className="flex items-center gap-1.5 w-full text-left px-3 py-1.5 text-sm hover:bg-[var(--wf-bg-primary)] text-[var(--wf-text-primary)]"
                   onClick={() => {
                     setPickerOpen(false)
                     setTarget(
-                      p.kind === IntegrationKind.GITHUB
-                        ? { kind: IntegrationKind.GITHUB }
+                      p.kind === IntegrationKind.GITHUB || p.kind === IntegrationKind.TELEGRAM
+                        ? ({ kind: p.kind } as DetailTarget)
                         : ({ kind: p.kind, id: null } as DetailTarget)
                     )
                   }}
                 >
+                  {'icon' in p && p.icon ? <p.icon size={13} className="shrink-0" /> : null}
                   {p.label}
                 </button>
               ))}
