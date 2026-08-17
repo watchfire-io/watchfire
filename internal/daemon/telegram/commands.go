@@ -1,6 +1,7 @@
 // Paired-chat command dispatch (v10.0 Torch, task 0137). Read-only
 // surface: /projects /use /status /tasks /help, plus the inline-button
-// tap that mirrors /use. Everything routes through the echo command
+// tap that mirrors /use, plus /watch (live conversation relay — task
+// 0141, watch.go). Everything routes through the echo command
 // callbacks (the same production implementations Slack and Discord
 // use) — /status in particular reuses echo.Route verbatim. Run-control
 // verbs (/run /say …) arrive in 0142; until then /help advertises them
@@ -26,9 +27,10 @@ const callbackUsePrefix = "use:"
 
 // soonCommands are the 0142 run-control verbs — advertised in /help,
 // answered with a hint instead of "unknown" when tried early.
+// (/watch went live in 0141.)
 var soonCommands = map[string]bool{
 	"/run": true, "/runall": true, "/retry": true, "/cancel": true,
-	"/screen": true, "/say": true, "/watch": true, "/mute": true, "/unmute": true,
+	"/screen": true, "/say": true, "/mute": true, "/unmute": true,
 }
 
 // botCommands is the set registered via setMyCommands for Telegram's
@@ -40,6 +42,7 @@ func botCommands() []telegrambot.BotCommand {
 		{Command: "use", Description: "Select the active project for this chat"},
 		{Command: "status", Description: "Status of the active project"},
 		{Command: "tasks", Description: "Top active tasks of the active project"},
+		{Command: "watch", Description: "Toggle the live conversation relay (on|off)"},
 		{Command: "help", Description: "Show available commands"},
 		{Command: "pair", Description: "Pair this chat with a one-time code"},
 	}
@@ -58,6 +61,8 @@ func (b *Bridge) dispatchCommand(ctx context.Context, msg *telegrambot.Message, 
 		b.cmdStatus(ctx, chatID, userID)
 	case "/tasks":
 		b.cmdTasks(ctx, chatID, userID)
+	case "/watch":
+		b.cmdWatch(ctx, chatID, rest)
 	case "/help":
 		b.reply(ctx, chatID, helpHTML())
 	default:
@@ -76,6 +81,7 @@ func helpHTML() string {
 		"/use &lt;name|number&gt; — select the active project for this chat",
 		"/status — status of the active project",
 		"/tasks — top active tasks of the active project",
+		"/watch on|off — relay the live agent conversation here",
 		"/pair &lt;code&gt; — pair this chat with a one-time code",
 		"/help — this list",
 		"",
@@ -83,7 +89,7 @@ func helpHTML() string {
 		"<i>/retry &lt;n&gt;, /cancel &lt;n&gt; — task lifecycle (soon)</i>",
 		"<i>/screen — live session snapshot (soon)</i>",
 		"<i>/say &lt;text&gt; — send text to the running agent (soon)</i>",
-		"<i>/watch on|off, /mute, /unmute — live relay controls (soon)</i>",
+		"<i>/mute, /unmute — pause event pushes (soon)</i>",
 	}, "\n")
 }
 

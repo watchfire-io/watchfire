@@ -59,6 +59,13 @@ type sentMessage struct {
 	ChatID      string
 	Text        string
 	ReplyMarkup string
+	MessageID   int64
+}
+
+type editedMessage struct {
+	ChatID    string
+	MessageID string
+	Text      string
 }
 
 type answeredCallback struct {
@@ -77,8 +84,10 @@ type fakeBotAPI struct {
 	script     []string // raw JSON bodies for successive getUpdates calls
 	offsets    []string // recorded getUpdates offset params
 	sent       []sentMessage
+	edited     []editedMessage
 	callbacks  []answeredCallback
 	myCommands []string // raw setMyCommands `commands` JSON payloads
+	nextMsgID  int64    // incrementing sendMessage message_id
 
 	srv *httptest.Server
 }
@@ -130,13 +139,25 @@ func (f *fakeBotAPI) handle(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(body))
 	case "sendMessage":
 		f.mu.Lock()
+		f.nextMsgID++
+		id := f.nextMsgID
 		f.sent = append(f.sent, sentMessage{
 			ChatID:      r.Form.Get("chat_id"),
 			Text:        r.Form.Get("text"),
 			ReplyMarkup: r.Form.Get("reply_markup"),
+			MessageID:   id,
 		})
 		f.mu.Unlock()
-		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":1,"chat":{"id":1,"type":"private"}}}`))
+		_, _ = fmt.Fprintf(w, `{"ok":true,"result":{"message_id":%d,"chat":{"id":1,"type":"private"}}}`, id)
+	case "editMessageText":
+		f.mu.Lock()
+		f.edited = append(f.edited, editedMessage{
+			ChatID:    r.Form.Get("chat_id"),
+			MessageID: r.Form.Get("message_id"),
+			Text:      r.Form.Get("text"),
+		})
+		f.mu.Unlock()
+		_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
 	case "setMyCommands":
 		f.mu.Lock()
 		f.myCommands = append(f.myCommands, r.Form.Get("commands"))
@@ -157,6 +178,12 @@ func (f *fakeBotAPI) sentMessages() []sentMessage {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]sentMessage(nil), f.sent...)
+}
+
+func (f *fakeBotAPI) editedMessages() []editedMessage {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]editedMessage(nil), f.edited...)
 }
 
 func (f *fakeBotAPI) answeredCallbacks() []answeredCallback {
@@ -551,7 +578,7 @@ func TestNewFromConfigGating(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := NewFromConfig(tc.cfg, pairing, "h", nil, nil)
+			got := NewFromConfig(tc.cfg, pairing, "h", nil, nil, nil)
 			if (got != nil) != tc.want {
 				t.Fatalf("NewFromConfig = %v, want bridge=%v", got, tc.want)
 			}

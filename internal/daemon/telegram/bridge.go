@@ -48,12 +48,17 @@ type Config struct {
 	// command surface (pairing still works) — production always wires
 	// the server factory in.
 	CommandContextFor CommandContextFactory
+	// Sessions lets watch mode (task 0141) observe running agent
+	// sessions. nil disables live relays; /watch still persists its
+	// toggle so the setting is ready when a source is wired in.
+	Sessions SessionSource
 }
 
 // Bridge owns the getUpdates long-poll loop. Pairing (/start, /pair —
 // task 0136) admits chats onto the allowlist; paired chats get the
 // read-only command surface (/projects /use /status /tasks /help —
-// task 0137). Run-control verbs (/run, /say, …) arrive in 0142.
+// task 0137) plus the live conversation relay (/watch — task 0141).
+// Run-control verbs (/run, /say, …) arrive in 0142.
 //
 // The bridge only ever reads from the daemon: it never calls
 // AgentService.Resize and never writes to any agent PTY.
@@ -79,11 +84,26 @@ type Bridge struct {
 	offset  int64
 	botUser string // cached getMe username
 
-	// sleepFn + persistFn + setDefaultFn are test seams; production
-	// uses the defaults set in New.
-	sleepFn      func(ctx context.Context, d time.Duration)
-	persistFn    func(chat models.TelegramPairedChat) error
-	setDefaultFn func(chatID int64, projectID string) error
+	// Watch mode (task 0141): the session source, one relay per
+	// watching chat, and the pacing knobs (defaults set in New; tests
+	// shrink them).
+	sessions      SessionSource
+	watchMu       sync.Mutex
+	relays        map[int64]*chatRelay
+	watchPoll     time.Duration
+	flushEvery    time.Duration
+	coalesceEvery time.Duration
+	screenEvery   time.Duration
+	tailPoll      time.Duration
+	outcomeRetry  time.Duration
+
+	// sleepFn + persistFn + setDefaultFn + persistWatchFn + tailerForFn
+	// are test seams; production uses the defaults set in New.
+	sleepFn        func(ctx context.Context, d time.Duration)
+	persistFn      func(chat models.TelegramPairedChat) error
+	setDefaultFn   func(chatID int64, projectID string) error
+	persistWatchFn func(chatID int64, watch bool) error
+	tailerForFn    func(sess *WatchedSession) (TailableTranscript, bool)
 }
 
 // New builds a Bridge from an explicit Config.
@@ -101,25 +121,35 @@ func New(cfg Config) *Bridge {
 		paired[c.ChatID] = c
 	}
 	return &Bridge{
-		token:        cfg.Token,
-		pairing:      cfg.Pairing,
-		hostname:     cfg.Hostname,
-		pollTimeout:  cfg.PollTimeout,
-		client:       client,
-		logger:       logger,
-		cmdCtxFor:    cfg.CommandContextFor,
-		paired:       paired,
-		lastProjects: make(map[int64][]echo.ProjectInfo),
-		sleepFn:      sleepCtx,
-		persistFn:    persistPairedChat,
-		setDefaultFn: persistDefaultProject,
+		token:          cfg.Token,
+		pairing:        cfg.Pairing,
+		hostname:       cfg.Hostname,
+		pollTimeout:    cfg.PollTimeout,
+		client:         client,
+		logger:         logger,
+		cmdCtxFor:      cfg.CommandContextFor,
+		paired:         paired,
+		lastProjects:   make(map[int64][]echo.ProjectInfo),
+		sessions:       cfg.Sessions,
+		relays:         make(map[int64]*chatRelay),
+		watchPoll:      sessionPollInterval,
+		flushEvery:     senderFlushTick,
+		coalesceEvery:  coalesceInterval,
+		screenEvery:    screenDeltaInterval,
+		tailPoll:       tailPollInterval,
+		outcomeRetry:   outcomeRetryInterval,
+		sleepFn:        sleepCtx,
+		persistFn:      persistPairedChat,
+		setDefaultFn:   persistDefaultProject,
+		persistWatchFn: persistWatch,
+		tailerForFn:    defaultTailerFor,
 	}
 }
 
 // NewFromConfig builds the production Bridge from the loaded
 // integrations config. Returns nil — meaning "do not start anything" —
 // unless Telegram is enabled AND a bot token resolved from the keyring.
-func NewFromConfig(cfg *models.IntegrationsConfig, pairing *Pairing, hostname string, cmdCtxFor CommandContextFactory, logger *log.Logger) *Bridge {
+func NewFromConfig(cfg *models.IntegrationsConfig, pairing *Pairing, hostname string, cmdCtxFor CommandContextFactory, sessions SessionSource, logger *log.Logger) *Bridge {
 	if cfg == nil || cfg.Telegram == nil || !cfg.Telegram.Enabled {
 		return nil
 	}
@@ -135,6 +165,7 @@ func NewFromConfig(cfg *models.IntegrationsConfig, pairing *Pairing, hostname st
 		Hostname:          hostname,
 		PairedChats:       cfg.Telegram.PairedChats,
 		CommandContextFor: cmdCtxFor,
+		Sessions:          sessions,
 		Logger:            logger,
 	})
 }
@@ -147,6 +178,12 @@ func (b *Bridge) Run(ctx context.Context) {
 	// Best-effort: a failure costs autocompletion, not functionality.
 	if err := b.client.SetMyCommands(ctx, b.token, botCommands()); err != nil && ctx.Err() == nil {
 		b.logger.Printf("WARN: telegram bridge: setMyCommands failed: %v", err)
+	}
+	// Watch mode (task 0141): reconcile watching chats against live
+	// sessions in the background. The loop's deferred cleanup stops
+	// every relay (and its tailer) when ctx is cancelled.
+	if b.sessions != nil {
+		go b.watchLoop(ctx)
 	}
 	backoff := time.Second
 	for {

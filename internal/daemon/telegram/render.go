@@ -69,10 +69,17 @@ func RenderHTML(resp *echo.CommandResponse) []string {
 // reproduces the input. A single line longer than the cap (no
 // boundary to break at) is hard-split mid-line as a last resort.
 func chunkLines(text string) []string {
+	return chunkLinesLimit(text, maxMessageLen)
+}
+
+// chunkLinesLimit is chunkLines with an explicit per-chunk byte cap —
+// watch mode's <pre> rendering chunks the body below the message cap
+// so the wrapping tags still fit.
+func chunkLinesLimit(text string, limit int) []string {
 	if text == "" {
 		return nil
 	}
-	if len(text) <= maxMessageLen {
+	if len(text) <= limit {
 		return []string{text}
 	}
 	var chunks []string
@@ -84,16 +91,16 @@ func chunkLines(text string) []string {
 		}
 	}
 	for _, line := range strings.Split(text, "\n") {
-		for len(line) > maxMessageLen {
+		for len(line) > limit {
 			flush()
-			chunks = append(chunks, line[:maxMessageLen])
-			line = line[maxMessageLen:]
+			chunks = append(chunks, line[:limit])
+			line = line[limit:]
 		}
 		need := len(line)
 		if cur.Len() > 0 {
 			need += cur.Len() + 1 // +1 for the joining newline
 		}
-		if need > maxMessageLen {
+		if need > limit {
 			flush()
 		}
 		if cur.Len() > 0 {
