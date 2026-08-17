@@ -375,10 +375,13 @@ func (s *integrationsService) deliverSlackTest(ctx context.Context, ep models.Sl
 	}, nil
 }
 
-// deliverTelegramTest validates the stored bot token by calling getMe
-// and reports the bot's username. Full test-message delivery to paired
-// chats arrives with the v10 relay adapter (task 0138) — until then
-// "test" means "does the token authenticate right now?".
+// deliverTelegramTest sends one synthetic test message per supported
+// notification kind to every non-muted paired chat, through the real
+// `relay.TelegramAdapter` — so a single click of "Test" exercises the
+// exact HTML formatting + Bot API path the dispatcher uses at runtime.
+// The aggregate response reports per-chat success; ok=true only if
+// every chat received every kind. Muted chats are skipped, mirroring
+// what a real dispatch would do.
 func (s *integrationsService) deliverTelegramTest(ctx context.Context, tg *models.TelegramConfig) (*pb.TestIntegrationResponse, error) {
 	if tg == nil {
 		return &pb.TestIntegrationResponse{Ok: false, Message: "telegram is not configured"}, nil
@@ -390,18 +393,72 @@ func (s *integrationsService) deliverTelegramTest(ctx context.Context, tg *model
 	if s.httpClient != nil {
 		client.HTTP = s.httpClient
 	}
-	user, err := client.GetMe(ctx, tg.BotToken)
-	if err != nil {
-		return &pb.TestIntegrationResponse{Ok: false, Message: err.Error()}, nil
+	adapter := relay.NewTelegramAdapter(*tg, client, nil)
+
+	now := time.Now().UTC()
+	kinds := []notify.Kind{
+		notify.KindTaskFailed,
+		notify.KindRunComplete,
+		notify.KindWeeklyDigest,
 	}
-	name := user.Username
-	if name == "" {
-		name = "(no username)"
+	allOK := true
+	var msgs []string
+	tested := 0
+	for _, chat := range tg.PairedChats {
+		if chat.Muted {
+			continue
+		}
+		tested++
+		label := fmt.Sprintf("chat %d", chat.ChatID)
+		if chat.Username != "" {
+			label = "@" + chat.Username
+		}
+		chatOK := true
+		for _, kind := range kinds {
+			payload := syntheticTelegramPayload(kind, now)
+			if sendErr := adapter.SendToChat(ctx, chat.ChatID, payload); sendErr != nil {
+				allOK = false
+				chatOK = false
+				msgs = append(msgs, fmt.Sprintf("%s %s: %v", label, kind, sendErr))
+			}
+		}
+		if chatOK {
+			msgs = append(msgs, fmt.Sprintf("%s: OK", label))
+		}
+	}
+	if tested == 0 {
+		return &pb.TestIntegrationResponse{Ok: false, Message: "no unmuted paired chats — pair a chat first"}, nil
 	}
 	return &pb.TestIntegrationResponse{
-		Ok:      true,
-		Message: fmt.Sprintf("connected as @%s", name),
+		Ok:      allOK,
+		Message: strings.Join(msgs, " · "),
 	}, nil
+}
+
+// syntheticTelegramPayload mirrors syntheticSlackPayload /
+// syntheticDiscordPayload for the Telegram adapter, so "Test" previews
+// every canonical Payload kind as real Telegram messages.
+func syntheticTelegramPayload(kind notify.Kind, now time.Time) relay.Payload {
+	base := relay.Payload{
+		Version:      1,
+		Kind:         string(kind),
+		EmittedAt:    now,
+		ProjectID:    "test-project",
+		ProjectName:  "Watchfire test",
+		ProjectColor: "#3b82f6",
+		TaskNumber:   1,
+		TaskTitle:    "Watchfire Telegram adapter test",
+		DeepLink:     "watchfire://project/test-project/task/0001",
+	}
+	switch kind {
+	case notify.KindTaskFailed:
+		base.TaskFailureReason = "synthetic test — your Telegram bridge is wired up correctly"
+	case notify.KindWeeklyDigest:
+		base.DigestDate = now.Format("2006-01-02")
+		base.DeepLink = "watchfire://digest/" + base.DigestDate
+		base.DigestBody = "## Watchfire weekly digest test\n\nIf you can read this, your Telegram chat is receiving WEEKLY_DIGEST notifications."
+	}
+	return base
 }
 
 // syntheticSlackPayload builds a self-contained sample Payload for each

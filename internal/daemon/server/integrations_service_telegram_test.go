@@ -2,9 +2,6 @@ package server
 
 import (
 	"context"
-	"encoding/json"
-	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,7 +9,6 @@ import (
 	"time"
 
 	"github.com/watchfire-io/watchfire/internal/config"
-	"github.com/watchfire-io/watchfire/internal/daemon/telegrambot"
 	"github.com/watchfire-io/watchfire/internal/models"
 	pb "github.com/watchfire-io/watchfire/proto"
 )
@@ -194,25 +190,13 @@ func TestTelegramDeleteRemovesConfigAndSecret(t *testing.T) {
 	}
 }
 
-func TestTelegramTestIntegrationGetMe(t *testing.T) {
+// TestTelegramTestIntegrationRequiresChats pins the v10 task-0138
+// semantics: "Test" now delivers real messages to paired chats (see
+// integrations_service_telegram_send_test.go), so an unconfigured
+// bridge or one with no unmuted paired chats reports an honest failure
+// instead of a getMe-only success.
+func TestTelegramTestIntegrationRequiresChats(t *testing.T) {
 	tgTestSetup(t)
-
-	// Fake Bot API: getMe succeeds for the stored token only.
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/bot"+tgTestToken+"/getMe" {
-			w.WriteHeader(http.StatusUnauthorized)
-			_ = json.NewEncoder(w).Encode(map[string]any{"ok": false, "description": "Unauthorized"})
-			return
-		}
-		_ = json.NewEncoder(w).Encode(map[string]any{
-			"ok":     true,
-			"result": map[string]any{"id": 42, "is_bot": true, "username": "watchfire_bot"},
-		})
-	}))
-	t.Cleanup(srv.Close)
-	prevBase := telegrambot.APIBase
-	telegrambot.APIBase = srv.URL
-	t.Cleanup(func() { telegrambot.APIBase = prevBase })
 
 	svc := newIntegrationsService()
 
@@ -225,6 +209,7 @@ func TestTelegramTestIntegrationGetMe(t *testing.T) {
 		t.Fatal("unconfigured telegram test should fail")
 	}
 
+	// Token stored but nobody paired → still a failure, with guidance.
 	if _, err := svc.SaveIntegration(context.Background(), &pb.SaveIntegrationRequest{
 		Payload: &pb.SaveIntegrationRequest_Telegram{
 			Telegram: &pb.TelegramIntegration{Enabled: true, BotToken: tgTestToken},
@@ -237,10 +222,10 @@ func TestTelegramTestIntegrationGetMe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TestIntegration: %v", err)
 	}
-	if !resp.GetOk() {
-		t.Fatalf("test failed: %s", resp.GetMessage())
+	if resp.GetOk() {
+		t.Fatal("test should fail with no paired chats")
 	}
-	if !strings.Contains(resp.GetMessage(), "watchfire_bot") {
-		t.Fatalf("bot username missing from message: %q", resp.GetMessage())
+	if !strings.Contains(resp.GetMessage(), "no unmuted paired chats") {
+		t.Fatalf("unexpected message: %q", resp.GetMessage())
 	}
 }
