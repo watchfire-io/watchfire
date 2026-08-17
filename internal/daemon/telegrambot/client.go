@@ -145,6 +145,15 @@ type BotCommand struct {
 	Description string `json:"description"`
 }
 
+// InlineKeyboardButton is one button of an inline keyboard
+// (reply_markup). Only callback buttons are supported — every button
+// tap comes back as a CallbackQuery carrying CallbackData (≤64 bytes,
+// per the Bot API).
+type InlineKeyboardButton struct {
+	Text         string `json:"text"`
+	CallbackData string `json:"callback_data,omitempty"`
+}
+
 // Client wraps two http.Clients: HTTP for ordinary calls and PollHTTP
 // for getUpdates long-polls (its timeout must exceed the poll window).
 // Stateless — the bot token is passed per call.
@@ -200,11 +209,25 @@ func (c *Client) GetUpdates(ctx context.Context, token string, offset int64, tim
 // mode). Link previews are disabled — event messages carry deep links
 // whose unfurls would drown the text.
 func (c *Client) SendMessage(ctx context.Context, token string, chatID int64, text string) (int64, error) {
+	return c.SendMessageWithKeyboard(ctx, token, chatID, text, nil)
+}
+
+// SendMessageWithKeyboard is SendMessage plus an inline keyboard
+// (rows of callback buttons). A nil/empty keyboard sends a plain
+// message.
+func (c *Client) SendMessageWithKeyboard(ctx context.Context, token string, chatID int64, text string, keyboard [][]InlineKeyboardButton) (int64, error) {
 	params := url.Values{}
 	params.Set("chat_id", strconv.FormatInt(chatID, 10))
 	params.Set("text", text)
 	params.Set("parse_mode", "HTML")
 	params.Set("disable_web_page_preview", "true")
+	if len(keyboard) > 0 {
+		encoded, err := json.Marshal(map[string]any{"inline_keyboard": keyboard})
+		if err != nil {
+			return 0, &Error{Kind: ErrKindNetwork, Method: "sendMessage", Err: err}
+		}
+		params.Set("reply_markup", string(encoded))
+	}
 	var msg Message
 	if err := c.call(ctx, token, "sendMessage", params, &msg, false); err != nil {
 		return 0, err

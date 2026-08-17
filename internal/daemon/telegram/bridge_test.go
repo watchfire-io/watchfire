@@ -56,8 +56,14 @@ func withTestEnv(t *testing.T) {
 }
 
 type sentMessage struct {
-	ChatID string
-	Text   string
+	ChatID      string
+	Text        string
+	ReplyMarkup string
+}
+
+type answeredCallback struct {
+	ID   string
+	Text string
 }
 
 // fakeBotAPI is an httptest stand-in for api.telegram.org. getUpdates
@@ -68,9 +74,11 @@ type fakeBotAPI struct {
 	t  *testing.T
 	mu sync.Mutex
 
-	script  []string // raw JSON bodies for successive getUpdates calls
-	offsets []string // recorded getUpdates offset params
-	sent    []sentMessage
+	script     []string // raw JSON bodies for successive getUpdates calls
+	offsets    []string // recorded getUpdates offset params
+	sent       []sentMessage
+	callbacks  []answeredCallback
+	myCommands []string // raw setMyCommands `commands` JSON payloads
 
 	srv *httptest.Server
 }
@@ -122,9 +130,23 @@ func (f *fakeBotAPI) handle(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(body))
 	case "sendMessage":
 		f.mu.Lock()
-		f.sent = append(f.sent, sentMessage{ChatID: r.Form.Get("chat_id"), Text: r.Form.Get("text")})
+		f.sent = append(f.sent, sentMessage{
+			ChatID:      r.Form.Get("chat_id"),
+			Text:        r.Form.Get("text"),
+			ReplyMarkup: r.Form.Get("reply_markup"),
+		})
 		f.mu.Unlock()
 		_, _ = w.Write([]byte(`{"ok":true,"result":{"message_id":1,"chat":{"id":1,"type":"private"}}}`))
+	case "setMyCommands":
+		f.mu.Lock()
+		f.myCommands = append(f.myCommands, r.Form.Get("commands"))
+		f.mu.Unlock()
+		_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+	case "answerCallbackQuery":
+		f.mu.Lock()
+		f.callbacks = append(f.callbacks, answeredCallback{ID: r.Form.Get("callback_query_id"), Text: r.Form.Get("text")})
+		f.mu.Unlock()
+		_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
 	default:
 		f.t.Errorf("unexpected Bot API method %q", method)
 		w.WriteHeader(http.StatusNotFound)
@@ -135,6 +157,18 @@ func (f *fakeBotAPI) sentMessages() []sentMessage {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return append([]sentMessage(nil), f.sent...)
+}
+
+func (f *fakeBotAPI) answeredCallbacks() []answeredCallback {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]answeredCallback(nil), f.callbacks...)
+}
+
+func (f *fakeBotAPI) recordedMyCommands() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.myCommands...)
 }
 
 func (f *fakeBotAPI) recordedOffsets() []string {
@@ -157,6 +191,23 @@ func updateJSON(updateID, chatID, userID int64, username, text string) string {
 			"from":       map[string]any{"id": userID, "is_bot": false, "username": username},
 			"chat":       map[string]any{"id": chatID, "type": "private"},
 			"text":       text,
+		},
+	}
+	raw, _ := json.Marshal(map[string]any{"ok": true, "result": []any{u}})
+	return string(raw)
+}
+
+func callbackJSON(updateID, chatID, userID int64, callbackID, data string) string {
+	u := map[string]any{
+		"update_id": updateID,
+		"callback_query": map[string]any{
+			"id":   callbackID,
+			"from": map[string]any{"id": userID, "is_bot": false, "username": "u"},
+			"message": map[string]any{
+				"message_id": updateID,
+				"chat":       map[string]any{"id": chatID, "type": "private"},
+			},
+			"data": data,
 		},
 	}
 	raw, _ := json.Marshal(map[string]any{"ok": true, "result": []any{u}})
@@ -500,7 +551,7 @@ func TestNewFromConfigGating(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := NewFromConfig(tc.cfg, pairing, "h", nil)
+			got := NewFromConfig(tc.cfg, pairing, "h", nil, nil)
 			if (got != nil) != tc.want {
 				t.Fatalf("NewFromConfig = %v, want bridge=%v", got, tc.want)
 			}

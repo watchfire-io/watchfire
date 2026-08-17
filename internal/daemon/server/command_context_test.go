@@ -154,6 +154,44 @@ func TestFindProjectsDiscordScoping(t *testing.T) {
 	}
 }
 
+// TestFindProjectsTelegramScoping: a paired Telegram chat is bound to
+// the daemon owner, so — unlike guild/team scoping — it sees every
+// registered active project, with live agent state for status glyphs.
+// Archived projects stay invisible.
+func TestFindProjectsTelegramScoping(t *testing.T) {
+	f := newCCFixture(t)
+	f.addProject("p-one", "One", nil)
+	f.addProject("p-two", "Two", func(p *models.Project) {
+		p.Integrations.DiscordGuildID = "g-1" // other-transport bindings don't narrow Telegram
+	})
+	f.addProject("p-archived", "Archived", func(p *models.Project) { p.Status = "archived" })
+	f.agentRunning = true
+	f.agentTask = 5
+
+	cc := newCommandContext(commandScope{Telegram: true, UserID: "42"}, f.deps())
+	infos, err := cc.FindProjects(context.Background())
+	if err != nil {
+		t.Fatalf("FindProjects: %v", err)
+	}
+	got := projectIDs(infos)
+	want := map[string]bool{"p-one": true, "p-two": true}
+	if len(got) != len(want) {
+		t.Fatalf("telegram scope projects = %v, want ids %v", got, want)
+	}
+	for _, info := range infos {
+		if !want[info.ID] {
+			t.Fatalf("telegram scope unexpectedly sees %s (all: %v)", info.ID, got)
+		}
+		if !info.AgentRunning || info.AgentTaskNumber != 5 {
+			t.Fatalf("agent state not populated on %s: %+v", info.ID, info)
+		}
+	}
+
+	if got := defaultCancelReason(commandScope{Telegram: true}); got != "cancelled via Telegram" {
+		t.Fatalf("defaultCancelReason = %q", got)
+	}
+}
+
 func TestFindProjectsSlackScoping(t *testing.T) {
 	f := newCCFixture(t)
 	f.addProject("p-chan", "Chan", func(p *models.Project) {
