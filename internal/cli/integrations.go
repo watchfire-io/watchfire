@@ -17,7 +17,7 @@ import (
 // covers headless workflows (CI checks, scripted setup verification).
 var integrationsCmd = &cobra.Command{
 	Use:   "integrations",
-	Short: "Manage outbound integrations (Webhook / Slack / Discord / GitHub)",
+	Short: "Manage outbound integrations (Webhook / Slack / Discord / GitHub / Telegram)",
 	Long:  `Inspect and exercise the outbound integrations configured in ~/.watchfire/integrations.yaml.`,
 }
 
@@ -158,6 +158,9 @@ func detectIntegrationKind(cfg *pb.IntegrationsConfig, id string) (pb.Integratio
 	if g := cfg.GetGithub(); g != nil && g.GetEnabled() && id == "github" {
 		return pb.IntegrationKind_GITHUB, true
 	}
+	if tg := cfg.GetTelegram(); tg != nil && id == "telegram" {
+		return pb.IntegrationKind_TELEGRAM, true
+	}
 	return 0, false
 }
 
@@ -171,8 +174,10 @@ func parseIntegrationKind(s string) (pb.IntegrationKind, error) {
 		return pb.IntegrationKind_DISCORD, nil
 	case "github":
 		return pb.IntegrationKind_GITHUB, nil
+	case "telegram":
+		return pb.IntegrationKind_TELEGRAM, nil
 	}
-	return 0, fmt.Errorf("unknown integration kind %q (want one of: webhook, slack, discord, github)", s)
+	return 0, fmt.Errorf("unknown integration kind %q (want one of: webhook, slack, discord, github, telegram)", s)
 }
 
 func printIntegrations(cfg *pb.IntegrationsConfig) {
@@ -209,6 +214,21 @@ func printIntegrations(cfg *pb.IntegrationsConfig) {
 			scopes = strings.Join(g.GetProjectScopes(), ",")
 		}
 		fmt.Printf("github   auto-PR enabled  scopes=%s  draft=%v\n", scopes, g.GetDraftDefault())
+	}
+	if tg := cfg.GetTelegram(); tg != nil {
+		any = true
+		state := "disabled"
+		if tg.GetEnabled() {
+			state = "enabled"
+		}
+		token := "token=unset"
+		if tg.GetTokenSet() {
+			token = "token=set"
+		}
+		fmt.Printf("telegram %s  %s  paired_chats=%d  events=[%s]\n",
+			state, token, len(tg.GetPairedChats()),
+			eventSummary(tg.GetEnabledEvents()),
+		)
 	}
 	if !any {
 		fmt.Println("(no integrations configured)")

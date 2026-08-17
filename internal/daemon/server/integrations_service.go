@@ -9,12 +9,14 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"google.golang.org/protobuf/types/known/timestamppb"
 
 	"github.com/watchfire-io/watchfire/internal/config"
 	"github.com/watchfire-io/watchfire/internal/daemon/discord"
 	"github.com/watchfire-io/watchfire/internal/daemon/echo"
 	"github.com/watchfire-io/watchfire/internal/daemon/notify"
 	"github.com/watchfire-io/watchfire/internal/daemon/relay"
+	"github.com/watchfire-io/watchfire/internal/daemon/telegrambot"
 	"github.com/watchfire-io/watchfire/internal/models"
 	pb "github.com/watchfire-io/watchfire/proto"
 )
@@ -102,6 +104,8 @@ func (s *integrationsService) SaveIntegration(_ context.Context, req *pb.SaveInt
 		}
 	case *pb.SaveIntegrationRequest_Github:
 		cfg.GitHub = githubProtoToModel(payload.Github)
+	case *pb.SaveIntegrationRequest_Telegram:
+		upsertTelegram(cfg, payload.Telegram)
 	default:
 		return nil, fmt.Errorf("save: missing payload")
 	}
@@ -140,6 +144,15 @@ func (s *integrationsService) DeleteIntegration(_ context.Context, req *pb.Delet
 		_ = config.DeleteIntegrationSecret(config.SecretKeyForIntegration(id, "url"))
 	case pb.IntegrationKind_GITHUB:
 		cfg.GitHub = models.GitHubConfig{}
+	case pb.IntegrationKind_TELEGRAM:
+		// Single-instance — delete drops the whole config + the keyring
+		// token so re-adding starts clean.
+		if cfg.Telegram != nil && cfg.Telegram.BotTokenRef != "" {
+			_ = config.DeleteIntegrationSecret(cfg.Telegram.BotTokenRef)
+		} else {
+			_ = config.DeleteIntegrationSecret(config.SecretKeyForIntegration("telegram", "bot_token"))
+		}
+		cfg.Telegram = nil
 	default:
 		return nil, fmt.Errorf("delete: unknown kind")
 	}
@@ -199,6 +212,8 @@ func (s *integrationsService) TestIntegration(ctx context.Context, req *pb.TestI
 			return &pb.TestIntegrationResponse{Ok: false, Message: "github auto-PR is disabled"}, nil
 		}
 		return &pb.TestIntegrationResponse{Ok: true, Message: "github auto-PR enabled (gh auth checked at PR-open time)"}, nil
+	case pb.IntegrationKind_TELEGRAM:
+		return s.deliverTelegramTest(ctx, cfg.Telegram)
 	default:
 		return nil, fmt.Errorf("test: unknown kind")
 	}
@@ -338,6 +353,35 @@ func (s *integrationsService) deliverSlackTest(ctx context.Context, ep models.Sl
 	return &pb.TestIntegrationResponse{
 		Ok:      allOK,
 		Message: strings.Join(msgs, " · "),
+	}, nil
+}
+
+// deliverTelegramTest validates the stored bot token by calling getMe
+// and reports the bot's username. Full test-message delivery to paired
+// chats arrives with the v10 relay adapter (task 0138) — until then
+// "test" means "does the token authenticate right now?".
+func (s *integrationsService) deliverTelegramTest(ctx context.Context, tg *models.TelegramConfig) (*pb.TestIntegrationResponse, error) {
+	if tg == nil {
+		return &pb.TestIntegrationResponse{Ok: false, Message: "telegram is not configured"}, nil
+	}
+	if tg.BotToken == "" {
+		return &pb.TestIntegrationResponse{Ok: false, Message: "telegram bot token not set in keyring"}, nil
+	}
+	client := telegrambot.New()
+	if s.httpClient != nil {
+		client.HTTP = s.httpClient
+	}
+	user, err := client.GetMe(ctx, tg.BotToken)
+	if err != nil {
+		return &pb.TestIntegrationResponse{Ok: false, Message: err.Error()}, nil
+	}
+	name := user.Username
+	if name == "" {
+		name = "(no username)"
+	}
+	return &pb.TestIntegrationResponse{
+		Ok:      true,
+		Message: fmt.Sprintf("connected as @%s", name),
 	}, nil
 }
 
@@ -497,6 +541,31 @@ func scrubConfigToProto(cfg *models.IntegrationsConfig) *pb.IntegrationsConfig {
 			ProjectMuteIds: append([]string(nil), ep.ProjectMuteIDs...),
 		})
 	}
+	if cfg.Telegram != nil {
+		tokenSet := false
+		if cfg.Telegram.BotTokenRef != "" {
+			if _, ok := config.LookupIntegrationSecret(cfg.Telegram.BotTokenRef); ok {
+				tokenSet = true
+			}
+		}
+		tg := &pb.TelegramIntegration{
+			Enabled:       cfg.Telegram.Enabled,
+			BotToken:      "", // never returned
+			TokenSet:      tokenSet,
+			EnabledEvents: eventsModelToProto(cfg.Telegram.EnabledEvents),
+		}
+		for _, pc := range cfg.Telegram.PairedChats {
+			tg.PairedChats = append(tg.PairedChats, &pb.TelegramPairedChatInfo{
+				ChatId:           pc.ChatID,
+				Username:         pc.Username,
+				PairedAt:         timestamppb.New(pc.PairedAt),
+				DefaultProjectId: pc.DefaultProjectID,
+				Muted:            pc.Muted,
+				Watch:            pc.Watch,
+			})
+		}
+		out.Telegram = tg
+	}
 	return out
 }
 
@@ -611,6 +680,45 @@ func upsertDiscord(cfg *models.IntegrationsConfig, in *pb.DiscordIntegration) er
 	}
 	cfg.Discord = append(cfg.Discord, endpoint)
 	return nil
+}
+
+// upsertTelegram applies a Save payload onto the single-instance
+// Telegram config. Write-only secret convention: a non-empty bot_token
+// is pushed to the keyring by config.SaveIntegrations (the runtime
+// BotToken field carries it there); empty means "keep the stored token".
+//
+// Paired chats are owned by the pairing / revoke flow (task 0136) — a
+// Save never adds or removes chats. It may only update the per-chat
+// `muted` / `watch` / `default_project_id` toggles for chats that
+// already exist, matched by chat_id, so the settings UIs can flip
+// switches without being able to forge a pairing.
+func upsertTelegram(cfg *models.IntegrationsConfig, in *pb.TelegramIntegration) {
+	if in == nil {
+		return
+	}
+	existing := cfg.Telegram
+	if existing == nil {
+		existing = &models.TelegramConfig{}
+	}
+	next := &models.TelegramConfig{
+		Enabled:       in.GetEnabled(),
+		BotTokenRef:   existing.BotTokenRef,
+		BotToken:      in.GetBotToken(), // empty = keep keyring entry (SaveIntegrations skips empty)
+		EnabledEvents: eventsProtoToModel(in.GetEnabledEvents()),
+		PairedChats:   append([]models.TelegramPairedChat(nil), existing.PairedChats...),
+	}
+	for _, pc := range in.GetPairedChats() {
+		for i := range next.PairedChats {
+			if next.PairedChats[i].ChatID != pc.GetChatId() {
+				continue
+			}
+			next.PairedChats[i].Muted = pc.GetMuted()
+			next.PairedChats[i].Watch = pc.GetWatch()
+			next.PairedChats[i].DefaultProjectID = pc.GetDefaultProjectId()
+			break
+		}
+	}
+	cfg.Telegram = next
 }
 
 func storeSecret(key, value string) error {

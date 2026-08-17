@@ -172,6 +172,11 @@ func LoadIntegrations() (*models.IntegrationsConfig, error) {
 			cfg.Discord[i].URL = v
 		}
 	}
+	if cfg.Telegram != nil && cfg.Telegram.BotTokenRef != "" {
+		if v, ok := store.Get(cfg.Telegram.BotTokenRef); ok {
+			cfg.Telegram.BotToken = v
+		}
+	}
 	return cfg, nil
 }
 
@@ -213,6 +218,17 @@ func SaveIntegrations(cfg *models.IntegrationsConfig) error {
 				return fmt.Errorf("failed to store Discord URL: %w", setErr)
 			}
 		}
+		// Telegram bot token (v10.0 Torch) — single instance, so the
+		// keyring key is fixed. Empty BotToken preserves the existing
+		// keyring entry (partial update semantics, same as endpoints).
+		if cfg.Telegram != nil && cfg.Telegram.BotToken != "" {
+			if cfg.Telegram.BotTokenRef == "" {
+				cfg.Telegram.BotTokenRef = SecretKeyForIntegration("telegram", "bot_token")
+			}
+			if setErr := store.Set(cfg.Telegram.BotTokenRef, cfg.Telegram.BotToken); setErr != nil {
+				return fmt.Errorf("failed to store Telegram bot token: %w", setErr)
+			}
+		}
 	}
 
 	// Detach the runtime URL field before serialising — the YAML must
@@ -227,6 +243,13 @@ func SaveIntegrations(cfg *models.IntegrationsConfig) error {
 	for i, ep := range cfg.Discord {
 		ep.URL = ""
 		scrubbed.Discord[i] = ep
+	}
+	if cfg.Telegram != nil {
+		// Copy before scrubbing — Telegram is a pointer, and the caller
+		// keeps its resolved runtime token.
+		tg := *cfg.Telegram
+		tg.BotToken = ""
+		scrubbed.Telegram = &tg
 	}
 	return SaveYAML(path, &scrubbed)
 }

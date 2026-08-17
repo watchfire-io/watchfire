@@ -7,6 +7,8 @@
 // reads / writes these structs and the YAML they serialise to.
 package models
 
+import "time"
+
 // EventBitmask is a tri-event toggle for outbound integrations. Each
 // integration carries its own copy so the user can fan TASK_FAILED to
 // Slack but RUN_COMPLETE to Discord without duplicating endpoints.
@@ -220,16 +222,51 @@ func (c InboundConfig) EffectiveGitHost() string {
 	return c.GitHost
 }
 
+// TelegramPairedChat is one Telegram chat authorized to talk to the
+// daemon (v10.0 Torch). Pairing is the security boundary: bots are
+// globally reachable, so only chats in this list ever see project data.
+// `Username` is captured at pairing time for display only — auth is by
+// `ChatID` membership, never by username (usernames are mutable and
+// spoofable).
+type TelegramPairedChat struct {
+	ChatID           int64     `yaml:"chat_id" json:"chat_id"`
+	UserID           int64     `yaml:"user_id" json:"user_id"`
+	Username         string    `yaml:"username,omitempty" json:"username,omitempty"`
+	PairedAt         time.Time `yaml:"paired_at" json:"paired_at"`
+	DefaultProjectID string    `yaml:"default_project_id,omitempty" json:"default_project_id,omitempty"`
+	Muted            bool      `yaml:"muted,omitempty" json:"muted,omitempty"`
+	Watch            bool      `yaml:"watch,omitempty" json:"watch,omitempty"`
+}
+
+// TelegramConfig is the single-instance Telegram bridge configuration
+// (v10.0 Torch). The bot token lives in the OS keyring under
+// `BotTokenRef` (`watchfire.integration.telegram.bot_token`); the YAML
+// carries only the reference. `BotToken` is the runtime-resolved value —
+// never serialised.
+//
+// The bridge is fully inert unless `Enabled` is true AND a token is
+// stored AND at least one chat is paired.
+type TelegramConfig struct {
+	Enabled       bool                 `yaml:"enabled" json:"enabled"`
+	BotTokenRef   string               `yaml:"bot_token_ref,omitempty" json:"bot_token_ref,omitempty"`
+	BotToken      string               `yaml:"-" json:"-"`
+	EnabledEvents EventBitmask         `yaml:"enabled_events" json:"enabled_events"`
+	PairedChats   []TelegramPairedChat `yaml:"paired_chats,omitempty" json:"paired_chats,omitempty"`
+}
+
 // IntegrationsConfig is the root document persisted at
 // `~/.watchfire/integrations.yaml`. All four adapter types fan out from
 // here; each subset can be empty. v8.0 Echo adds `Inbound` for the
 // inbound HTTP listener — purely additive, defaults to disabled.
+// v10.0 Torch adds `Telegram` — nil means "not configured", preserving
+// prior behaviour byte-for-byte.
 type IntegrationsConfig struct {
 	Webhooks []WebhookEndpoint `yaml:"webhooks,omitempty" json:"webhooks,omitempty"`
 	Slack    []SlackEndpoint   `yaml:"slack,omitempty" json:"slack,omitempty"`
 	Discord  []DiscordEndpoint `yaml:"discord,omitempty" json:"discord,omitempty"`
 	GitHub   GitHubConfig      `yaml:"github" json:"github"`
 	Inbound  InboundConfig     `yaml:"inbound,omitempty" json:"inbound,omitempty"`
+	Telegram *TelegramConfig   `yaml:"telegram,omitempty" json:"telegram,omitempty"`
 }
 
 // NewIntegrationsConfig returns a zero-value config. Used by the loader
