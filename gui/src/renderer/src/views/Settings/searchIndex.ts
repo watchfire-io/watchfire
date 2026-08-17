@@ -79,7 +79,13 @@ export const SETTINGS_SEARCH_INDEX: SettingsSearchEntry[] = [
   { category: 'notifications', fieldId: 'notifications-volume', label: 'Volume', keywords: ['loud', 'audio', 'sound'] },
   { category: 'notifications', fieldId: 'notifications-quiet-hours', label: 'Quiet hours', keywords: ['mute', 'do not disturb', 'dnd'] },
 
-  { category: 'integrations', fieldId: 'integrations-list', label: 'Integrations', keywords: ['webhook', 'slack', 'discord', 'github'] },
+  { category: 'integrations', fieldId: 'integrations-list', label: 'Integrations', keywords: ['webhook', 'slack', 'discord', 'github', 'telegram'] },
+  // The Telegram card carries data-setting-field-id="integrations-telegram"
+  // when configured; unconfigured installs fall back to opening the
+  // category (the scroll helper null-checks missing anchors).
+  { category: 'integrations', fieldId: 'integrations-telegram', label: 'Telegram', keywords: ['telegram', 'bot', 'bridge', 'pair', 'pairing', 'qr'] },
+  { category: 'integrations', fieldId: 'integrations-telegram', label: 'Telegram bot token', keywords: ['telegram', 'bot token', 'botfather', 'token'] },
+  { category: 'integrations', fieldId: 'integrations-telegram', label: 'Telegram paired chats', keywords: ['telegram', 'pair', 'chat', 'revoke', 'watch', 'mute'] },
 
   { category: 'inbound', fieldId: 'inbound-listen-addr', label: 'Inbound listen address', keywords: ['port', 'host', 'echo', 'http'] },
   { category: 'inbound', fieldId: 'inbound-public-url', label: 'Public URL', keywords: ['ngrok', 'tunnel', 'url', 'https'] },
