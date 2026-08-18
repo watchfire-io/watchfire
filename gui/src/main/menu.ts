@@ -1,5 +1,26 @@
-import { app, Menu, type MenuItemConstructorOptions } from 'electron'
+import { app, BrowserWindow, Menu, type MenuItemConstructorOptions } from 'electron'
 import { createHomeWindow, createMonitorWindow, focusAdjacentWindow } from './windows'
+
+// v10 Torch (task 0148): CmdOrCtrl+, opens Settings for whichever window is
+// focused. The renderer decides what "Settings" means for its scope — a
+// project window opens its project Settings surface (even in chat-focus),
+// the home window opens global app settings. With no focused window, surface
+// the home window first so the shortcut never lands nowhere.
+function openSettingsInFocusedWindow(): void {
+  const focused = BrowserWindow.getFocusedWindow()
+  if (focused) {
+    focused.webContents.send('open-settings')
+    return
+  }
+  // No focused window: surface the home window, deferring the message until
+  // its renderer is ready if it was just created.
+  const win = createHomeWindow()
+  if (win.webContents.isLoading()) {
+    win.webContents.once('did-finish-load', () => win.webContents.send('open-settings'))
+  } else {
+    win.webContents.send('open-settings')
+  }
+}
 
 // Build and install the application menu (v8 Inferno — Feature 1).
 //
@@ -24,6 +45,12 @@ export function buildAppMenu(): void {
           submenu: [
             { role: 'about' },
             { type: 'separator' },
+            {
+              label: 'Settings…',
+              accelerator: 'CmdOrCtrl+,',
+              click: () => openSettingsInFocusedWindow()
+            },
+            { type: 'separator' },
             { role: 'services' },
             { type: 'separator' },
             { role: 'hide' },
@@ -46,6 +73,18 @@ export function buildAppMenu(): void {
           accelerator: 'CmdOrCtrl+N',
           click: () => createHomeWindow()
         },
+        // Windows/Linux keep Settings under File (macOS puts it in the app
+        // menu above, per platform convention).
+        ...(!isMac
+          ? ([
+              { type: 'separator' },
+              {
+                label: 'Settings…',
+                accelerator: 'CmdOrCtrl+,',
+                click: () => openSettingsInFocusedWindow()
+              }
+            ] as MenuItemConstructorOptions[])
+          : []),
         { type: 'separator' },
         isMac ? { role: 'close' } : { role: 'quit' }
       ]

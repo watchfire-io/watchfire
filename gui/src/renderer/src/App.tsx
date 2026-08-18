@@ -118,7 +118,24 @@ export default function App() {
     }
   }, [connected, startFocus, stopFocus, startNotifications, stopNotifications])
 
-  // Global keyboard shortcuts
+  // Cmd+, / Ctrl+, and the app-menu "Settings…" item (v10 Torch, task 0148):
+  // in a project window this opens the PROJECT Settings surface — routed as a
+  // focus request so ProjectView expands the reference region even when
+  // chat-focus has it collapsed. The home window keeps its historical
+  // behavior and opens global app settings.
+  const openSettings = useCallback(() => {
+    const scope = useAppStore.getState().windowScope
+    if (scope.kind === 'project') {
+      requestFocus({ projectId: scope.projectId, target: 'settings' })
+    } else {
+      setView('settings')
+    }
+  }, [requestFocus, setView])
+
+  // Global keyboard shortcuts. The main process registers CmdOrCtrl+, as a
+  // menu accelerator (which normally consumes the keypress before the
+  // renderer sees it); this keydown handler is the fallback so the shortcut
+  // still works if the menu item is ever absent. Both paths are idempotent.
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       const meta = e.metaKey || e.ctrlKey
@@ -126,16 +143,21 @@ export default function App() {
       // Cmd+, → Settings
       if (meta && e.key === ',') {
         e.preventDefault()
-        setView('settings')
+        openSettings()
       }
     },
-    [setView]
+    [openSettings]
   )
 
   useEffect(() => {
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [handleKeyDown])
+
+  // The app-menu "Settings…" item routes here via the main process.
+  useEffect(() => {
+    window.watchfire.onOpenSettings(openSettings)
+  }, [openSettings])
 
   // The mini-monitor is its own minimal surface — no sidebar, header, or
   // reconnect overlays. It shows an empty fleet until the daemon connects and

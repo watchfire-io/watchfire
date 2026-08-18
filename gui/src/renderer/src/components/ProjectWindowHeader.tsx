@@ -8,7 +8,9 @@ import { useProjectsStore } from '../stores/projects-store'
 // the project name plus the two cross-window affordances:
 //   - "Open another project" → asks the main process to bring up the home /
 //     dashboard window so the user can pick a different project.
-//   - a Settings toggle so Cmd+, (and the gear) stays reachable in-window.
+//   - an App-settings toggle so global settings stay reachable in-window.
+//     (Cmd+, opens PROJECT settings in a project window since v10 Torch,
+//     task 0148 — see App.tsx openSettings.)
 export function ProjectWindowHeader({ inSettings }: { inSettings: boolean }) {
   const projectId = useAppStore((s) =>
     s.windowScope.kind === 'project' ? s.windowScope.projectId : null
@@ -33,9 +35,11 @@ export function ProjectWindowHeader({ inSettings }: { inSettings: boolean }) {
           <PanelsTopLeft size={14} />
           Open another project
         </button>
+        {/* App-level (global) settings. Project settings has its own gear in
+            the ProjectView header row + Cmd+, (v10 Torch, task 0148). */}
         <button
           onClick={() => setView(inSettings ? 'project' : 'settings')}
-          title={inSettings ? 'Back to project' : 'Settings'}
+          title={inSettings ? 'Back to project' : 'App settings'}
           className="p-1.5 text-[var(--wf-text-muted)] hover:text-[var(--wf-text-primary)] transition-colors"
         >
           {inSettings ? <ArrowLeft size={16} /> : <Settings size={16} />}

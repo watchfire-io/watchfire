@@ -94,6 +94,9 @@ interface WatchfireAPI {
   // v6.0 Ember — weekly digest reads
   readDigest(dateKey: string): Promise<string | null>
   listDigests(): Promise<string[]>
+
+  // v10 Torch (task 0148) — app-menu "Settings…" / CmdOrCtrl+, routing
+  onOpenSettings(callback: () => void): void
 }
 
 declare global {

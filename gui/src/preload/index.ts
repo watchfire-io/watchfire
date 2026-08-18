@@ -184,7 +184,14 @@ const api = {
 
   // v6.0 Ember — list available digest dates, newest first. Used by the
   // in-app notification center's Digests tab.
-  listDigests: (): Promise<string[]> => ipcRenderer.invoke('digests:list')
+  listDigests: (): Promise<string[]> => ipcRenderer.invoke('digests:list'),
+
+  // v10 Torch (task 0148) — the app-menu "Settings…" item (CmdOrCtrl+,)
+  // routes to the focused window. App.tsx opens project Settings in a project
+  // window, global settings in the home window.
+  onOpenSettings: (callback: () => void): void => {
+    ipcRenderer.on('open-settings', () => callback())
+  }
 }
 
 contextBridge.exposeInMainWorld('watchfire', api)
