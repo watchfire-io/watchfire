@@ -80,6 +80,7 @@ var helpSections = []helpSection{
 		keys: []helpKey{
 			{"e", "edit definition in $EDITOR"},
 			{"Enter", "edit definition in $EDITOR"},
+			{"r", "Retrofit definition from completed tasks"},
 			{"j/k", "Scroll"},
 		},
 	},
