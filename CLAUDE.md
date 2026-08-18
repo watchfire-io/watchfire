@@ -41,7 +41,27 @@ Push failures and `gh api` errors fall back the same way but log per failure.
 To enable, set `github.enabled: true` in `~/.watchfire/integrations.yaml` and
 optionally restrict to specific projects via `github.project_scopes: [<id>...]`.
 
+## Telegram Bridge (v10.0 Torch)
+
+The daemon can be supervised from Telegram: a long-polling bridge
+(`internal/daemon/telegram/` + `internal/daemon/telegrambot/`) with pairing as
+the allowlist, live watch-mode relay, and an outbound relay adapter. See
+`ARCHITECTURE.md` → "Telegram Bridge (`internal/daemon/telegram/`) — v10.0
+Torch" for the design. Two invariants for anyone touching bridge code: it
+**never calls `Resize`**, and the explicit `/say` path is the **only** PTY
+write — both enforced by `internal/daemon/telegram/watch_guard_test.go`.
+
+## Cycle ground rules
+
+Tasks that run inside a release cycle are **local-only**: never push to a
+remote, never create PRs or tags, and never touch release bookkeeping —
+`version.json`, `CHANGELOG.md` release headers, or the project definition's
+"Shipped" sections. Release bookkeeping and the push happen manually, only
+after the cycle's validation gate passes and the user explicitly signs off.
+
 ## Repository Structure
+
+Flat Go monorepo — one `go.mod` at the root:
 
 ```
 watchfire/
@@ -50,17 +70,18 @@ watchfire/
 ├── assets/                 # Images, logos, brand references (shared across components)
 ├── proto/                  # gRPC protobuf definitions
 │   └── watchfire.proto
-├── daemon/                 # watchfired - Go daemon
-│   ├── cmd/
-│   │   └── watchfired/
-│   │       └── main.go
-│   ├── internal/
-│   └── go.mod
-├── cli/                    # watchfire - Go CLI/TUI
-│   ├── cmd/
-│   │   └── watchfire/
-│   │       └── main.go
-│   ├── internal/
-│   └── go.mod
-└── gui/                    # Electron GUI (future)
+├── cmd/
+│   ├── watchfired/         # Daemon entry point
+│   └── watchfire/          # CLI/TUI entry point
+├── internal/
+│   ├── daemon/             # Daemon packages (agent, server, watcher, task, project, telegram, …)
+│   ├── tui/                # Bubbletea TUI
+│   ├── cli/                # CLI commands
+│   ├── mcpserver/          # MCP server (watchfire mcp serve)
+│   ├── config/             # YAML config, path helpers
+│   └── models/             # Data structures
+├── gui/                    # Electron GUI
+└── go.mod
 ```
+
+See `ARCHITECTURE.md` → "Repository Structure" for the full tree.

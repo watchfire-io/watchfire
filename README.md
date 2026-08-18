@@ -69,11 +69,15 @@ Define your project once. Watchfire feeds agents the right specs, constraints, a
 
 ### 📋 Structured Workflow
 
-Break big projects into tasks with clear specs. Agents tackle them in order, each in an isolated git worktree branch.
+Break big projects into tasks with clear specs. Agents tackle them in order, each in an isolated git worktree branch. Quick-add turns a bullet list into a batch of tasks in one go — GUI modal, TUI overlay, or `watchfire task quick` in your `$EDITOR`.
 
 ### 🚀 Scale with Confidence
 
-Run agents across multiple projects in parallel. Monitor live terminal output, review results, and merge — from TUI or GUI.
+Run agents across multiple projects in parallel. Monitor live terminal output, review results, and merge — from TUI or GUI. The GUI's integrated terminal spawns your login shell (configurable shell picker in Settings), so `PATH` matches your native terminal.
+
+### 📱 Supervise from Anywhere
+
+Pair a Telegram bot with your daemon and run Watchfire from your phone: check status, start tasks, watch the agent conversation live, and reply into a running session. Local-only by design — the daemon dials out via long polling, no public endpoint or tunnel needed.
 
 <p align="center">
   <img src="assets/readme-context-flow.svg" alt="Context flows into agents" width="650" />
@@ -91,6 +95,52 @@ Run agents across multiple projects in parallel. Monitor live terminal output, r
 | **Wildfire** | Autonomous loop: execute tasks, refine drafts, generate new tasks |
 | **Generate Definition** | Auto-generate a project definition from your codebase |
 | **Generate Tasks** | Auto-generate tasks from the project definition |
+| **Retrofit Definition** | Fold completed tasks back into an up-to-date project definition, then optionally archive them |
+
+---
+
+## Supervise from Telegram
+
+Watchfire ships a built-in Telegram bridge: pair your own bot with the daemon
+and supervise every project from your phone. It uses long polling — the
+daemon dials out to Telegram, so there's **no public endpoint, tunnel, or
+port forward**, and only chats you explicitly pair ever see project data.
+
+### Setup
+
+1. **Create a bot** — message [@BotFather](https://t.me/BotFather) on
+   Telegram, send `/newbot`, and copy the bot token.
+2. **Paste the token into Watchfire** — GUI: Settings → Integrations →
+   Telegram; TUI: `Ctrl+i`; or CLI:
+   ```bash
+   watchfire integrations add telegram
+   ```
+   The token is stored in your OS keyring, never in a config file.
+3. **Pair your chat** — click **Pair** (GUI shows a QR code) or run:
+   ```bash
+   watchfire telegram pair
+   ```
+   Open the printed `t.me` link on your phone (or send `/pair <code>` to the
+   bot). Codes are single-use and expire after 10 minutes; unpaired chats get
+   nothing but pairing instructions.
+
+### Commands
+
+| Command | What it does |
+|---------|--------------|
+| `/projects`, `/use <name>` | List projects / pick the active one for this chat |
+| `/status`, `/tasks` | Agent + task status of the active project |
+| `/run <n>`, `/runall` | Start a task / all ready tasks (refuses if an agent is already running) |
+| `/retry <n>`, `/cancel <n>` | Re-queue a failed task / cancel a running one |
+| `/screen` | Plain-text snapshot of the live agent session |
+| `/watch on\|off` | Relay the agent conversation live to this chat |
+| `/say <text>` | Reply into the running agent session |
+| `/mute`, `/unmute`, `/help` | Pause event pushes / the full list |
+
+Failed tasks, completed runs, and weekly digests are pushed automatically
+(configurable per event). The bridge is read-only toward agent sessions
+except the explicit `/say` — a TUI or GUI attached at the same time sees no
+difference.
 
 ---
 

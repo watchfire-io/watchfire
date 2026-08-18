@@ -349,6 +349,7 @@ The CLI/TUI is the primary interface for developers. A single binary (`watchfire
 | `watchfire task list` | `task ls` | List tasks (excludes soft-deleted) |
 | `watchfire task list --deleted` | | List soft-deleted tasks |
 | `watchfire task add` | | Add new task (interactive prompts) |
+| `watchfire task quick` | | v10 Torch quick-add: opens `$EDITOR` with a bullet-list template — one task per top-level bullet, created through the validated `CreateTasksBatch` path. `--stdin` reads the list from stdin; tasks default to `ready` (`--draft` to opt out); `#` comment lines are stripped |
 | `watchfire task <taskid>` | | Edit task (interactive) |
 | `watchfire task delete <taskid>` | `task rm <taskid>` | Soft delete task (sets deleted_at) |
 | `watchfire task restore <taskid>` | | Restore soft-deleted task |
@@ -361,6 +362,7 @@ The CLI/TUI is the primary interface for developers. A single binary (`watchfire
 | `watchfire chat` | | Start interactive chat session with project context |
 | `watchfire plan` | | Generate tasks from project definition |
 | `watchfire generate` | `gen` | Generate project definition using agent |
+| `watchfire definition retrofit` | | v10 Torch: run a `retrofit-definition` session that folds completed tasks back into the definition. `--archive` offers to archive the folded tasks afterwards (confirm-gated; `--yes` skips the prompt) |
 | `watchfire wildfire` | `fire` | Autonomous three-phase loop until no new tasks or Ctrl+C |
 
 #### Daemon
@@ -377,6 +379,14 @@ The CLI/TUI is the primary interface for developers. A single binary (`watchfire
 |---------|-------|-------------|
 | `watchfire mcp serve` | | Run the stdio MCP server (spawned by MCP clients, not by users; auto-starts daemon). `--read-only` serves observation tools only |
 | `watchfire mcp install [client]` | | Register the MCP server with a client: `claude-code`, `codex`, `gemini`, `opencode`, `copilot`. No arg = interactive picker. `--print` emits generic JSON config |
+
+#### Telegram (v10 Torch)
+
+| Command | Alias | Description |
+|---------|-------|-------------|
+| `watchfire integrations add telegram` | | Store the bot token (keyring) + enable the bridge — the only integration kind addable from the CLI |
+| `watchfire telegram pair` | | Begin pairing: prints the one-time code + `t.me` deep link, polls until paired/expired |
+| `watchfire telegram status` | | Show bridge status and the paired-chats list |
 
 ### `watchfire init` Flow
 
@@ -1254,6 +1264,123 @@ The e2e test sits behind the `mcpe2e` build tag (so `make test` never compiles i
 
 ---
 
+## Telegram Bridge (`internal/daemon/telegram/`) — v10.0 Torch
+
+### Overview
+
+The Telegram bridge lets a user supervise Watchfire from their phone: pick a project from chat, see status, get pushed events, watch the agent conversation live, and reply into a running session — without disturbing whatever the TUI/GUI is doing. It is daemon-internal (not a separate client binary): a long-polling goroutine inside `watchfired`, started beside the Discord registrar and the Echo inbound server.
+
+Command routing reuses the transport-agnostic inbound router from v4/v5: `echo.Route(...)` plus the production `echo.CommandContext` callbacks (`internal/daemon/server/command_context.go`, built in v10 task 0133 and shared by Slack, Discord, and Telegram — one implementation, three transports).
+
+### Local-only by long polling
+
+Every other inbound provider (GitHub/Slack/Discord/GitLab/Bitbucket) requires a **public HTTPS endpoint** — a real obstacle for a local-first daemon on a laptop. Telegram's Bot API supports **long polling** (`getUpdates`): the daemon dials out; no listener, no tunnel, no port forward. This is the same local-only posture as the v9 MCP stdio decision. The bridge therefore does **not** go through the Echo HTTP server at all — it is an outbound-dialing goroutine like the Discord Gateway.
+
+The bridge is **fully inert unless configured**: `startTelegramBridge()` (`internal/daemon/server/server.go`) is a no-op unless Telegram is `enabled` in `~/.watchfire/integrations.yaml` AND the bot token resolves from the keyring — an unconfigured install starts no goroutine and dials nothing. `SaveIntegration`/`DeleteIntegration` restart the bridge against the fresh config, mirroring `restartEchoServer`/`restartDiscordRegistrar`.
+
+### Components
+
+```
+internal/daemon/telegrambot/        # Thin Bot API client (stdlib HTTP only, like slackbot/discordbot)
+    client.go                       # getUpdates (long-poll, default 45s, Telegram max 50s), sendMessage,
+                                    # editMessageText, setMyCommands, answerCallbackQuery, getMe
+internal/daemon/telegram/           # The bridge (mirrors internal/daemon/discord/ in shape)
+    bridge.go                       # Long-poll loop, offset tracking, graceful shutdown, restart-on-config-change
+    commands.go                     # Per-chat dispatch: echo.Route verbs + Telegram-only verbs, /help, setMyCommands
+    pairing.go                      # One-time pairing codes (crypto/rand, 8 chars, 10-min TTL, single active code)
+    render.go                       # echo.CommandResponse → Telegram HTML (parse_mode=HTML; 4096-char chunking)
+    runcontrol.go                   # /run /runall /say — write-side verbs through the RunController seam
+    watch.go                        # Live conversation relay ("watch mode"): tailer, screen deltas, chatSender
+internal/daemon/relay/telegram.go   # Outbound relay.Adapter: TASK_FAILED / RUN_COMPLETE / WEEKLY_DIGEST → paired chats
+internal/daemon/server/
+    command_context.go              # Production echo.CommandContext (shared by Slack/Discord/Telegram)
+    integrations_telegram.go        # BeginTelegramPairing / GetTelegramPairingStatus / RevokeTelegramChat RPCs
+    telegram_sessions.go            # telegram.SessionSource impl over agent.Manager (read-only seam)
+    telegram_runcontrol.go          # telegram.RunController impl (StartAgent path + refusal backstop)
+```
+
+### Configuration & secrets
+
+Optional `telegram:` section in `~/.watchfire/integrations.yaml` (`models.TelegramIntegration`): `enabled`, `bot_token_ref`, per-event toggles, and the `paired_chats` list (chat id, user id, display-only username, `default_project_id`, `muted`, `watch`). The bot token lives in the OS keyring under `watchfire.integration.telegram.bot_token` — **never in YAML** — via the existing `LookupIntegrationSecret`/`PutIntegrationSecret` path, and `ListIntegrations` serves only a `token_set` boolean. Old daemons ignore the new key (non-strict YAML); new daemons without it behave exactly as before.
+
+### Pairing (the security boundary)
+
+Telegram bots are globally reachable — anyone can DM the bot. Pairing is the allowlist:
+
+```
+1. User creates a bot with @BotFather, pastes the token into Watchfire
+   (GUI Settings → Integrations / TUI integrations overlay / CLI)
+   → token goes to the keyring; daemon validates via getMe and starts the poller
+2. User clicks Pair (any surface) → BeginTelegramPairing RPC returns a one-time
+   code (8 chars, crypto/rand, 10-min TTL, single active code) + deep link
+   https://t.me/<bot_username>?start=<code>  (rendered as a QR in the GUI)
+3. User opens the link (or sends /pair <code>) → poller matches the code,
+   persists the chat to paired_chats, replies with a welcome + command list,
+   and invalidates the code
+4. Unpaired chats: every message is ignored except /start and /pair, which reply
+   with pairing instructions only. No project data ever flows to an unpaired chat.
+5. Revoke = RevokeTelegramChat RPC (GUI/TUI list, revoke affordance);
+   the poller drops the chat immediately
+```
+
+Clients poll `GetTelegramPairingStatus` to flip the UI from "code pending" to "paired" (states: `NONE | PENDING | PAIRED | EXPIRED`).
+
+### Command set
+
+Routing: `/status`, `/tasks`, `/retry`, `/cancel` are pure dispatch through `echo.Route` with the Telegram `CommandContext` (which sees all registered active projects — pairing binds the chat to the daemon owner, so no per-guild/team scoping applies). The remaining verbs are Telegram-only, implemented in the bridge. `setMyCommands` registers the full set for Telegram's autocomplete.
+
+| Command | Behavior |
+|---|---|
+| `/projects` | Numbered list of registered projects (with agent-running glyphs) + inline keyboard buttons |
+| `/use <name\|number>` | Select the active project for this chat (fuzzy name match; number indexes the last `/projects` listing). Persisted as `default_project_id` — survives daemon restarts |
+| `/status` | Existing router status handler: agent state, current task, todo/in-dev/done counts, needs-attention |
+| `/tasks` | Top active tasks (`ListTopActiveTasks`) |
+| `/run <n>` / `/runall` | Start task n / run-all. **Refuses if an agent is already running** (same never-queue-never-replace semantics as MCP `run_task`), enforced twice: bridge pre-check via `SessionSource.ActiveSession`, then the server-side `RunController` re-checks as the authoritative backstop |
+| `/retry <n>` / `/cancel <n>` | Existing router verbs (retry re-queues done+failed; cancel stops the agent then marks failed, reason "cancelled via Telegram") |
+| `/screen` | One-shot plain-text snapshot of the live session (last 40 normalized lines, `<pre>` block) |
+| `/say <text>` | Inject `<text>` + `\r` into the running agent's PTY — explicit, never implicit. The argument is re-carved **verbatim** from the raw message (internal whitespace preserved), not the whitespace-normalized dispatcher rest |
+| `/watch on\|off` | Toggle live conversation relay for this chat (persisted per chat) |
+| `/mute` / `/unmute` | Pause/resume outbound event pushes to this chat (honored per send by the relay adapter) |
+| `/pair <code>` | Redeem a pairing code |
+| `/help` | Command list (also the `setMyCommands` source) |
+
+### Watch mode (live conversation relay)
+
+Three fidelity tiers, cheapest first:
+
+- **Events (always on unless muted)** — the outbound relay adapter (below) pushes TASK_FAILED / RUN_COMPLETE / WEEKLY_DIGEST.
+- **On-demand (`/status`, `/screen`)** — pull, no background cost.
+- **Live (`/watch on`)** — the bridge relays the agent's *conversation* — not raw PTY bytes — to the chat:
+  - **Primary source — transcript tail.** A polling `TranscriptTailer` (1s interval; tolerates file-not-yet-created and truncation; final drain on session end) tails the agent-native JSONL transcript via the backend's existing `LocateTranscript`, emitting assistant text blocks and one-line tool-use summaries ("⚒ Edit internal/tui/model.go"). Claude Code is first-class; backends without a tailable transcript (or a tailer that errors mid-session) fall to tier 2 behind the same `TailableTranscript` interface.
+  - **Fallback — screen deltas.** Debounced (≥5s) plain-text vt10x snapshots (same normalization as the MCP `get_agent_screen` tool), sent as `<pre>` blocks only when the content actually changed.
+  - **Rate discipline (per-chat `chatSender`):** 4096-char chunking at line boundaries (tags never split); coalescing to ≤1 send per 2.5s; consecutive assistant text grows the current message in place via `editMessageText` until 3500 rendered chars or an edit failure; a flood cap sends one "output is heavy" notice and throttles to 1 send/30s, recovering when the rolling 60s window drains.
+  - **Session markers:** "▶ task NNNN — title" when the reconciler first sees a task-mode session; the end marker ("✔ merged" / "✔ done" / "⚠ merge failed" / "✖ failed: reason" / "■ session ended") is resolved from the task YAML via `SessionSource.TaskOutcome` — deliberately *not* the notify bus, so watching chats don't get duplicates of the relay adapter's pushes.
+  - **Lifecycle:** a reconciler loop (2s) matches watching chats against live sessions; each watching chat gets its own relay + sender state; a finished relay stays registered until its session disappears so a session is never relayed twice.
+
+### Invariants (enforced, not asserted)
+
+The bridge observes sessions only through the `telegram.SessionSource` seam (plain screen lines + task YAML outcomes — no `Process`, no PTY handle) and writes only through `telegram.RunController`:
+
+1. **The bridge never calls `Resize`.** Terminal size is global per project; an external bridge resizing would fight the attached TUI/GUI.
+2. **`/say` is the only PTY write.** The single sanctioned `SendInput` call site is `Bridge.injectSay`.
+
+`watch_guard_test.go` parses the package source and fails on any `Resize` reference, any `SendInput` reference outside the one allowlisted call site (and fails if that call-site count ≠ 1), and any import of the agent-manager package. A TUI/GUI attached simultaneously sees zero difference; per-subscriber cursors mean a slow Telegram consumer can only drop its own bytes.
+
+### Outbound events (relay adapter)
+
+`relay.TelegramAdapter` (`internal/daemon/relay/telegram.go`) is a normal `relay.Adapter` registered in `buildRelayAdapters()` — it inherits the dispatcher's retry and circuit breaker for free. It formats TASK_FAILED / RUN_COMPLETE / WEEKLY_DIGEST for every paired, un-muted chat, gated on the config's per-event toggles; per-chat failures are aggregated. `TestIntegration` supports the `telegram` kind for the settings-UI test button.
+
+### Surfaces
+
+| Surface | What it offers |
+|---------|----------------|
+| **gRPC** | `IntegrationKind TELEGRAM`, `TelegramIntegration` (masked, `token_set`), `IntegrationsService.BeginTelegramPairing` / `GetTelegramPairingStatus` / `RevokeTelegramChat` — see the gRPC API section |
+| **GUI** | Settings → Integrations → `TelegramDetail.tsx`: token entry + test, Pair with QR + deep link, paired-chats table with revoke and per-chat watch/mute toggles; settings-search entries |
+| **TUI** | Integrations overlay (`Ctrl+i`): Telegram row in the add-form kind cycle, pairing-code display, per-chat rows with revoke/watch/mute |
+| **CLI** | `watchfire integrations add telegram`, `watchfire telegram pair`, `watchfire telegram status` |
+
+---
+
 ## Directory Structures
 
 ### Global (`~/.watchfire/`)
@@ -1347,6 +1474,8 @@ success: true                         # Only when status=done
 failure_reason: "..."                 # Only when success=false
 position: 1                           # Display/work ordering
 agent_sessions: 2                     # How many times agent worked on this
+retrofit_archived: true               # v10 Torch, optional — soft-deleted by the definition-retrofit
+                                      # archive; still counted in insights (Task.HiddenFromInsights())
 created_at: "2026-02-03T13:05:00Z"
 started_at: "2026-02-03T14:00:00Z"    # When agent first started
 completed_at: "2026-02-03T15:30:00Z"  # When status changed to done
@@ -1397,6 +1526,9 @@ definition: |
 created_at: "2026-02-03T13:02:52Z"
 updated_at: "2026-02-03T14:30:00Z"
 next_task_number: 6
+last_retrofit_task_number: 4          # v10 Torch, optional — definition-retrofit watermark
+                                      # (0/absent = never retrofitted). Advanced by the daemon's
+                                      # handleRetrofitDone; agents never write it
 ```
 
 ### Global Settings File Format
@@ -1486,7 +1618,8 @@ agents:
   - project_id: "abc12345"
     project_name: "my-project"
     project_path: "/home/user/my-project"
-    mode: "task"              # chat | task | start-all | wildfire
+    mode: "task"              # chat | task | start-all | wildfire |
+                              # generate-definition | generate-tasks | retrofit-definition
     task_number: 1            # Only when mode is task or wildfire
     task_title: "Add auth"    # Only when mode is task or wildfire
     issue_type: "rate_limited"  # auth_required | rate_limited | "" (optional)
@@ -1640,6 +1773,9 @@ message RequestMeta {
 | `LogService` | Session logs |
 | `DaemonService` | Daemon status, shutdown |
 | `SettingsService` | Global settings |
+| `NotificationService` | Live notification stream (`Subscribe`) for client-side notification centers (v4 Pulse) |
+| `InsightsService` | Per-project/global insights, task diffs, report exports (v4 Inspect) |
+| `IntegrationsService` | Outbound relay + inbound endpoints + Telegram pairing (v4 Relay / v10 Torch) |
 
 ### ProjectService
 
@@ -1666,6 +1802,8 @@ message RequestMeta {
 | `BulkDelete` | `BulkDeleteRequest` | `TaskList` | Soft delete multiple |
 | `BulkRestore` | `BulkRestoreRequest` | `TaskList` | Restore multiple |
 | `ReorderTasks` | `ReorderTasksRequest` | `TaskList` | Update positions |
+| `CreateTasksBatch` | `CreateTasksBatchRequest` | `TaskList` | v10 Torch quick-add: server-side `task.ParseQuickAdd` splits a free-text bullet list into tasks (one per top-level bullet; `AC:`/`Acceptance:` lines become acceptance criteria; title derived from the first sentence, ≤70 runes). Creates through the same validated path as `CreateTask` — a bad item fails the whole batch atomically. `status` is `draft`\|`ready` only |
+| `ArchiveRetrofitTasks` | `ArchiveRetrofitRequest` | `TaskList` | v10 Torch definition retrofit: soft-deletes the folded done tasks at or below the project's retrofit watermark. The request never names task numbers (server-authoritative window); `dry_run: true` returns candidates for the confirm prompt. Archived tasks carry `retrofit_archived: true` and keep counting in insights (`Task.HiddenFromInsights()`) |
 
 ```protobuf
 message BulkUpdateStatusRequest {
@@ -1680,7 +1818,7 @@ message BulkUpdateStatusRequest {
 
 | RPC | Request | Response | Notes |
 |-----|---------|----------|-------|
-| `StartAgent` | `StartAgentRequest` | `AgentStatus` | Start agent (chat or task mode) |
+| `StartAgent` | `StartAgentRequest` | `AgentStatus` | Start agent. Modes: `chat` \| `task` \| `start-all` \| `wildfire` \| `generate-definition` \| `generate-tasks` \| `retrofit-definition` (v10 Torch — folds done tasks above the project's retrofit watermark back into the definition; completion signalled via `.watchfire/retrofit_done.yaml`, which advances `last_retrofit_task_number`) |
 | `StopAgent` | `ProjectId` | `AgentStatus` | Stop running agent |
 | `GetAgentStatus` | `ProjectId` | `AgentStatus` | Is agent running? Which task? Includes current issue. |
 | `SubscribeScreen` | `SubscribeScreenRequest` | `stream ScreenBuffer` | Live terminal stream (parsed via vt10x, for GUI) |
@@ -1744,6 +1882,22 @@ message Log {
 | `UpdateSettings` | `Settings` | `Settings` | Update global settings |
 | `GetMcpClientStatus` | `Empty` | `McpClientStatusList` | v9.0 Firestorm — per-harness MCP setup state (detected? configured? config path) + Custom snippet |
 | `InstallMcpClient` | `InstallMcpClientRequest` | `McpClientStatus` | v9.0 Firestorm — register `watchfire mcp serve` with the named harness via shared `internal/mcpserver/install` writers |
+
+### IntegrationsService
+
+Covers outbound relay endpoints (webhook/Slack/Discord/GitHub), inbound endpoint config (v4 Echo), OAuth flows (v5.x), and — new in v10 Torch — the Telegram pairing surface. `IntegrationKind` enum: `WEBHOOK | SLACK | DISCORD | GITHUB | TELEGRAM` (`TELEGRAM = 4`, appended in v10). Secrets are write-only over the wire: `SaveIntegration` accepts them, `ListIntegrations` returns only `*_set` booleans (the Telegram bot token is served as `token_set`).
+
+| RPC | Request | Response | Notes |
+|-----|---------|----------|-------|
+| `ListIntegrations` | `ListIntegrationsRequest` | `IntegrationsConfig` | Secrets scrubbed to `*_set` booleans |
+| `SaveIntegration` | `SaveIntegrationRequest` | `IntegrationsConfig` | Persists config + secret → keyring; restarts the affected bridge (Echo / Discord / Telegram) |
+| `DeleteIntegration` | `DeleteIntegrationRequest` | `IntegrationsConfig` | Removes config + secret |
+| `TestIntegration` | `TestIntegrationRequest` | `TestIntegrationResponse` | Fires a synthetic notification through the adapter (supports `telegram`) |
+| `GetInboundStatus` / `SaveInboundConfig` | — | `InboundStatus` | v4 Echo inbound HTTP server config |
+| `BeginOAuth` / `GetOAuthStatus` / `CancelOAuth` / `PostOAuthHello` | — | — | v5.x Slack/Discord OAuth bot-token flows |
+| `BeginTelegramPairing` | `BeginTelegramPairingRequest` | `BeginTelegramPairingResponse` | v10 Torch — mints a one-time code (8 chars, 10-min TTL, single active code) + `https://t.me/<bot>?start=<code>` deep link. Requires the bridge to be running (Telegram enabled + token stored) |
+| `GetTelegramPairingStatus` | `GetTelegramPairingStatusRequest` | `TelegramPairingStatus` | Poll for `NONE \| PENDING \| PAIRED \| EXPIRED`; carries the paired chat on success |
+| `RevokeTelegramChat` | `RevokeTelegramChatRequest` | `IntegrationsConfig` | Removes a chat from the allowlist; the poller drops it immediately |
 
 ### Event Streaming (per-project)
 
@@ -2341,6 +2495,60 @@ Chat — Session 1 — 2026-02-03 12:00
 - Downloads silently in background
 - Shows "Update ready" banner when complete
 
+### Telegram Flows (v10 Torch)
+
+#### T1: Pairing Flow
+
+```
+1. User pastes @BotFather token into any surface (GUI / TUI / CLI)
+   └─ SaveIntegration → token to keyring → daemon validates via getMe
+   └─ startTelegramBridge(): long-poll goroutine begins dialing api.telegram.org
+2. User triggers Pair (GUI button / TUI action / `watchfire telegram pair`)
+   └─ BeginTelegramPairing RPC → one-time code (8 chars, crypto/rand, 10-min TTL,
+      single active code) + deep link https://t.me/<bot>?start=<code>
+   └─ GUI renders the link as a QR; CLI prints code + link and polls
+      GetTelegramPairingStatus every 2s
+3. User opens the link on their phone (Telegram sends "/start <code>" for them)
+   or sends /pair <code> manually
+4. Bridge poller receives the message
+   └─ Code matches → chat appended to paired_chats (config.SaveIntegrations),
+      code invalidated, welcome + command list sent
+   └─ Code wrong/expired → pairing instructions only; no project data
+5. Surfaces flip to "paired" via GetTelegramPairingStatus (PENDING → PAIRED)
+6. Revoke (any surface) → RevokeTelegramChat RPC → chat removed from
+   paired_chats → poller drops the chat immediately
+```
+
+#### T2: Watch-Mode Relay Flow
+
+```
+1. Paired chat sends /watch on
+   └─ TelegramPairedChat.Watch persisted via config.SaveIntegrations
+2. Reconciler loop (2s) matches watching chats (Watch && DefaultProjectID)
+   against live sessions from SessionSource.ActiveSession
+   └─ Match → dedicated chatRelay + chatSender created for this chat
+   └─ "▶ task NNNN — title" marker sent for task-mode sessions
+3. Relay picks the fidelity tier:
+   └─ Backend has a tailable transcript (Claude Code) →
+      TranscriptTailer polls the JSONL every 1s, emits assistant text +
+      one-line tool-use summaries
+   └─ Otherwise (or tailer error mid-session) → debounced (≥5s) plain-text
+      screen snapshots, sent only on change
+4. chatSender applies the rate discipline per chat:
+   └─ Coalesce to ≤1 send per 2.5s; chunk at 4096 chars on line boundaries
+   └─ Consecutive assistant text grows the current message via editMessageText
+      (up to 3500 rendered chars, then a fresh message)
+   └─ Flood → one "output is heavy" notice, throttle to 1 send/30s, recover
+      when the rolling 60s window drains
+5. Session ends → tailer drains → outcome resolved from task YAML via
+   SessionSource.TaskOutcome (polled briefly — the merge runs after process exit)
+   └─ End marker: "✔ merged" / "✔ done" / "⚠ merge failed" / "✖ failed: reason"
+      / "■ session ended"
+   └─ Relay stays registered until the session disappears (never relayed twice)
+6. Throughout: bridge reads only (transcript file + screen snapshots via the
+   SessionSource seam); the sole PTY write path is an explicit /say
+```
+
 ---
 
 ## Development
@@ -2371,11 +2579,19 @@ watchfire/
 │   │   │   ├── log_service.go      # LogService RPCs
 │   │   │   ├── settings_service.go # SettingsService RPCs
 │   │   │   ├── daemon_service.go   # DaemonService RPCs
+│   │   │   ├── command_context.go  # Production echo.CommandContext (Slack/Discord/Telegram)
+│   │   │   ├── integrations_telegram.go # Telegram pairing RPCs (v10 Torch)
+│   │   │   ├── telegram_sessions.go     # SessionSource seam impl (v10 Torch)
+│   │   │   ├── telegram_runcontrol.go   # RunController seam impl (v10 Torch)
 │   │   │   └── converters.go       # Model-to-proto converters
 │   │   ├── tray/         # System tray integration
-│   │   ├── notify/       # Desktop notifications (platform-abstracted)
+│   │   ├── notify/       # Desktop notifications + event bus (platform-abstracted)
+│   │   ├── relay/        # Outbound delivery adapters (webhook, Slack, Discord, GitHub PR, telegram.go)
+│   │   ├── echo/         # Inbound HTTP server + transport-agnostic command router
+│   │   ├── telegram/     # Telegram bridge: long-poll loop, pairing, render, watch mode (v10 Torch)
+│   │   ├── telegrambot/  # Thin Telegram Bot API client, stdlib HTTP only (v10 Torch)
 │   │   ├── watcher/      # fsnotify watcher with debouncing
-│   │   ├── task/         # Task manager
+│   │   ├── task/         # Task manager (+ quickadd.go batch parser, retrofit.go fold window — v10 Torch)
 │   │   └── project/      # Project manager
 │   ├── models/           # Data structures
 │   └── tui/              # TUI (Bubbletea Elm architecture):
@@ -2434,8 +2650,8 @@ Ad-hoc: `go run ./cmd/watchfire` or `go run ./cmd/watchfired`
 | `go-test` | `macos-latest` | `make test` |
 | `go-build-arm64` | `macos-14` | Build daemon + CLI for arm64 (native, avoids CGO cross-compile) |
 | `go-build-amd64` | `macos-latest` | Build daemon + CLI for amd64 (native, avoids CGO cross-compile) |
-| `gui-lint-build` | `macos-latest` | `npm ci` + `npm run build` (macOS) |
-| `gui-build-linux` | `ubuntu-latest` | `npm ci` + `npm run build` (Linux) |
+| `gui-lint-build` | `macos-latest` | `npm ci` + `npm test` + `npm run build` (macOS) — renderer unit tests run in CI since v10 Torch |
+| `gui-build-linux` | `ubuntu-latest` | `npm ci` + `npm test` + `npm run build` (Linux) |
 | `go-build-linux` | `ubuntu-latest` | Build CLI for linux-amd64 |
 | `go-build-windows` | `ubuntu-latest` | Build CLI for windows-amd64 |
 | `proto-lint` | `ubuntu-latest` | `buf lint` |
