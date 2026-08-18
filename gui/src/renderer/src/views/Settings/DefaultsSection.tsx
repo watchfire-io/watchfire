@@ -133,7 +133,9 @@ export function DefaultsSection({ settings, agents, agentsLoaded }: Props) {
             </button>
           </div>
           <p className="text-xs text-[var(--wf-text-muted)]">
-            Custom shell path. Leave empty to use $SHELL.
+            Custom shell path for the in-app terminal. Leave empty to use
+            $SHELL as a login shell. Applies to new terminals — existing
+            sessions keep their shell.
           </p>
           {terminalShellError && (
             <p className="text-xs text-[var(--wf-error)]">{terminalShellError}</p>
