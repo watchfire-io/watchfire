@@ -245,3 +245,87 @@ func TestMergeBackendEnvEmptyBackendEnv(t *testing.T) {
 		t.Errorf("unexpected merge result: %v", out)
 	}
 }
+
+// ── Chat-start refusal (v10 — chat auto-start must never halt a run) ──
+//
+// Clients auto-start chat whenever they observe isRunning=false. That
+// observation can land in the run-all/wildfire chain-transition window,
+// and before v10 the resulting StartAgent(chat) displaced the freshly
+// chained task agent via the replace path (marking it userStopped), which
+// silently ended the run with ready tasks still queued.
+
+func TestRefuseChatStartMatrix(t *testing.T) {
+	wildfire := &RunningAgent{Mode: ModeWildfire, TaskNumber: 148}
+	taskAgent := &RunningAgent{Mode: ModeTask, TaskNumber: 7}
+	genDef := &RunningAgent{Mode: ModeGenerateDefinition}
+	chatAgent := &RunningAgent{Mode: ModeChat}
+
+	cases := []struct {
+		name     string
+		mode     Mode
+		existing *RunningAgent
+		chaining bool
+		wantBusy bool
+	}{
+		{"chat with nothing running", ModeChat, nil, false, false},
+		{"chat replacing chat is allowed", ModeChat, chatAgent, false, false},
+		{"chat over wildfire refused", ModeChat, wildfire, false, true},
+		{"chat over task refused", ModeChat, taskAgent, false, true},
+		{"chat over generate-definition refused", ModeChat, genDef, false, true},
+		{"chat during chain transition refused", ModeChat, nil, true, true},
+		{"wildfire keeps replace semantics", ModeWildfire, chatAgent, false, false},
+		{"wildfire unaffected by chaining flag", ModeWildfire, nil, true, false},
+		{"start-all keeps replace semantics", ModeStartAll, wildfire, false, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := refuseChatStart(tc.mode, tc.existing, tc.chaining)
+			if tc.wantBusy && !errors.Is(err, ErrAgentBusy) {
+				t.Errorf("want ErrAgentBusy, got %v", err)
+			}
+			if !tc.wantBusy && err != nil {
+				t.Errorf("want nil, got %v", err)
+			}
+		})
+	}
+}
+
+func TestStartAgentChatRefusedWhileTaskAgentRunning(t *testing.T) {
+	m := NewManager()
+	// A nil Process means any path past the gate (the replace path calls
+	// existing.Process.Stop()) would panic — proving the refusal happens
+	// before the running agent can be touched.
+	m.agents["p1"] = &RunningAgent{ProjectID: "p1", Mode: ModeWildfire, TaskNumber: 148}
+
+	_, err := m.StartAgent(StartOptions{
+		ProjectID:   "p1",
+		ProjectPath: t.TempDir(),
+		Mode:        ModeChat,
+		Sandbox:     SandboxNone,
+	})
+	if !errors.Is(err, ErrAgentBusy) {
+		t.Fatalf("want ErrAgentBusy, got %v", err)
+	}
+	if m.agents["p1"].userStopped {
+		t.Error("refused chat start must not mark the running agent userStopped")
+	}
+}
+
+func TestStartAgentChatRefusedDuringChainTransition(t *testing.T) {
+	m := NewManager()
+	m.setChaining("p1", true)
+
+	_, err := m.StartAgent(StartOptions{
+		ProjectID:   "p1",
+		ProjectPath: t.TempDir(),
+		Mode:        ModeChat,
+		Sandbox:     SandboxNone,
+	})
+	if !errors.Is(err, ErrAgentBusy) {
+		t.Fatalf("want ErrAgentBusy, got %v", err)
+	}
+	// The "window closed → chat allowed again" side is covered hermetically
+	// by TestRefuseChatStartMatrix; driving StartAgent past the gate here
+	// would spawn a real agent process.
+}

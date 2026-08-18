@@ -2,6 +2,7 @@
 package agent
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -92,11 +93,41 @@ type StartOptions struct {
 	RunStartedAt     time.Time // Set by the chain-restart path so the next agent inherits the run-window anchor; zero on a fresh run.
 }
 
+// ErrAgentBusy is returned when a chat-mode start is refused because it would
+// displace a non-chat agent (a task run, wildfire/start-all, or a one-shot
+// generate/retrofit session). Clients auto-start chat whenever they observe
+// isRunning=false, and that observation can land in the window where a
+// run-all/wildfire chain has removed the finished agent but not yet
+// registered the next one — letting the chat start through would mark the
+// freshly chained agent userStopped and silently halt the run with ready
+// tasks still queued. A user who wants chat while such an agent is running
+// must stop it explicitly first.
+var ErrAgentBusy = errors.New("agent busy")
+
+// refuseChatStart decides whether an incoming start must be refused instead
+// of displacing current state. Only chat-mode starts are ever refused: chat
+// may replace chat (restart), but never a non-chat agent, and never anything
+// while a chain transition is mid-flight (chaining=true). Non-chat starts
+// keep the existing deliberate replace semantics.
+func refuseChatStart(mode Mode, existing *RunningAgent, chaining bool) error {
+	if mode != ModeChat {
+		return nil
+	}
+	if existing != nil && existing.Mode != ModeChat {
+		return fmt.Errorf("%w: %s agent is running — stop it before starting chat", ErrAgentBusy, existing.Mode)
+	}
+	if chaining {
+		return fmt.Errorf("%w: run is chaining to the next task", ErrAgentBusy)
+	}
+	return nil
+}
+
 // Manager handles agent lifecycle operations.
 type Manager struct {
 	mu             sync.RWMutex
 	agents         map[string]*RunningAgent // keyed by ProjectID
 	taskRestarts   map[string]int           // keyed by ProjectID — consecutive restarts of the same task
+	chaining       map[string]bool          // keyed by ProjectID — true between "finished agent removed" and "next chained agent registered"
 	onChangeFn     func()                   // called when agent state changes (for tray updates)
 	nextTaskFn     func(projectID, projectPath string, mode Mode, phase WildfirePhase, rows, cols int) (*StartOptions, error)
 	onTaskDoneFn   func(projectPath string, taskNumber int, worktreePath string) TaskDoneResult // v5.0 — structured outcome; chain advances iff TaskDoneOK
@@ -114,7 +145,19 @@ func NewManager() *Manager {
 	return &Manager{
 		agents:          make(map[string]*RunningAgent),
 		taskRestarts:    make(map[string]int),
+		chaining:        make(map[string]bool),
 		preflightIssues: make(map[string]*AgentIssue),
+	}
+}
+
+// setChaining marks (or clears) the chain-transition window for a project.
+func (m *Manager) setChaining(projectID string, v bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if v {
+		m.chaining[projectID] = true
+	} else {
+		delete(m.chaining, projectID)
 	}
 }
 
@@ -208,6 +251,15 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 	m.setPreflightIssue(opts.ProjectID, nil)
 
 	m.mu.Lock()
+
+	// A chat start never displaces a working agent or a chain mid-transition
+	// (see ErrAgentBusy). Checked before the replace path below so the
+	// running agent is never marked userStopped by a racing chat auto-start.
+	if err := refuseChatStart(opts.Mode, m.agents[opts.ProjectID], m.chaining[opts.ProjectID]); err != nil {
+		m.mu.Unlock()
+		config.ProjectLogf(opts.ProjectID, "[agent] Chat start refused: %v", err)
+		return nil, err
+	}
 
 	// If an agent is already running, stop it before starting a new one.
 	if existing, ok := m.agents[opts.ProjectID]; ok {
@@ -555,10 +607,17 @@ func (m *Manager) monitorProcess(projectID string, proc *Process) {
 		// Clean up old process resources before chaining
 		proc.Cleanup()
 
-		// Remove current agent before starting next (avoids "already running" guard)
+		// Remove current agent before starting next (avoids "already running" guard).
+		// Mark the chain transition so a concurrent chat auto-start (clients react
+		// to the transient isRunning=false) is refused instead of racing the next
+		// StartAgent — see refuseChatStart. Cleared before each internal StartAgent
+		// below (its own chat gate must not fire on our behalf) and, as a safety
+		// net, when this goroutine returns.
 		delete(m.agents, projectID)
+		m.chaining[projectID] = true
 		m.persistStateLocked()
 		m.mu.Unlock()
+		defer m.setChaining(projectID, false)
 
 		nextOpts, err := m.nextTaskFn(projectID, projectPath, agentMode, agentPhase, rows, cols)
 		if err != nil {
@@ -595,6 +654,7 @@ func (m *Manager) monitorProcess(projectID string, proc *Process) {
 						Rows:         rows,
 						Cols:         cols,
 					}
+					m.setChaining(projectID, false)
 					if _, err := m.StartAgent(chatOpts); err != nil {
 						config.ProjectLogf(projectID, "[chain] Failed to start chat mode after restart limit: %v", err)
 					}
@@ -612,6 +672,13 @@ func (m *Manager) monitorProcess(projectID string, proc *Process) {
 			// keeps the same RunStartedAt as the first one in this run.
 			nextOpts.RunStartedAt = runStartedAt
 			config.ProjectLogf(projectID, "[chain] %s: starting next — mode=%s phase=%s task=#%04d", agentMode, nextOpts.Mode, nextOpts.WildfirePhase, nextOpts.TaskNumber)
+			// Clear the chaining mark just before handing off: nextOpts may
+			// itself be a chat session (wildfire completion), which the chat
+			// gate would otherwise refuse. A chat auto-start racing into the
+			// re-opened sliver either loses to this StartAgent's registration
+			// (then the gate refuses it) or wins and is deliberately replaced
+			// by it — the run survives both orders.
+			m.setChaining(projectID, false)
 			if _, err := m.StartAgent(*nextOpts); err != nil {
 				config.ProjectLogf(projectID, "[chain] %s: failed to start next (task #%04d): %v", agentMode, nextOpts.TaskNumber, err)
 				// Surface the halt instead of dropping silently to idle. A

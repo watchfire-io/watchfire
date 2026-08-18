@@ -49,11 +49,15 @@ export function ChatTab({ projectId }: Props) {
     fetchStatus(projectId)
   }, [projectId])
 
-  // Auto-start chat agent on first status fetch (mirrors TUI behavior)
+  // Auto-start chat agent on first status fetch (mirrors TUI behavior).
+  // Silent: the daemon refuses chat starts that would displace a working
+  // agent or a run-all/wildfire chain mid-transition ("agent busy") — for
+  // this opportunistic path that refusal is expected and not worth a toast;
+  // the next status poll shows what is actually running.
   useEffect(() => {
     if (agentStatus && !isRunning && !autoStarted.current) {
       autoStarted.current = true
-      handleStart()
+      handleStart({ silent: true })
     }
   }, [agentStatus])
 
@@ -63,12 +67,12 @@ export function ChatTab({ projectId }: Props) {
     return () => clearInterval(interval)
   }, [projectId])
 
-  const handleStart = async () => {
+  const handleStart = async (opts?: { silent?: boolean }) => {
     try {
       const dims = getDimensions()
       await startAgent(projectId, 'chat', { rows: dims.rows, cols: dims.cols })
     } catch (err) {
-      toast(String(err), 'error')
+      if (!opts?.silent) toast(String(err), 'error')
     }
   }
 
@@ -98,7 +102,7 @@ export function ChatTab({ projectId }: Props) {
         {!isRunning && (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 text-[var(--wf-text-muted)] bg-charcoal-300/90 z-10">
             <p className="text-sm">No agent running</p>
-            <Button size="sm" onClick={handleStart}>
+            <Button size="sm" onClick={() => handleStart()}>
               <Play size={14} />
               Start Chat
             </Button>
