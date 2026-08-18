@@ -39,11 +39,12 @@ type ScreenUpdate struct {
 
 // ProcessOptions contains options for creating a new agent process.
 type ProcessOptions struct {
-	ProjectID  string
-	Cmd        *exec.Cmd
-	Rows       int
-	Cols       int
-	SandboxTmp string // temp .sb file to clean up on stop
+	ProjectID   string
+	Cmd         *exec.Cmd
+	Rows        int
+	Cols        int
+	SandboxTmp  string // temp .sb file to clean up on stop
+	BackendName string // agent backend running in this PTY (e.g. "claude-code")
 }
 
 // Process manages a PTY + vt10x agent process.
@@ -77,6 +78,14 @@ type Process struct {
 	issueSubs      map[string]chan *AgentIssue
 	lineBuffer     strings.Builder // Accumulate partial lines for detection
 	cleanLineCount int             // Non-issue lines seen since last issue
+
+	// Claude Code trust-dialog auto-ack (guarded by issueMu; see trustdialog.go)
+	backendName      string
+	trustDetector    trustDialogDetector
+	trustAcked       bool               // "\r" already sent this session
+	trustAckedAt     time.Time          // when the auto-ack was sent
+	trustIssueRaised bool               // recurrence issue raised; stop scanning
+	trustAckWrite    func([]byte) error // test seam; nil → SendInput
 }
 
 // NewProcess creates and starts a new agent process with PTY and vt10x terminal emulation.
@@ -104,19 +113,20 @@ func NewProcess(opts ProcessOptions) (*Process, error) {
 	}
 
 	p := &Process{
-		projectID:  opts.ProjectID,
-		cmd:        opts.Cmd,
-		ptyFile:    ptmx,
-		vt:         vt,
-		rows:       rows,
-		cols:       cols,
-		done:       make(chan struct{}),
-		sandboxTmp: opts.SandboxTmp,
-		rawSubs:    make(map[string]chan []byte),
-		screenSubs: make(map[string]chan *ScreenUpdate),
-		scrollback: make([]string, 0, scrollbackCapacity),
-		startedAt:  time.Now().UTC(),
-		issueSubs:  make(map[string]chan *AgentIssue),
+		projectID:   opts.ProjectID,
+		cmd:         opts.Cmd,
+		ptyFile:     ptmx,
+		vt:          vt,
+		rows:        rows,
+		cols:        cols,
+		done:        make(chan struct{}),
+		sandboxTmp:  opts.SandboxTmp,
+		rawSubs:     make(map[string]chan []byte),
+		screenSubs:  make(map[string]chan *ScreenUpdate),
+		scrollback:  make([]string, 0, scrollbackCapacity),
+		startedAt:   time.Now().UTC(),
+		issueSubs:   make(map[string]chan *AgentIssue),
+		backendName: opts.BackendName,
 	}
 
 	go p.readLoop()
@@ -501,6 +511,8 @@ func (p *Process) detectIssues(data []byte) {
 			continue
 		}
 		hasNonEmpty = true
+
+		p.scanTrustDialogLocked(cleanLine)
 
 		if issue := DetectIssue(cleanLine); issue != nil {
 			p.cleanLineCount = 0

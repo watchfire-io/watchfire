@@ -12,9 +12,10 @@ type AgentIssueType string
 
 // AgentIssueType values.
 const (
-	AgentIssueNone      AgentIssueType = ""
-	AgentIssueAuth      AgentIssueType = "auth_required"
-	AgentIssueRateLimit AgentIssueType = "rate_limited"
+	AgentIssueNone        AgentIssueType = ""
+	AgentIssueAuth        AgentIssueType = "auth_required"
+	AgentIssueRateLimit   AgentIssueType = "rate_limited"
+	AgentIssueTrustDialog AgentIssueType = "trust_dialog"
 )
 
 // AgentIssue represents a detected issue with the agent.
