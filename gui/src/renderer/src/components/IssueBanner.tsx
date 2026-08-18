@@ -7,6 +7,9 @@ interface IssueBannerProps {
 }
 
 export function IssueBanner({ issue, onResume }: IssueBannerProps) {
+  // sandbox_denied (#17): the agent was never started — the project path is
+  // inside a sandbox-denied root. Resume can't help; the message says what to do.
+  const resumable = issue.issueType !== 'sandbox_denied'
   return (
     <div className="flex items-center gap-3 px-4 py-2 bg-amber-900/30 border-b border-amber-700/40 text-amber-200 text-sm">
       <AlertTriangle size={16} className="shrink-0 text-amber-400" />
@@ -17,7 +20,7 @@ export function IssueBanner({ issue, onResume }: IssueBannerProps) {
             ? `Rate limited — ${issue.message || 'waiting for reset'}`
             : issue.message || 'Agent issue detected'}
       </span>
-      {onResume && (
+      {onResume && resumable && (
         <button
           onClick={onResume}
           className="flex items-center gap-1 px-2 py-1 text-xs font-medium rounded bg-amber-700/50 hover:bg-amber-700/70 transition-colors"

@@ -72,6 +72,22 @@ export const useAgentStore = create<AgentState>((set, get) => ({
     try {
       const client = getAgentClient()
       const status = await client.getAgentStatus({ projectId })
+      // Preflight issues (e.g. sandbox_denied for a project under ~/Desktop,
+      // #17) ride AgentStatus.issue with isRunning=false — there is no
+      // Process to stream them from, so mirror them into the issues map
+      // here. Runs before the equality short-circuit (which ignores issue),
+      // and only for non-running agents so it never races subscribeIssues.
+      if (!status.isRunning) {
+        const incoming = status.issue?.issueType ? status.issue : null
+        const existing = get().issues[projectId]
+        if (incoming) {
+          if (existing?.issueType !== incoming.issueType || existing?.message !== incoming.message) {
+            set((s) => ({ issues: { ...s.issues, [projectId]: incoming } }))
+          }
+        } else if (existing?.issueType === 'sandbox_denied') {
+          set((s) => ({ issues: { ...s.issues, [projectId]: null } }))
+        }
+      }
       const existing = get().statuses[projectId]
       if (agentStatusEqual(existing, status)) return
       set((s) => ({ statuses: { ...s.statuses, [projectId]: status } }))

@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 )
 
 // platformDefaults returns Linux-specific path additions.
@@ -13,6 +14,22 @@ func platformDefaults(homeDir string) PlatformDefaults {
 	return PlatformDefaults{
 		// Linux doesn't need the macOS Library paths, but no extra denied either
 	}
+}
+
+// deniedProjectRoots returns the roots a project cannot live under on Linux
+// — only the credential dirs (derived from the same credentialDenyDirs slice
+// DefaultPolicy renders into DeniedPaths, so preflight and policy cannot
+// drift). The macOS privacy folders are not denied on Linux.
+func deniedProjectRoots(homeDir string) []DeniedRoot {
+	roots := make([]DeniedRoot, 0, len(credentialDenyDirs))
+	for _, dir := range credentialDenyDirs {
+		roots = append(roots, DeniedRoot{
+			Path:    filepath.Join(homeDir, dir),
+			Display: "~/" + dir,
+			Reason:  "a credential folder the sandbox always denies",
+		})
+	}
+	return roots
 }
 
 // spawnSandboxedPlatform tries Landlock → bwrap → unsandboxed.

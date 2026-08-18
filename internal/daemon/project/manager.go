@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/watchfire-io/watchfire/internal/config"
+	"github.com/watchfire-io/watchfire/internal/daemon/agent"
 	"github.com/watchfire-io/watchfire/internal/models"
 )
 
@@ -127,6 +128,16 @@ func (m *Manager) GetProject(projectID string) (ProjectWithEntry, error) {
 // CreateProject initializes a new project, or imports an existing one if
 // the folder already contains a .watchfire/ directory.
 func (m *Manager) CreateProject(opts CreateOptions) (ProjectWithEntry, error) {
+	// Sandbox preflight (#17): refuse registration under a denied root
+	// (e.g. ~/Desktop) with the actionable message — agents could never run
+	// there. Covers both the gRPC CreateProject path (GUI wizard) and the
+	// in-process `watchfire init` path, for new projects and imports alike.
+	if home, homeErr := os.UserHomeDir(); homeErr == nil {
+		if denial := agent.CheckProjectPath(home, opts.Path); denial != nil {
+			return ProjectWithEntry{}, denial
+		}
+	}
+
 	// If already a project, register and return it (import)
 	if config.ProjectExists(opts.Path) {
 		if err := config.EnsureProjectRegistered(opts.Path); err != nil {

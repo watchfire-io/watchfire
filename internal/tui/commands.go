@@ -110,7 +110,7 @@ func startAgentCmd(conn *grpc.ClientConn, projectID, mode string, taskNumber int
 			Cols:       int32(cols),
 		})
 		if err != nil {
-			return ErrorMsg{Err: fmt.Errorf("failed to start agent: %w", err)}
+			return AgentStartFailedMsg{Err: fmt.Errorf("failed to start agent: %w", err)}
 		}
 		return AgentStartedMsg{Status: status}
 	}

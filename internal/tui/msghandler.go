@@ -243,6 +243,17 @@ func (m *Model) handleMessage(msg tea.Msg) (bool, tea.Cmd) {
 		}
 		return true, tea.Batch(cmds...)
 
+	case AgentStartFailedMsg:
+		m.err = msg.Err
+		cmds = append(cmds, clearErrorAfter(5*time.Second))
+		// Refresh status: a preflight refusal (e.g. sandbox_denied) is
+		// recorded daemon-side and rides AgentStatus.issue, giving a
+		// persistent banner beyond the transient status-bar error.
+		if m.connected {
+			cmds = append(cmds, getAgentStatusCmd(m.conn, m.projectID))
+		}
+		return true, tea.Batch(cmds...)
+
 	// ── Error handling ─────────────────────────────────────────────
 	case ErrorMsg:
 		if !m.connected && m.reconnectAttempts > 0 {

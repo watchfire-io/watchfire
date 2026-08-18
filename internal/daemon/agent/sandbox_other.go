@@ -12,6 +12,12 @@ func platformDefaults(homeDir string) PlatformDefaults {
 	return PlatformDefaults{}
 }
 
+// deniedProjectRoots returns nothing on unsupported platforms — agents run
+// unsandboxed there, so no root makes a project unable to function.
+func deniedProjectRoots(homeDir string) []DeniedRoot {
+	return nil
+}
+
 // spawnSandboxedPlatform logs a warning and runs unsandboxed on unsupported platforms.
 func spawnSandboxedPlatform(policy SandboxPolicy, command string, args ...string) (*exec.Cmd, string, error) {
 	log.Println("[sandbox] WARNING: no sandbox available on this platform — running unsandboxed")

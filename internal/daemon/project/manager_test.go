@@ -3,6 +3,8 @@ package project
 import (
 	"os"
 	"path/filepath"
+	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/watchfire-io/watchfire/internal/config"
@@ -195,5 +197,52 @@ func TestUnregisterProjectDropsFromIndex(t *testing.T) {
 	// Local project.yaml stays.
 	if _, err := os.Stat(config.ProjectFile(path)); err != nil {
 		t.Errorf("local project.yaml should survive Unregister: %v", err)
+	}
+}
+
+// TestCreateProjectRejectsSandboxDeniedPath — registration under a
+// sandbox-denied root (#17) is refused with the actionable message on the
+// single choke point both the gRPC CreateProject RPC (GUI wizard) and
+// `watchfire init` (CLI) route through. macOS-only: the privacy roots are
+// part of the darwin deny list.
+func TestCreateProjectRejectsSandboxDeniedPath(t *testing.T) {
+	if runtime.GOOS != "darwin" {
+		t.Skip("privacy-root deny list is darwin-only")
+	}
+	home, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("HOME", home)
+
+	for _, dir := range []string{"Desktop", "Documents", "Downloads"} {
+		denied := filepath.Join(home, dir, "proj")
+		if _, err := NewManager().CreateProject(CreateOptions{Path: denied, Name: "proj"}); err == nil {
+			t.Fatalf("CreateProject under ~/%s succeeded, want rejection", dir)
+		} else {
+			if !strings.Contains(err.Error(), "~/"+dir) || !strings.Contains(err.Error(), "sandbox blocks") {
+				t.Errorf("error %q must name ~/%s and the sandbox rule", err, dir)
+			}
+			if strings.Contains(strings.ToLower(err.Error()), "unexpected error") {
+				t.Errorf("error must not read as an unexpected error: %q", err)
+			}
+		}
+		// Rejection happens before any directory is created.
+		if _, statErr := os.Stat(denied); !os.IsNotExist(statErr) {
+			t.Errorf("rejected project dir %s was created anyway", denied)
+		}
+	}
+
+	// An import (existing .watchfire/) under a denied root is refused too.
+	imported := filepath.Join(home, "Desktop", "existing")
+	if err := os.MkdirAll(filepath.Join(imported, ".watchfire"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := models.NewProject("denied-import-id", "existing", imported)
+	if err := config.SaveProject(imported, p); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewManager().CreateProject(CreateOptions{Path: imported}); err == nil {
+		t.Fatal("import under ~/Desktop succeeded, want rejection")
 	}
 }

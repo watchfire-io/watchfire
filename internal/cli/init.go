@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/watchfire-io/watchfire/internal/config"
+	"github.com/watchfire-io/watchfire/internal/daemon/agent"
 	"github.com/watchfire-io/watchfire/internal/daemon/agent/backend"
 	"github.com/watchfire-io/watchfire/internal/daemon/project"
 )
@@ -33,6 +34,15 @@ func runInit(cmd *cobra.Command, args []string) error {
 	cwd, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("failed to get current directory: %w", err)
+	}
+
+	// Sandbox preflight (#17): fail fast with the actionable message before
+	// prompting — a project under ~/Desktop etc. can never run agents. The
+	// project manager re-checks this at registration as a backstop.
+	if home, herr := os.UserHomeDir(); herr == nil {
+		if denial := agent.CheckProjectPath(home, cwd); denial != nil {
+			return denial
+		}
 	}
 
 	// Check if already a project
