@@ -2,10 +2,11 @@ import { BrowserWindow } from 'electron'
 import { randomUUID } from 'crypto'
 import { createRequire } from 'module'
 import { existsSync, readFileSync, statSync } from 'fs'
-import { homedir } from 'os'
+import { homedir, platform } from 'os'
 import { join } from 'path'
 import { parse } from 'yaml'
 import { loginShellEnv } from './login-shell'
+import { resolveShellCommand } from './shell-command'
 
 // Use createRequire to load native module at runtime — bypasses Rollup bundling
 const _require = createRequire(import.meta.url || __filename)
@@ -34,7 +35,8 @@ function send(windowId: number, channel: string, data: unknown): void {
 // Read defaults.terminal_shell from ~/.watchfire/settings.yaml. Returns the
 // configured path iff it points at an executable; otherwise null. We re-read
 // the file on each PTY spawn (not cached) so a settings change takes effect
-// on the next new tab without an app relaunch — the file is tiny and the
+// on the next NEW terminal without an app relaunch — existing terminal
+// sessions keep the shell they were spawned with. The file is tiny and the
 // stat/read cost is dwarfed by the PTY spawn itself.
 function readConfiguredShell(): string | null {
   try {
@@ -56,9 +58,11 @@ function readConfiguredShell(): string | null {
 export async function createPty(cwd: string, windowId: number): Promise<string> {
   const id = randomUUID()
   const env = await loginShellEnv()
-  const shell = readConfiguredShell() || process.env.SHELL || '/bin/zsh'
+  // Spawn as a login shell (`-l` on macOS/Linux) so ~/.zprofile / ~/.profile
+  // and macOS's path_helper run and PATH matches a native terminal (#32).
+  const { file, args } = resolveShellCommand(readConfiguredShell(), process.env.SHELL, platform())
 
-  const p = pty.spawn(shell, [], {
+  const p = pty.spawn(file, args, {
     name: 'xterm-256color',
     cols: 80,
     rows: 24,
