@@ -16,6 +16,10 @@ const (
 	AgentIssueAuth        AgentIssueType = "auth_required"
 	AgentIssueRateLimit   AgentIssueType = "rate_limited"
 	AgentIssueTrustDialog AgentIssueType = "trust_dialog"
+	// AgentIssueSandboxDenied is raised at StartAgent preflight when the
+	// project path sits inside a sandbox-denied root (e.g. ~/Desktop) — the
+	// agent is never spawned; see sandbox_preflight.go and issue #17.
+	AgentIssueSandboxDenied AgentIssueType = "sandbox_denied"
 )
 
 // AgentIssue represents a detected issue with the agent.

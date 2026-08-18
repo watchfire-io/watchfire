@@ -102,13 +102,40 @@ type Manager struct {
 	onTaskDoneFn   func(projectPath string, taskNumber int, worktreePath string) TaskDoneResult // v5.0 — structured outcome; chain advances iff TaskDoneOK
 	watchProjectFn func(projectID, projectPath string)                                          // called to ensure project watcher is active
 	notifyBus      *notify.Bus                                                                  // optional; nil disables in-process fan-out (headless log file is still written)
+	// preflightIssues holds issues detected before any Process exists (e.g.
+	// sandbox_denied at StartAgent preflight, #17). The regular issue
+	// plumbing hangs off a running Process, so these ride AgentStatus.issue
+	// via PreflightIssue() while no agent is running. Keyed by ProjectID.
+	preflightIssues map[string]*AgentIssue
 }
 
 // NewManager creates a new agent manager.
 func NewManager() *Manager {
 	return &Manager{
-		agents:       make(map[string]*RunningAgent),
-		taskRestarts: make(map[string]int),
+		agents:          make(map[string]*RunningAgent),
+		taskRestarts:    make(map[string]int),
+		preflightIssues: make(map[string]*AgentIssue),
+	}
+}
+
+// PreflightIssue returns the issue recorded at StartAgent preflight for the
+// project, if any. Used by GetAgentStatus to surface start-refusals (e.g. a
+// sandbox-denied project path) through the normal agent-issue plumbing even
+// though no Process exists to carry them.
+func (m *Manager) PreflightIssue(projectID string) *AgentIssue {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.preflightIssues[projectID]
+}
+
+// setPreflightIssue records (or clears, with nil) a preflight issue.
+func (m *Manager) setPreflightIssue(projectID string, issue *AgentIssue) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if issue == nil {
+		delete(m.preflightIssues, projectID)
+	} else {
+		m.preflightIssues[projectID] = issue
 	}
 }
 
@@ -160,6 +187,26 @@ func (m *Manager) SetNotifyBus(b *notify.Bus) {
 // StartAgent starts an agent for the given project.
 // If an agent is already running for this project, it is stopped first.
 func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
+	// Sandbox preflight (#17): refuse to start inside a denied root (e.g.
+	// ~/Desktop) with the actionable message, BEFORE any PTY is spawned —
+	// otherwise the agent dies opaquely inside the sandbox. The refusal is
+	// also recorded as a preflight issue so GetAgentStatus surfaces it in
+	// the chat window via the agent-issue plumbing (pre-v10 registrations
+	// under a denied root can still exist). An explicitly unsandboxed run
+	// (sandbox=none) is exempt — nothing is denied to it.
+	if home, homeErr := os.UserHomeDir(); homeErr == nil && opts.Sandbox != SandboxNone {
+		if denial := CheckProjectPath(home, opts.ProjectPath); denial != nil {
+			m.setPreflightIssue(opts.ProjectID, &AgentIssue{
+				Type:       AgentIssueSandboxDenied,
+				DetectedAt: time.Now(),
+				Message:    denial.Error(),
+			})
+			config.ProjectLogf(opts.ProjectID, "[agent] Start refused by sandbox preflight: %v", denial)
+			return nil, denial
+		}
+	}
+	m.setPreflightIssue(opts.ProjectID, nil)
+
 	m.mu.Lock()
 
 	// If an agent is already running, stop it before starting a new one.

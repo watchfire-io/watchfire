@@ -13,7 +13,35 @@ import (
 
 // protectedUserDirs lists macOS directories that are denied by default to prevent TCC prompts.
 // A deny rule is skipped if the project directory is inside that protected directory.
+// This slice also feeds deniedProjectRoots (the sandbox preflight check) —
+// keep it as the single source of truth for the privacy deny list.
 var protectedUserDirs = []string{"Desktop", "Documents", "Downloads", "Music", "Movies", "Pictures"}
+
+// deniedProjectRoots returns the roots a project cannot live under on macOS,
+// derived from the exact slices GenerateProfile renders (protectedUserDirs +
+// credentialDenyDirs) so preflight and policy cannot drift. Even though
+// GenerateProfile skips the privacy deny rule when the project sits inside
+// one of those folders, macOS TCC still blocks background (daemon-spawned)
+// processes from reading them, so a project there cannot function — the
+// preflight refuses it with a clear message instead (issue #17).
+func deniedProjectRoots(homeDir string) []DeniedRoot {
+	roots := make([]DeniedRoot, 0, len(protectedUserDirs)+len(credentialDenyDirs))
+	for _, dir := range protectedUserDirs {
+		roots = append(roots, DeniedRoot{
+			Path:    filepath.Join(homeDir, dir),
+			Display: "~/" + dir,
+			Reason:  "a macOS privacy-protected folder",
+		})
+	}
+	for _, dir := range credentialDenyDirs {
+		roots = append(roots, DeniedRoot{
+			Path:    filepath.Join(homeDir, dir),
+			Display: "~/" + dir,
+			Reason:  "a credential folder the sandbox always denies",
+		})
+	}
+	return roots
+}
 
 // GenerateProfile generates a macOS sandbox-exec profile for the given policy.
 // Agent-specific writable paths are read from policy.Extras.
@@ -33,10 +61,10 @@ func GenerateProfile(policy SandboxPolicy) string {
 
 	// DENY sensitive credential paths
 	sb.WriteString("; DENY sensitive credential paths\n")
-	for _, dir := range []string{".ssh", ".aws", ".gnupg"} {
+	for _, dir := range credentialDenyDirs {
 		fmt.Fprintf(&sb, "(deny file-read* (subpath %q))\n", filepath.Join(homeDir, dir))
 	}
-	for _, file := range []string{".netrc", ".npmrc"} {
+	for _, file := range credentialDenyFiles {
 		fmt.Fprintf(&sb, "(deny file-read* (literal %q))\n", filepath.Join(homeDir, file))
 	}
 	sb.WriteString("\n")
@@ -138,14 +166,7 @@ func platformDefaults(homeDir string) PlatformDefaults {
 			filepath.Join(homeDir, "Library", "Caches", "yarn"),
 			filepath.Join(homeDir, "Library", "Application Support"),
 		},
-		ExtraDenied: []string{
-			filepath.Join(homeDir, "Desktop"),
-			filepath.Join(homeDir, "Documents"),
-			filepath.Join(homeDir, "Downloads"),
-			filepath.Join(homeDir, "Music"),
-			filepath.Join(homeDir, "Movies"),
-			filepath.Join(homeDir, "Pictures"),
-		},
+		ExtraDenied: joinAll(homeDir, protectedUserDirs),
 	}
 }
 

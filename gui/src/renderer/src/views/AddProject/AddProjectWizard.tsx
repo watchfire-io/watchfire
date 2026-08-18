@@ -1,4 +1,5 @@
 import { useState, useCallback } from 'react'
+import { ConnectError } from '@connectrpc/connect'
 import { ArrowLeft, ArrowRight, Check } from 'lucide-react'
 import { Button } from '../../components/ui/Button'
 import { useAppStore } from '../../stores/app-store'
@@ -22,9 +23,21 @@ export interface WizardData {
 
 const STEPS = ['Project', 'Agent', 'Git Config', 'Definition']
 
+// Human message without the gRPC "ConnectError: [code]" framing.
+function errorText(err: unknown): string {
+  return err instanceof ConnectError ? err.rawMessage : String(err)
+}
+
+// Daemon-side sandbox preflight refusals (#17) carry this phrase — they are
+// about the chosen folder, so they render inline on the folder-picker step.
+function isPathDenial(msg: string): boolean {
+  return msg.includes("sandbox blocks")
+}
+
 export function AddProjectWizard() {
   const [step, setStep] = useState(0)
   const [creating, setCreating] = useState(false)
+  const [pathError, setPathError] = useState<string | null>(null)
   const setView = useAppStore((s) => s.setView)
   const selectProject = useAppStore((s) => s.selectProject)
   const fetchProjects = useProjectsStore((s) => s.fetchProjects)
@@ -43,7 +56,7 @@ export function AddProjectWizard() {
   const [agentStepValid, setAgentStepValid] = useState(false)
   const update = (partial: Partial<WizardData>) => setData((d) => ({ ...d, ...partial }))
   const canNext =
-    step === 0 ? data.path !== '' : step === 1 ? agentStepValid : true
+    step === 0 ? data.path !== '' && !pathError : step === 1 ? agentStepValid : true
 
   const importExistingProject = useCallback(async (path: string) => {
     setCreating(true)
@@ -61,12 +74,18 @@ export function AddProjectWizard() {
       toast('Project imported', 'success')
       selectProject(project.projectId)
     } catch (err) {
-      toast(String(err), 'error')
+      const msg = errorText(err)
+      if (isPathDenial(msg)) {
+        setPathError(msg)
+      } else {
+        toast(msg, 'error')
+      }
       setCreating(false)
     }
   }, [fetchProjects, selectProject, toast])
 
   const handleFolderSelected = useCallback(async (path: string) => {
+    setPathError(null)
     const exists = await window.watchfire.checkProjectExists(path)
     if (exists) {
       importExistingProject(path)
@@ -95,7 +114,15 @@ export function AddProjectWizard() {
       toast('Project created', 'success')
       selectProject(project.projectId)
     } catch (err) {
-      toast(String(err), 'error')
+      const msg = errorText(err)
+      if (isPathDenial(msg)) {
+        // Folder problem — send the user back to the picker with the
+        // message inline instead of a transient toast.
+        setPathError(msg)
+        setStep(0)
+      } else {
+        toast(msg, 'error')
+      }
     } finally {
       setCreating(false)
     }
@@ -136,7 +163,14 @@ export function AddProjectWizard() {
       </div>
 
       <div className="flex-1 overflow-y-auto p-6">
-        {step === 0 && <StepProjectInfo data={data} onChange={update} onFolderSelected={handleFolderSelected} />}
+        {step === 0 && (
+          <StepProjectInfo
+            data={data}
+            onChange={update}
+            onFolderSelected={handleFolderSelected}
+            pathError={pathError}
+          />
+        )}
         {step === 1 && (
           <StepAgent
             data={data}

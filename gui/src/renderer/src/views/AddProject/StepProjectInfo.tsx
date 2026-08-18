@@ -8,9 +8,11 @@ interface Props {
   data: WizardData
   onChange: (partial: Partial<WizardData>) => void
   onFolderSelected?: (path: string) => void
+  /** Inline folder problem (e.g. sandbox-denied path, #17) — cleared by picking a new folder. */
+  pathError?: string | null
 }
 
-export function StepProjectInfo({ data, onChange, onFolderSelected }: Props) {
+export function StepProjectInfo({ data, onChange, onFolderSelected, pathError }: Props) {
   const opened = useRef(false)
 
   const selectFolder = async () => {
@@ -45,6 +47,11 @@ export function StepProjectInfo({ data, onChange, onFolderSelected }: Props) {
             Browse
           </Button>
         </div>
+        {pathError && (
+          <p className="mt-1.5 text-xs text-red-400" role="alert">
+            {pathError}
+          </p>
+        )}
       </div>
 
       <Input

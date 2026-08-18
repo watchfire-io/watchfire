@@ -291,10 +291,17 @@ func (s *agentService) StopAgent(_ context.Context, req *pb.ProjectId) (*emptypb
 func (s *agentService) GetAgentStatus(_ context.Context, req *pb.ProjectId) (*pb.AgentStatus, error) {
 	running, ok := s.manager.GetAgent(req.ProjectId)
 	if !ok {
-		return &pb.AgentStatus{
+		status := &pb.AgentStatus{
 			ProjectId: req.ProjectId,
 			IsRunning: false,
-		}, nil
+		}
+		// Preflight refusals (e.g. sandbox_denied, #17) have no Process to
+		// stream them — ride the status so clients render the issue banner
+		// instead of a generic "unexpected error".
+		if issue := s.manager.PreflightIssue(req.ProjectId); issue != nil {
+			status.Issue = issueToProto(issue)
+		}
+		return status, nil
 	}
 	return buildAgentStatus(running), nil
 }

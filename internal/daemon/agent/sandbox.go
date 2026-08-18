@@ -11,6 +11,16 @@ import (
 	"github.com/watchfire-io/watchfire/internal/daemon/agent/backend"
 )
 
+// credentialDenyDirs / credentialDenyFiles are the always-denied credential
+// paths under $HOME. They are rendered by DefaultPolicy (all platforms) and
+// GenerateProfile (darwin), and feed deniedProjectRoots for the preflight
+// check in sandbox_preflight.go — always reference these slices instead of
+// re-listing the paths so policy and preflight cannot drift.
+var (
+	credentialDenyDirs  = []string{".ssh", ".aws", ".gnupg"}
+	credentialDenyFiles = []string{".netrc", ".npmrc"}
+)
+
 // SandboxBackend identifies the sandbox implementation to use.
 const (
 	SandboxAuto     = "auto"     // Platform picks best available
@@ -82,13 +92,7 @@ func DefaultPolicy(homeDir, projectDir string, extras backend.SandboxExtras) San
 		HomeDir:       homeDir,
 		ProjectDir:    projectDir,
 		WritablePaths: writable,
-		DeniedPaths: []string{
-			filepath.Join(homeDir, ".ssh"),
-			filepath.Join(homeDir, ".aws"),
-			filepath.Join(homeDir, ".gnupg"),
-			filepath.Join(homeDir, ".netrc"),
-			filepath.Join(homeDir, ".npmrc"),
-		},
+		DeniedPaths: joinAll(homeDir, append(append([]string{}, credentialDenyDirs...), credentialDenyFiles...)),
 		WriteProtectedPatterns: []string{
 			`/\.env($|[^/]*)`,
 			filepath.Join(projectDir, ".git", "hooks"),
@@ -103,6 +107,15 @@ func DefaultPolicy(homeDir, projectDir string, extras backend.SandboxExtras) San
 	policy.DeniedPaths = append(policy.DeniedPaths, pd.ExtraDenied...)
 
 	return policy
+}
+
+// joinAll joins each name onto base.
+func joinAll(base string, names []string) []string {
+	out := make([]string, 0, len(names))
+	for _, n := range names {
+		out = append(out, filepath.Join(base, n))
+	}
+	return out
 }
 
 // expandExtras returns a copy of extras with any leading "~/" in paths

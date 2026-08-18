@@ -70,6 +70,14 @@ type AgentStartedMsg struct {
 	Status *pb.AgentStatus
 }
 
+// AgentStartFailedMsg signals a StartAgent RPC was refused (e.g. the
+// sandbox preflight for a project under a denied root, #17). Besides
+// showing the error, the handler refreshes agent status so a daemon-side
+// preflight issue rides in and renders as a persistent banner.
+type AgentStartFailedMsg struct {
+	Err error
+}
+
 // AgentStoppedMsg signals the agent was stopped.
 type AgentStoppedMsg struct{}
 
