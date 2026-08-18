@@ -19,7 +19,6 @@ import { RightPanel } from './RightPanel/RightPanel'
 import { BottomPanel } from './BottomPanel/BottomPanel'
 import { useTerminalStore } from '../../stores/terminal-store'
 import { useIntegrationsStore } from '../../stores/integrations-store'
-import { WildfireControl } from './WildfireControl'
 import { OpenInIDEButton } from './OpenInIDEButton'
 import { ExportPill } from '../../components/ExportPill'
 
@@ -27,10 +26,18 @@ import { ExportPill } from '../../components/ExportPill'
 // RIGHT pane; the agent chat/terminal is the primary LEFT pane.
 type RefTab = 'tasks' | 'definition' | 'insights' | 'secrets' | 'trash' | 'settings'
 
-const REF_TABS: { key: RefTab; icon: typeof ListTodo; label: string }[] = [
+// v10 Torch (task 0148): the six reference surfaces are split by visit
+// frequency — Tasks/Definition/Insights are the daily working set and keep
+// full icon+label weight; Secrets/Trash/Settings are admin surfaces grouped
+// as an icon-only utility cluster at the strip's end. All six stay one click
+// away; only the visual weight changed.
+const PRIMARY_TABS: { key: RefTab; icon: typeof ListTodo; label: string }[] = [
   { key: 'tasks', icon: ListTodo, label: 'Tasks' },
   { key: 'definition', icon: FileText, label: 'Definition' },
-  { key: 'insights', icon: Sparkles, label: 'Insights' },
+  { key: 'insights', icon: Sparkles, label: 'Insights' }
+]
+
+const UTILITY_TABS: { key: RefTab; icon: typeof ListTodo; label: string }[] = [
   { key: 'secrets', icon: KeyRound, label: 'Secrets' },
   { key: 'trash', icon: Trash2, label: 'Trash' },
   { key: 'settings', icon: Settings, label: 'Settings' }
@@ -92,15 +99,27 @@ export function ProjectView() {
 
   // Honour tray-driven focus requests: when a focus event lands on this
   // project, surface the Tasks tab — and reveal the reference region if it's
-  // currently collapsed behind focus mode.
+  // currently collapsed behind focus mode. The 'settings' target (v10 Torch,
+  // task 0148) is how Cmd+, and the app-menu Settings item reach the project
+  // Settings surface even when chat-focus has the region collapsed.
   const focusRequest = useAppStore((s) => s.focusRequest)
   useEffect(() => {
     if (!focusRequest || focusRequest.projectId !== projectId) return
     if (focusRequest.target === 'tasks' || focusRequest.target === 'task') {
       setRefTab('tasks')
       setChatFocus(false)
+    } else if (focusRequest.target === 'settings') {
+      setRefTab('settings')
+      setChatFocus(false)
     }
   }, [focusRequest, projectId])
+
+  // Open the project Settings surface from anywhere — including chat-focus,
+  // where the reference region is collapsed: expand it to the Settings tab.
+  const openProjectSettings = () => {
+    setRefTab('settings')
+    setChatFocus(false)
+  }
 
   const project = projects.find((p) => p.projectId === projectId)
   const isAgentRunning = agentStatus?.isRunning
@@ -180,9 +199,18 @@ export function ProjectView() {
             )}
           </div>
           <div className="flex items-center gap-2">
-            <WildfireControl projectId={projectId} />
             <ExportPill scope={{ kind: 'project', projectId }} />
             <OpenInIDEButton projectPath={project.path} />
+            {/* Persistent Settings affordance — lives OUTSIDE the collapsible
+                reference region so project Settings stays one click away even
+                in chat-focus (v10 Torch, task 0148). */}
+            <button
+              onClick={openProjectSettings}
+              title="Project settings (⌘,)"
+              className="p-1.5 text-[var(--wf-text-muted)] hover:text-[var(--wf-text-primary)] transition-colors"
+            >
+              <Settings size={18} />
+            </button>
             <button
               onClick={toggleFocus}
               title={chatFocus ? 'Show reference panel' : 'Focus chat — hide reference panel'}
@@ -251,9 +279,10 @@ export function ProjectView() {
                 className="shrink-0 flex flex-col overflow-hidden border-l border-[var(--wf-border)]"
                 style={{ width: refPanelWidth }}
               >
-                {/* Tab bar */}
+                {/* Tab bar — daily tabs left at full weight, admin surfaces as
+                    an icon-only utility cluster on the right (task 0148) */}
                 <div className="flex items-center gap-1 px-4 py-1 border-b border-[var(--wf-border)]">
-                  {REF_TABS.map((tab) => {
+                  {PRIMARY_TABS.map((tab) => {
                     const Icon = tab.icon
                     return (
                       <button
@@ -271,6 +300,26 @@ export function ProjectView() {
                       </button>
                     )
                   })}
+                  <div className="ml-auto flex items-center gap-0.5 pl-2 border-l border-[var(--wf-border)]">
+                    {UTILITY_TABS.map((tab) => {
+                      const Icon = tab.icon
+                      return (
+                        <button
+                          key={tab.key}
+                          onClick={() => setRefTab(tab.key)}
+                          title={tab.label}
+                          className={cn(
+                            'p-1.5 rounded-[var(--wf-radius-md)] transition-colors',
+                            refTab === tab.key
+                              ? 'bg-[var(--wf-bg-elevated)] text-[var(--wf-text-primary)]'
+                              : 'text-[var(--wf-text-muted)] hover:text-[var(--wf-text-secondary)]'
+                          )}
+                        >
+                          <Icon size={14} />
+                        </button>
+                      )
+                    })}
+                  </div>
                 </div>
 
                 {/* Tab content */}

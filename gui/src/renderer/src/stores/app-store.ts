@@ -18,7 +18,9 @@ function safeSetItem(key: string, value: string): void {
 }
 
 export type AppView = 'dashboard' | 'project' | 'add-project' | 'settings'
-export type FocusRequestTarget = 'main' | 'tasks' | 'task'
+// 'settings' (v10 Torch, task 0148) routes a project window to its project
+// Settings tab — used by Cmd+, and the app-menu Settings item.
+export type FocusRequestTarget = 'main' | 'tasks' | 'task' | 'settings'
 
 export interface FocusRequest {
   // Monotonic id so consumers can detect a fresh request even when the

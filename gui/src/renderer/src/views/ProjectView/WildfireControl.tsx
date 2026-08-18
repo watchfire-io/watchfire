@@ -13,9 +13,11 @@ interface Props {
 }
 
 /**
- * Dedicated wildfire start/stop control for the ProjectView header. Wildfire is
- * already driven over gRPC (StartAgent(mode="wildfire") / StopAgent); this is
- * pure GUI wiring against the existing generated client.
+ * Dedicated wildfire start/stop control. Since v10 Torch (task 0148) it leads
+ * the mode cluster in the chat toolbar (first, fire-orange) so it reads as the
+ * flagship action next to Generate/Plan/Run All. Wildfire is already driven
+ * over gRPC (StartAgent(mode="wildfire") / StopAgent); this is pure GUI wiring
+ * against the existing generated client.
  *
  * - Idle → a "Wildfire" button that opens a confirm-before-start modal
  *   (wildfire is autonomous and spends tokens unattended).
@@ -86,7 +88,7 @@ export function WildfireControl({ projectId }: Props) {
     <>
       <Button
         size="sm"
-        variant="ghost"
+        variant="primary"
         onClick={() => setConfirmOpen(true)}
         disabled={busy}
         title="Start the autonomous wildfire loop (execute → refine → generate)"

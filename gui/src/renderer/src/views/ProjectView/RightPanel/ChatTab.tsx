@@ -7,6 +7,7 @@ import { AgentBadge } from '../../../components/AgentBadge'
 import { Button } from '../../../components/ui/Button'
 import { useToast } from '../../../components/ui/Toast'
 import { ModesControl } from '../ModesControl'
+import { WildfireControl } from '../WildfireControl'
 
 interface Props {
   projectId: string
@@ -74,10 +75,13 @@ export function ChatTab({ projectId }: Props) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Modes toolbar + agent badge */}
+      {/* Modes toolbar + agent badge. Wildfire leads the mode cluster (v10
+          Torch, task 0148) with fire-orange emphasis — it's the flagship
+          action; its confirm gate and live phase indicator are unchanged. */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--wf-border)]">
         {isRunning && <AgentBadge status={agentStatus} />}
-        <div className="ml-auto">
+        <div className="ml-auto flex items-center gap-1">
+          <WildfireControl projectId={projectId} />
           <ModesControl projectId={projectId} layout="row" />
         </div>
       </div>

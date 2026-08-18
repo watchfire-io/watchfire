@@ -6,9 +6,10 @@ import { Button } from '../../components/ui/Button'
 import { useToast } from '../../components/ui/Toast'
 import { cn } from '../../lib/utils'
 
-// Wildfire is intentionally absent here: it gets a dedicated, confirm-gated
-// control in the ProjectView header (WildfireControl) because it is autonomous
-// and spends tokens unattended.
+// Wildfire is intentionally absent here: it keeps its dedicated, confirm-gated
+// control (WildfireControl) because it is autonomous and spends tokens
+// unattended. Since v10 Torch (task 0148) that control is rendered directly
+// before this one in the chat toolbar, so Wildfire leads the mode cluster.
 type Mode = 'generate-definition' | 'generate-tasks' | 'start-all'
 
 const MODES: { mode: Mode; label: string; icon: typeof Sparkles; title: string }[] = [
