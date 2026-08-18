@@ -350,11 +350,12 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 
 	// Start in PTY
 	proc, err := NewProcess(ProcessOptions{
-		ProjectID:  opts.ProjectID,
-		Cmd:        cmd,
-		Rows:       opts.Rows,
-		Cols:       opts.Cols,
-		SandboxTmp: sandboxTmp,
+		ProjectID:   opts.ProjectID,
+		Cmd:         cmd,
+		Rows:        opts.Rows,
+		Cols:        opts.Cols,
+		SandboxTmp:  sandboxTmp,
+		BackendName: be.Name(),
 	})
 	if err != nil {
 		_ = os.Remove(sandboxTmp)
