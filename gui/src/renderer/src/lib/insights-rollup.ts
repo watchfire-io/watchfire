@@ -45,6 +45,140 @@ export function saveWindow(window: InsightsWindow): void {
   }
 }
 
+// --- Chart aggregation controls (v10 Torch) --------------------------------
+// The tasks chart can re-bucket the daemon's per-day series into weeks or
+// months client-side, and optionally pair it with an aligned lines-of-code
+// chart. Both choices persist like the window preset.
+
+export const INSIGHTS_GRANULARITIES = ['day', 'week', 'month'] as const
+export type InsightsGranularity = (typeof INSIGHTS_GRANULARITIES)[number]
+
+export const INSIGHTS_GRANULARITY_KEY = 'wf-insights-granularity'
+export const INSIGHTS_COMPARE_KEY = 'wf-insights-compare-lines'
+
+export function readSavedGranularity(): InsightsGranularity {
+  try {
+    const saved = localStorage.getItem(INSIGHTS_GRANULARITY_KEY)
+    if (saved && (INSIGHTS_GRANULARITIES as readonly string[]).includes(saved)) {
+      return saved as InsightsGranularity
+    }
+  } catch {
+    /* storage unavailable — fall through */
+  }
+  return 'day'
+}
+
+export function saveGranularity(g: InsightsGranularity): void {
+  try {
+    localStorage.setItem(INSIGHTS_GRANULARITY_KEY, g)
+  } catch {
+    /* storage unavailable — ignore */
+  }
+}
+
+export function readSavedCompare(): boolean {
+  try {
+    return localStorage.getItem(INSIGHTS_COMPARE_KEY) === 'true'
+  } catch {
+    return false
+  }
+}
+
+export function saveCompare(on: boolean): void {
+  try {
+    localStorage.setItem(INSIGHTS_COMPARE_KEY, String(on))
+  } catch {
+    /* storage unavailable — ignore */
+  }
+}
+
+/** DayBucketLike is the normalized (bigint-free) bucket shape the chart
+ *  helpers consume — the aggregation output for any granularity. `date` is
+ *  the bucket's start day as `YYYY-MM-DD` (the day itself, the week's Monday,
+ *  or the month's first). */
+export interface DayBucketLike {
+  date: string
+  count: number
+  succeeded: number
+  failed: number
+  linesAdded: number
+  linesRemoved: number
+}
+
+function toNum(v: number | bigint | undefined): number {
+  return v === undefined ? 0 : typeof v === 'bigint' ? Number(v) : v
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, '0')
+}
+
+/** bucketKeyFor maps a `YYYY-MM-DD` day to its bucket-start key for the
+ *  given granularity: the day itself, the Monday of its ISO week, or the
+ *  first of its month. Unparseable keys pass through untouched (they group
+ *  as themselves). */
+export function bucketKeyFor(date: string, granularity: InsightsGranularity): string {
+  if (granularity === 'day') return date
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
+  if (!m) return date
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  if (Number.isNaN(d.getTime())) return date
+  if (granularity === 'month') {
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-01`
+  }
+  // week: back up to Monday (getDay(): Sun=0 … Sat=6)
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7))
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
+}
+
+/** aggregateDayBuckets re-buckets the daemon's chronological per-day series
+ *  into day/week/month buckets, summing counts and churn. Input order is
+ *  preserved (the daemon emits days in order, so bucket starts come out in
+ *  order too). Also normalizes any bigint churn fields to numbers. */
+export function aggregateDayBuckets(
+  buckets: ReadonlyArray<{
+    date: string
+    count: number | bigint
+    succeeded: number | bigint
+    failed: number | bigint
+    linesAdded?: number | bigint
+    linesRemoved?: number | bigint
+  }>,
+  granularity: InsightsGranularity
+): DayBucketLike[] {
+  const out: DayBucketLike[] = []
+  const byKey = new Map<string, DayBucketLike>()
+  for (const b of buckets) {
+    const key = bucketKeyFor(b.date, granularity)
+    let row = byKey.get(key)
+    if (!row) {
+      row = { date: key, count: 0, succeeded: 0, failed: 0, linesAdded: 0, linesRemoved: 0 }
+      byKey.set(key, row)
+      out.push(row)
+    }
+    row.count += toNum(b.count)
+    row.succeeded += toNum(b.succeeded)
+    row.failed += toNum(b.failed)
+    row.linesAdded += toNum(b.linesAdded)
+    row.linesRemoved += toNum(b.linesRemoved)
+  }
+  return out
+}
+
+/** formatBucketLabel renders a bucket-start key for the hover card at the
+ *  given granularity: "Fri 24 Jul", "Wk of 21 Jul", or "Jul 2026". */
+export function formatBucketLabel(date: string, granularity: InsightsGranularity): string {
+  if (granularity === 'day') return formatBucketDate(date)
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date)
+  if (!m) return date
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+  if (Number.isNaN(d.getTime())) return date
+  if (granularity === 'month') {
+    return d.toLocaleDateString(undefined, { month: 'short', year: 'numeric' })
+  }
+  return `Wk of ${d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}`
+}
+
 /** formatDuration turns a duration in milliseconds into the compact
  *  display the rollup KPI strip uses ("71h 04m"). Hours dominate the
  *  format because the dashboard window is always days-long; sub-minute

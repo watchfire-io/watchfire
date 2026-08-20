@@ -637,7 +637,7 @@ func scrubConfigToProto(cfg *models.IntegrationsConfig) *pb.IntegrationsConfig {
 				PairedAt:         timestamppb.New(pc.PairedAt),
 				DefaultProjectId: pc.DefaultProjectID,
 				Muted:            pc.Muted,
-				Watch:            pc.Watch,
+				Watch:            pc.Watching(),
 			})
 		}
 		out.Telegram = tg
@@ -789,7 +789,7 @@ func upsertTelegram(cfg *models.IntegrationsConfig, in *pb.TelegramIntegration) 
 				continue
 			}
 			next.PairedChats[i].Muted = pc.GetMuted()
-			next.PairedChats[i].Watch = pc.GetWatch()
+			next.PairedChats[i].WatchOff = !pc.GetWatch()
 			next.PairedChats[i].DefaultProjectID = pc.GetDefaultProjectId()
 			break
 		}

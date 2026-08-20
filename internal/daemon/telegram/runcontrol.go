@@ -21,11 +21,13 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
 	"github.com/watchfire-io/watchfire/internal/config"
 	"github.com/watchfire-io/watchfire/internal/daemon/echo"
+	"github.com/watchfire-io/watchfire/internal/models"
 )
 
 // screenTailLines caps the /screen snapshot at the last N normalized
@@ -53,18 +55,51 @@ type RunController interface {
 	// StartRunAll starts run-all mode (the daemon chains through the
 	// ready queue after each merge).
 	StartRunAll(ctx context.Context, projectID string) (RunStart, error)
+	// StartChat starts an interactive chat-mode session — the
+	// plain-text conversation path auto-starts one when nothing is
+	// running. Same never-queue-never-replace contract as the others.
+	StartChat(ctx context.Context, projectID string) (RunStart, error)
+	// StartWildfire starts the autonomous wildfire loop (/wildfire on).
+	// Same never-queue-never-replace contract as the others.
+	StartWildfire(ctx context.Context, projectID string) (RunStart, error)
+	// StartGenerate starts a generate-definition session (/generate) —
+	// the agent analyzes the codebase and writes the project definition.
+	StartGenerate(ctx context.Context, projectID string) (RunStart, error)
+	// StartPlan starts a generate-tasks session (/plan) — the agent
+	// derives tasks from the project definition.
+	StartPlan(ctx context.Context, projectID string) (RunStart, error)
+	// RestartChat starts a FRESH chat session (/new), atomically
+	// replacing a running chat via the daemon's chat-over-chat replace
+	// path; the daemon itself refuses to displace a working (non-chat)
+	// agent, so this needs no manual refusal pre-check.
+	RestartChat(ctx context.Context, projectID string) (RunStart, error)
+	// StopAgent user-stops the running agent (also ends a wildfire /
+	// run-all chain) — the /wildfire off path.
+	StopAgent(projectID string) error
 	// SendInput writes raw bytes to the running agent's PTY. Reserved
-	// for the explicit /say path.
+	// for the injectSay path.
 	SendInput(projectID string, data []byte) error
 }
 
-// injectSay is the single sanctioned PTY write in the telegram
-// package: the user's text verbatim, terminated by exactly one
-// carriage return (Enter). The watch_guard_test source guard
-// allowlists precisely this call site — any other SendInput reference
-// in the package fails the build's tests.
+// injectSay is the single sanctioned PTY write path in the telegram
+// package: the user's text verbatim, then — after a short beat — one
+// carriage return (Enter) as its own write. Sending text+\r as a
+// single chunk trips the agent CLI's paste detection, which absorbs
+// the trailing Enter into the pasted content instead of submitting
+// (observed live: the message sat in Claude Code's input box, unsent).
+// The split write mirrors a human typing and then pressing Enter. The
+// watch_guard_test source guard allowlists precisely this call site —
+// any other SendInput reference in the package fails the build's tests.
 func (b *Bridge) injectSay(projectID, text string) error {
-	return b.runner.SendInput(projectID, append([]byte(text), '\r'))
+	for i, chunk := range [][]byte{[]byte(text), {'\r'}} {
+		if i > 0 {
+			b.sleepFn(context.Background(), b.sayEnterDelay)
+		}
+		if err := b.runner.SendInput(projectID, chunk); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // chatProject resolves the chat's selected project id, prompting for
@@ -232,6 +267,328 @@ func (b *Bridge) cmdSay(ctx context.Context, chatID int64, text string) {
 		return
 	}
 	b.reply(ctx, chatID, "→ sent")
+}
+
+// cmdNew starts a fresh chat session for the chat's project (/new),
+// clearing the previous conversation context. A running chat is
+// replaced atomically (the daemon's chat-over-chat path); a working
+// non-chat agent is never displaced — same refusal as /run.
+func (b *Bridge) cmdNew(ctx context.Context, chatID int64) {
+	if !b.requireRunner(ctx, chatID) {
+		return
+	}
+	projectID, ok := b.chatProject(ctx, chatID)
+	if !ok {
+		return
+	}
+	if sess, live := b.runningSession(projectID); live && sess.Mode != "chat" {
+		b.reply(ctx, chatID, runRefusal(sess))
+		return
+	}
+	if _, err := b.runner.RestartChat(ctx, projectID); err != nil {
+		b.reply(ctx, chatID, "Failed to start a new chat session: "+EscapeHTML(err.Error()))
+		return
+	}
+	b.reply(ctx, chatID, "🆕 Fresh chat session started — the previous context is gone. Just type to talk to it.")
+}
+
+// cmdStop user-stops whatever agent is running for the chat's active
+// project — task, run-all, wildfire (the chain ends), or chat. The
+// natural follow-up is just typing: plain text auto-starts a fresh
+// chat agent.
+func (b *Bridge) cmdStop(ctx context.Context, chatID int64) {
+	if !b.requireRunner(ctx, chatID) {
+		return
+	}
+	projectID, ok := b.chatProject(ctx, chatID)
+	if !ok {
+		return
+	}
+	sess, live := b.runningSession(projectID)
+	if !live {
+		b.reply(ctx, chatID, "Nothing is running for this project.")
+		return
+	}
+	if err := b.runner.StopAgent(projectID); err != nil {
+		b.reply(ctx, chatID, "Failed to stop the agent: "+EscapeHTML(err.Error()))
+		return
+	}
+	b.reply(ctx, chatID, "🛑 Stopped: "+sessionStateLine(sess)+". Just type to start a fresh chat.")
+}
+
+// cmdSimpleMode is the shared start path for the one-shot generator
+// verbs (/generate, /plan): resolve the chat's project, refuse while an
+// agent runs (never queue, never replace), start, confirm. The watch
+// relay (on by default) then streams the session like any other.
+func (b *Bridge) cmdSimpleMode(ctx context.Context, chatID int64, start func(context.Context, string) (RunStart, error), confirm string) {
+	if !b.requireRunner(ctx, chatID) {
+		return
+	}
+	projectID, ok := b.chatProject(ctx, chatID)
+	if !ok {
+		return
+	}
+	if sess, live := b.runningSession(projectID); live {
+		b.reply(ctx, chatID, runRefusal(sess))
+		return
+	}
+	if _, err := start(ctx, projectID); err != nil {
+		b.reply(ctx, chatID, "Failed to start: "+EscapeHTML(err.Error()))
+		return
+	}
+	b.reply(ctx, chatID, confirm)
+}
+
+// cmdWildfire starts (bare /wildfire — "on"/"start" are aliases) or
+// stops (/wildfire off) the autonomous loop for the chat's active
+// project. Starting is refusal-gated like /run; stopping user-stops
+// the agent so the chain doesn't continue. The watch relay
+// (on by default) then carries the high-level milestone feed:
+// "generating new tasks…", "✚ generated task NNNN — title",
+// "implementing task NNNN — title", "✔ task NNNN merged", …
+func (b *Bridge) cmdWildfire(ctx context.Context, chatID int64, rest string) {
+	if !b.requireRunner(ctx, chatID) {
+		return
+	}
+	projectID, ok := b.chatProject(ctx, chatID)
+	if !ok {
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(rest)) {
+	case "", "on", "start":
+		// Bare /wildfire starts the loop — "on" and "start" are
+		// accepted aliases.
+		if sess, live := b.runningSession(projectID); live {
+			if sess.Mode == "wildfire" {
+				state := "🔥 Wildfire is already running"
+				if sess.Phase != "" {
+					state += " (" + EscapeHTML(sess.Phase) + " phase)"
+				}
+				b.reply(ctx, chatID, state+". /wildfire off to stop it.")
+				return
+			}
+			b.reply(ctx, chatID, runRefusal(sess))
+			return
+		}
+		if _, err := b.runner.StartWildfire(ctx, projectID); err != nil {
+			b.reply(ctx, chatID, "Failed to start wildfire: "+EscapeHTML(err.Error()))
+			return
+		}
+		b.mu.Lock()
+		watching := b.paired[chatID].Watching()
+		b.mu.Unlock()
+		msg := "🔥 Wildfire started — the autonomous loop executes ready tasks, refines the backlog, and generates new tasks until nothing is left. /wildfire off to stop."
+		if watching {
+			msg += "\nI'll post milestones here as they happen."
+		} else {
+			msg += "\nSend /watch on to get the milestone feed here."
+		}
+		b.reply(ctx, chatID, msg)
+	case "off", "stop":
+		sess, live := b.runningSession(projectID)
+		if !live || sess.Mode != "wildfire" {
+			b.reply(ctx, chatID, "Wildfire is not running for this project.")
+			return
+		}
+		if err := b.runner.StopAgent(projectID); err != nil {
+			b.reply(ctx, chatID, "Failed to stop wildfire: "+EscapeHTML(err.Error()))
+			return
+		}
+		b.reply(ctx, chatID, "🧯 Wildfire stopped.")
+	default:
+		b.reply(ctx, chatID, "Usage: /wildfire — start the loop; /wildfire off — stop it.")
+	}
+}
+
+// handlePlainText is the conversational core of the bridge: a paired
+// chat's non-command message talks to a CHAT agent with no /say
+// prefix. Same delivery guarantees as /say — verbatim text plus
+// exactly one Enter through injectSay, which stays the package's only
+// PTY write. The target is the session watch mode streams (the chat's
+// /use selection, or the auto-attached live session). Three cases:
+//
+//   - live chat session → inject.
+//   - live NON-chat session (task / run-all / wildfire / generate) →
+//     never type into a working agent implicitly; explain what's
+//     running and offer options (/watch, /screen, explicit /say,
+//     /cancel).
+//   - nothing running → auto-start a chat agent on the chat's project
+//     and deliver the message once the session is ready.
+func (b *Bridge) handlePlainText(ctx context.Context, chatID int64, text string) {
+	if !b.requireRunner(ctx, chatID) {
+		return
+	}
+	if b.sessions == nil {
+		b.reply(ctx, chatID, "Sessions are not wired up on this daemon.")
+		return
+	}
+	b.mu.Lock()
+	chat := b.paired[chatID]
+	b.mu.Unlock()
+
+	if sess, live := b.resolveWatchSession(chat.DefaultProjectID); live {
+		if sess.Mode != "chat" {
+			b.replyBusyOptions(ctx, chatID, chat, sess)
+			return
+		}
+		if err := b.injectSay(sess.ProjectID, text); err != nil {
+			b.reply(ctx, chatID, "Failed to send input: "+EscapeHTML(err.Error()))
+			return
+		}
+		// The agent is now thinking — show "typing…" right away; the
+		// watch relay's typing loop takes over once output flows.
+		b.sendTyping(ctx, chatID)
+		if !chat.Watching() {
+			b.reply(ctx, chatID, "→ sent. Send /watch on to stream the agent's replies here.")
+		}
+		return
+	}
+
+	projectID := chat.DefaultProjectID
+	if projectID == "" {
+		b.reply(ctx, chatID, "No project selected — send /projects, then /use &lt;name|number&gt;, and I'll start a chat agent there.")
+		return
+	}
+	b.queueChatStart(ctx, chatID, projectID, text, chat.Watching())
+}
+
+// replyBusyOptions explains that the live session is a working
+// (non-chat) agent and lists what the user can do instead of the
+// bridge implicitly typing into it.
+func (b *Bridge) replyBusyOptions(ctx context.Context, chatID int64, chat models.TelegramPairedChat, sess *WatchedSession) {
+	desc := "in mode <b>" + EscapeHTML(sess.Mode) + "</b>"
+	if sess.TaskNumber > 0 {
+		desc = fmt.Sprintf("on task <b>#%04d</b>", sess.TaskNumber)
+		if sess.TaskTitle != "" {
+			desc += " — " + EscapeHTML(sess.TaskTitle)
+		}
+	}
+	lines := []string{
+		"⚙ The agent is busy " + desc + ", so I won't type into its session. You can:",
+	}
+	if !chat.Watching() {
+		lines = append(lines, "• /watch on — stream what it's doing")
+	}
+	lines = append(lines,
+		"• /screen — see where it is right now",
+		"• /say &lt;text&gt; — type into the working session anyway",
+	)
+	if sess.TaskNumber > 0 {
+		lines = append(lines, fmt.Sprintf("• /cancel %d — stop the task", sess.TaskNumber))
+	}
+	lines = append(lines, "Message me again once it's done and I'll start a chat agent.")
+	b.reply(ctx, chatID, strings.Join(lines, "\n"))
+}
+
+// chatPendingStart tracks one project's in-flight auto-started chat
+// session: the messages queued for delivery and the chats to notify on
+// failure.
+type chatPendingStart struct {
+	chatIDs map[int64]bool
+	texts   []string
+}
+
+// queueChatStart starts a chat agent for projectID (once — concurrent
+// messages while it boots just queue) and hands delivery to
+// deliverWhenReady.
+func (b *Bridge) queueChatStart(ctx context.Context, chatID int64, projectID, text string, watch bool) {
+	b.chatStartMu.Lock()
+	if p, ok := b.chatPending[projectID]; ok {
+		p.texts = append(p.texts, text)
+		p.chatIDs[chatID] = true
+		b.chatStartMu.Unlock()
+		return
+	}
+	p := &chatPendingStart{chatIDs: map[int64]bool{chatID: true}, texts: []string{text}}
+	b.chatPending[projectID] = p
+	b.chatStartMu.Unlock()
+
+	if _, err := b.runner.StartChat(ctx, projectID); err != nil {
+		b.takeChatPending(projectID)
+		b.reply(ctx, chatID, "Couldn't start a chat agent: "+EscapeHTML(err.Error()))
+		return
+	}
+	msg := "🔥 No agent was running — starting a chat agent. I'll deliver your message when it's ready."
+	if !watch {
+		msg += " Send /watch on to stream its replies here."
+	}
+	b.reply(ctx, chatID, msg)
+	go b.deliverWhenReady(ctx, projectID)
+}
+
+// takeChatPending removes and returns projectID's pending record (nil
+// when none).
+func (b *Bridge) takeChatPending(projectID string) *chatPendingStart {
+	b.chatStartMu.Lock()
+	defer b.chatStartMu.Unlock()
+	p := b.chatPending[projectID]
+	delete(b.chatPending, projectID)
+	return p
+}
+
+// deliverWhenReady polls the freshly started chat session until its
+// screen shows content (the CLI has painted), settles briefly so its
+// input loop is accepting keys, then injects the queued messages in
+// order. On timeout the queued chats are told the message was not
+// delivered.
+func (b *Bridge) deliverWhenReady(ctx context.Context, projectID string) {
+	deadline := time.Now().Add(b.chatStartWait)
+	ready := false
+	var lastTyping time.Time
+	for time.Now().Before(deadline) && ctx.Err() == nil {
+		// Show "typing…" while the agent boots so the wait doesn't read
+		// as the message having vanished.
+		if time.Since(lastTyping) >= b.typingEvery {
+			b.chatStartMu.Lock()
+			var ids []int64
+			if p := b.chatPending[projectID]; p != nil {
+				for cid := range p.chatIDs {
+					ids = append(ids, cid)
+				}
+			}
+			b.chatStartMu.Unlock()
+			for _, cid := range ids {
+				b.sendTyping(ctx, cid)
+			}
+			lastTyping = time.Now()
+		}
+		if sess, live := b.sessions.ActiveSession(projectID); live && sess.Mode == "chat" && sess.Snapshot != nil {
+			if screenHasContent(sess.Snapshot()) {
+				ready = true
+				break
+			}
+		}
+		b.sleepFn(ctx, b.chatStartPoll)
+	}
+	p := b.takeChatPending(projectID)
+	if p == nil {
+		return
+	}
+	if !ready {
+		for cid := range p.chatIDs {
+			b.reply(ctx, cid, "The chat agent didn't come up in time — your message was not delivered. /screen shows its current state.")
+		}
+		return
+	}
+	b.sleepFn(ctx, b.chatStartSettle)
+	for _, t := range p.texts {
+		if err := b.injectSay(projectID, t); err != nil {
+			for cid := range p.chatIDs {
+				b.reply(ctx, cid, "Failed to send your message: "+EscapeHTML(err.Error()))
+			}
+			return
+		}
+	}
+}
+
+// screenHasContent reports whether a snapshot has any non-blank line.
+func screenHasContent(lines []string) bool {
+	for _, l := range lines {
+		if strings.TrimSpace(l) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 // cmdMute toggles the chat's Muted flag (pauses outbound event pushes

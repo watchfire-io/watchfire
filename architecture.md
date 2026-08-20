@@ -249,14 +249,17 @@ The daemon detects phase completion via signal files created by the agent. The d
 
 ### System Tray
 
-| Menu Item | Content |
-|-----------|---------|
-| **Status header** | "Watchfire Daemon" |
-| **Port** | "Running on port: {port}" |
-| **Running agents** | List with project name, e.g., "● myproject — Claude Code" |
-| **Separator** | — |
-| **Open GUI** | Launches Electron GUI |
-| **Quit** | Shuts down daemon (closes all thin clients) |
+The menu buckets projects by status (`internal/daemon/tray/menu.go`):
+
+| Section | Content |
+|---------|---------|
+| **⚠ Needs attention** | Projects with failed tasks (failed count as subtitle); click focuses the Tasks tab |
+| **● Working** | Projects with a running agent — **chat included** (subtitle: task title, or "chat session"). "Working" simply means "an agent is running"; the same rule drives the GUI's `isAgentWorking` (dashboard dots, activity sort, mini monitor) |
+| **○ Idle** | Everything else, capped with an overflow row |
+| **Notifications** | Recent notifications.log entries + latest weekly digest |
+| **Update / Quit** | Update-available row when applicable; quit shuts the daemon down |
+
+The tray icon switches to its active variant while anything is working. Rebuilds are event-driven (agent lifecycle onChange + watcher fs events), coalesced to ≤ 4 Hz.
 
 **Tooltip**: "Watchfire — {n} projects, {m} active agents"
 
@@ -1289,7 +1292,8 @@ internal/daemon/telegram/           # The bridge (mirrors internal/daemon/discor
     commands.go                     # Per-chat dispatch: echo.Route verbs + Telegram-only verbs, /help, setMyCommands
     pairing.go                      # One-time pairing codes (crypto/rand, 8 chars, 10-min TTL, single active code)
     render.go                       # echo.CommandResponse → Telegram HTML (parse_mode=HTML; 4096-char chunking)
-    runcontrol.go                   # /run /runall /say — write-side verbs through the RunController seam
+    runcontrol.go                   # /run /wildfire /generate /plan /new /stop /say + plain-text conversation — write side through the RunController seam
+    agents.go                       # /agent — AgentSelector seam (backend list + project default_agent)
     watch.go                        # Live conversation relay ("watch mode"): tailer, screen deltas, chatSender
 internal/daemon/relay/telegram.go   # Outbound relay.Adapter: TASK_FAILED / RUN_COMPLETE / WEEKLY_DIGEST → paired chats
 internal/daemon/server/
@@ -1301,7 +1305,7 @@ internal/daemon/server/
 
 ### Configuration & secrets
 
-Optional `telegram:` section in `~/.watchfire/integrations.yaml` (`models.TelegramIntegration`): `enabled`, `bot_token_ref`, per-event toggles, and the `paired_chats` list (chat id, user id, display-only username, `default_project_id`, `muted`, `watch`). The bot token lives in the OS keyring under `watchfire.integration.telegram.bot_token` — **never in YAML** — via the existing `LookupIntegrationSecret`/`PutIntegrationSecret` path, and `ListIntegrations` serves only a `token_set` boolean. Old daemons ignore the new key (non-strict YAML); new daemons without it behave exactly as before.
+Optional `telegram:` section in `~/.watchfire/integrations.yaml` (`models.TelegramIntegration`): `enabled`, `bot_token_ref`, per-event toggles, and the `paired_chats` list (chat id, user id, display-only username, `default_project_id`, `muted`, `watch_off` — negative polarity so an absent field means watching, live relay being the default). The bot token lives in the OS keyring under `watchfire.integration.telegram.bot_token` — **never in YAML** — via the existing `LookupIntegrationSecret`/`PutIntegrationSecret` path, and `ListIntegrations` serves only a `token_set` boolean. Old daemons ignore the new key (non-strict YAML); new daemons without it behave exactly as before.
 
 ### Pairing (the security boundary)
 
@@ -1333,16 +1337,22 @@ Routing: `/status`, `/tasks`, `/retry`, `/cancel` are pure dispatch through `ech
 |---|---|
 | `/projects` | Numbered list of registered projects (with agent-running glyphs) + inline keyboard buttons |
 | `/use <name\|number>` | Select the active project for this chat (fuzzy name match; number indexes the last `/projects` listing). Persisted as `default_project_id` — survives daemon restarts |
-| `/status` | Existing router status handler: agent state, current task, todo/in-dev/done counts, needs-attention |
+| `/status` / `/status all` | Bare: the existing router status handler for the active project (agent state, current task, todo/in-dev/done counts, needs-attention). `all`: the fleet view — one line per project with its live session state resolved through `SessionSource.ActiveSession` (wildfire phase, current task, "chat session", idle) plus a working count |
 | `/tasks` | Top active tasks (`ListTopActiveTasks`) |
-| `/run <n>` / `/runall` | Start task n / run-all. **Refuses if an agent is already running** (same never-queue-never-replace semantics as MCP `run_task`), enforced twice: bridge pre-check via `SessionSource.ActiveSession`, then the server-side `RunController` re-checks as the authoritative backstop |
+| `/run <n>` / `/run all` | Start task n / run-all (`/runall` remains a hidden alias). **Refuses if an agent is already running** (same never-queue-never-replace semantics as MCP `run_task`), enforced twice: bridge pre-check via `SessionSource.ActiveSession`, then the server-side `RunController` re-checks as the authoritative backstop |
+| `/generate` / `/plan` | Start a generate-definition / generate-tasks session for the chat's project (refusal-gated like `/run`); with watch on, the session streams like any other |
+| `/new` | Start a FRESH chat session, clearing the conversation context. A running chat is replaced atomically via `RunController.RestartChat` (the daemon's chat-over-chat replace path — no manual refusal pre-check, the daemon's own guard refuses to displace a working non-chat agent); the bridge still pre-refuses non-chat sessions with the `/run` wording |
+| `/stop` | User-stop whatever agent is running for the chat's project — task, run-all, wildfire (the chain ends), or chat — via `RunController.StopAgent`; the reply names what was stopped, and the next plain-text message auto-starts a fresh chat |
+| `/wildfire` / `/wildfire off` | Bare `/wildfire` starts the autonomous loop ("on"/"start" are aliases; refusal-gated like `/run`); `off` is a user-stop so the chain doesn't continue. While watch is on, wildfire sessions relay a **milestone feed** instead of a raw stream: planning phases post "🔥 wildfire — generating new tasks…" / "…reviewing the plan and refining the backlog…" and close with "✚ generated task NNNN — title" (via `SessionSource.TasksCreatedSince`); execute-phase sessions post "🔥 wildfire — implementing task NNNN — title" and the usual outcome marker |
 | `/retry <n>` / `/cancel <n>` | Existing router verbs (retry re-queues done+failed; cancel stops the agent then marks failed, reason "cancelled via Telegram") |
 | `/screen` | One-shot plain-text snapshot of the live session (last 40 normalized lines, `<pre>` block) |
-| `/say <text>` | Inject `<text>` + `\r` into the running agent's PTY — explicit, never implicit. The argument is re-carved **verbatim** from the raw message (internal whitespace preserved), not the whitespace-normalized dispatcher rest |
-| `/watch on\|off` | Toggle live conversation relay for this chat (persisted per chat) |
-| `/mute` / `/unmute` | Pause/resume outbound event pushes to this chat (honored per send by the relay adapter) |
+| `/say <text>` | Inject `<text>` + `\r` into the running agent's PTY. The argument is re-carved **verbatim** from the raw message (internal whitespace preserved), not the whitespace-normalized dispatcher rest |
+| *(plain text)* | Any non-command message from a paired chat talks to a **chat agent** through the same `injectSay` path — Telegram is a conversation surface, so no `/say` prefix is needed. Three cases, resolved against the session watch mode streams (the chat's `/use` selection, or the auto-attached live session): a live **chat**-mode session → inject; a live **non-chat** session (task/run-all/wildfire/generate) → never typed into implicitly — the reply names what's running and offers options (`/watch on`, `/screen`, explicit `/say`, `/cancel <n>`); **nothing running** → the bridge auto-starts a chat agent on the chat's `/use` project (via `RunController.StartChat`, queued per project so concurrent messages don't double-start) and injects the queued messages once the session paints its first screen plus a settle delay. With watch off, deliveries ack with a `/watch on` hint |
+| `/watch on\|off` | Toggle live conversation relay for this chat (persisted per chat; **on by default for fresh pairings** — a newly paired chat that stays silent while an agent runs reads as broken) |
+| `/mute on\|off` | Pause/resume outbound event pushes to this chat (honored per send by the relay adapter; `/unmute` remains a hidden alias) |
 | `/pair <code>` | Redeem a pairing code |
-| `/help` | Command list (also the `setMyCommands` source) |
+| `/agent [name]` | Show or switch the project's `default_agent` backend via the `AgentSelector` seam (backend registry + project YAML write). Exact/unique-prefix match on key or display name; uninstalled backends are refused. Applies to NEW sessions — `/new` restarts chat with it |
+| `/help` | The FULL grouped command list. `setMyCommands` (Telegram's autocomplete menu) registers the same canonical set; only the hidden aliases (`/runall`, `/unmute`) stay out of the menu |
 
 ### Watch mode (live conversation relay)
 
@@ -1351,18 +1361,20 @@ Three fidelity tiers, cheapest first:
 - **Events (always on unless muted)** — the outbound relay adapter (below) pushes TASK_FAILED / RUN_COMPLETE / WEEKLY_DIGEST.
 - **On-demand (`/status`, `/screen`)** — pull, no background cost.
 - **Live (`/watch on`)** — the bridge relays the agent's *conversation* — not raw PTY bytes — to the chat:
-  - **Primary source — transcript tail.** A polling `TranscriptTailer` (1s interval; tolerates file-not-yet-created and truncation; final drain on session end) tails the agent-native JSONL transcript via the backend's existing `LocateTranscript`, emitting assistant text blocks and one-line tool-use summaries ("⚒ Edit internal/tui/model.go"). Claude Code is first-class; backends without a tailable transcript (or a tailer that errors mid-session) fall to tier 2 behind the same `TailableTranscript` interface.
+  - **Primary source — transcript tail.** A polling `TranscriptTailer` (1s interval; tolerates file-not-yet-created and truncation; final drain on session end) tails the agent-native JSONL transcript via the backend's existing `LocateTranscript`, emitting assistant text blocks and one-line tool-use summaries ("⚒ Edit internal/tui/model.go"). Claude Code is first-class; backends without a tailable transcript (or a tailer that errors mid-session) fall to tier 2 behind the same `TailableTranscript` interface. Because session names are reused ("<slug>:chat" every run), the Claude locator only accepts transcripts touched at/after the session's start and picks the freshest; and since a tailer can still locate before the session's own file exists, it re-runs `Locate` after ~8 no-growth polls and switches to the fresh path, draining it from the top — it can never stay locked on a dead predecessor's file.
   - **Fallback — screen deltas.** Debounced (≥5s) plain-text vt10x snapshots (same normalization as the MCP `get_agent_screen` tool), sent as `<pre>` blocks only when the content actually changed.
-  - **Rate discipline (per-chat `chatSender`):** 4096-char chunking at line boundaries (tags never split); coalescing to ≤1 send per 2.5s; consecutive assistant text grows the current message in place via `editMessageText` until 3500 rendered chars or an edit failure; a flood cap sends one "output is heavy" notice and throttles to 1 send/30s, recovering when the rolling 60s window drains.
+  - **Rate discipline (per-chat `chatSender`):** 4096-char chunking at line boundaries (tags never split); coalescing to ≤1 send per 2.5s; consecutive assistant text grows the current message in place via `editMessageText` until 3500 rendered chars or an edit failure — and a real user turn in the transcript emits a TurnBreak that ends the grown message, so the answer to a new question always arrives as a new bubble after the user's own; a flood cap sends one "output is heavy" notice and throttles to 1 send/30s, recovering when the rolling 60s window drains.
   - **Session markers:** "▶ task NNNN — title" when the reconciler first sees a task-mode session; the end marker ("✔ merged" / "✔ done" / "⚠ merge failed" / "✖ failed: reason" / "■ session ended") is resolved from the task YAML via `SessionSource.TaskOutcome` — deliberately *not* the notify bus, so watching chats don't get duplicates of the relay adapter's pushes.
-  - **Lifecycle:** a reconciler loop (2s) matches watching chats against live sessions; each watching chat gets its own relay + sender state; a finished relay stays registered until its session disappears so a session is never relayed twice.
+  - **Lifecycle:** a reconciler loop (2s) matches watching chats against live sessions; each watching chat gets its own relay + sender state; a finished relay stays registered until its session disappears so a session is never relayed twice. A watching chat with no `/use` selection **auto-attaches** to the most recently started live session anywhere (`resolveWatchSession`), so a fresh pairing streams activity without setup; `/use` pins it to one project.
+  - **Typing indicator:** while a relayed session is recently active (an emission within the last 15s — seeded at session start, so boot counts), the relay re-sends the `sendChatAction` "typing…" status every 4s, so the user sees the agent working between coalesced sends. The plain-text paths also show it right after an injection and while an auto-started chat agent boots.
+  - **Watch defaults ON.** Persisted as a negative-polarity `watch_off` flag on the paired chat, so the zero value (including chats paired before the field existed) means watching; `/watch off` opts out.
 
 ### Invariants (enforced, not asserted)
 
-The bridge observes sessions only through the `telegram.SessionSource` seam (plain screen lines + task YAML outcomes — no `Process`, no PTY handle) and writes only through `telegram.RunController`:
+The bridge observes sessions only through the `telegram.SessionSource` seam (plain screen lines, task YAML outcomes, the active-project list for auto-attach, and created-task summaries for the wildfire milestone feed — no `Process`, no PTY handle) and writes only through `telegram.RunController`:
 
 1. **The bridge never calls `Resize`.** Terminal size is global per project; an external bridge resizing would fight the attached TUI/GUI.
-2. **`/say` is the only PTY write.** The single sanctioned `SendInput` call site is `Bridge.injectSay`.
+2. **`injectSay` is the only PTY write.** The single sanctioned `SendInput` call site is `Bridge.injectSay`, reached from exactly two intents: the `/say` verb and plain-text chat forwarding. Both deliver the user's text verbatim plus exactly one `\r` — as two separate writes with a ~250ms beat between them, because a single text+`\r` chunk trips the agent CLI's paste detection and the Enter never submits.
 
 `watch_guard_test.go` parses the package source and fails on any `Resize` reference, any `SendInput` reference outside the one allowlisted call site (and fails if that call-site count ≠ 1), and any import of the agent-manager package. A TUI/GUI attached simultaneously sees zero difference; per-subscriber cursors mean a slow Telegram consumer can only drop its own bytes.
 
@@ -2546,7 +2558,8 @@ Chat — Session 1 — 2026-02-03 12:00
       / "■ session ended"
    └─ Relay stays registered until the session disappears (never relayed twice)
 6. Throughout: bridge reads only (transcript file + screen snapshots via the
-   SessionSource seam); the sole PTY write path is an explicit /say
+   SessionSource seam); the sole PTY write path is injectSay (/say and
+   plain-text chat forwarding)
 ```
 
 ---

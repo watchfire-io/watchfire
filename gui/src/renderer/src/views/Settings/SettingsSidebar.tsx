@@ -46,8 +46,11 @@ export const SettingsSidebar = forwardRef<HTMLInputElement, SettingsSidebarProps
 
     return (
       <aside className="w-56 shrink-0 border-r border-[var(--wf-border)] bg-[var(--wf-bg-secondary)] flex flex-col h-full">
-        <div className="p-3 border-b border-[var(--wf-border)]">
-          <div className="relative">
+        {/* The search row doubles as the window-drag region in the home
+            window (App.tsx renders no separate drag strip over Settings);
+            the input opts back out so it stays clickable. */}
+        <div className="p-3 border-b border-[var(--wf-border)] titlebar-drag">
+          <div className="relative titlebar-no-drag">
             <Search
               size={14}
               className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--wf-text-muted)] pointer-events-none"

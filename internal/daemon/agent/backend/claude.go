@@ -119,18 +119,46 @@ func (c *Claude) LocateTranscript(workDir string, started time.Time, sessionHint
 		return "", fmt.Errorf("transcript dir not found: %w", err)
 	}
 
+	// Session names are REUSED across runs (every chat session in a
+	// project is "<slug>:chat"), so several transcripts can carry the
+	// same customTitle. Returning the first directory-order match picked
+	// an arbitrary — usually old, dead — file: watch mode then replayed
+	// a stale conversation and tailed a file nobody was writing. Filter
+	// matches to files touched at/after this session's start and take
+	// the freshest. The cutoff is the start itself, NOT start-minus-
+	// slack: a predecessor session (same reused name) always dies
+	// before this one starts, so its final mtime precedes `started` —
+	// and a slack window re-admits a predecessor killed seconds earlier
+	// (observed live after a daemon restart). Both timestamps come from
+	// the same machine clock, so no skew allowance is needed.
+	cutoff := started
+	var (
+		best      string
+		bestMtime time.Time
+	)
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".jsonl") {
 			continue
 		}
 		path := filepath.Join(transcriptDir, e.Name())
 		title, err := readClaudeTranscriptTitle(path)
+		if err != nil || title != sessionHint {
+			continue
+		}
+		info, err := e.Info()
 		if err != nil {
 			continue
 		}
-		if title == sessionHint {
-			return path, nil
+		mt := info.ModTime()
+		if mt.Before(cutoff) {
+			continue // a previous session that reused the name
 		}
+		if best == "" || mt.After(bestMtime) {
+			best, bestMtime = path, mt
+		}
+	}
+	if best != "" {
+		return best, nil
 	}
 
 	return "", fmt.Errorf("no transcript found for session %q in %s", sessionHint, transcriptDir)

@@ -57,6 +57,9 @@ type Config struct {
 	// disables those verbs with a clear reply — production always
 	// wires the server implementation in.
 	Runner RunController
+	// Agents is the /agent seam (list backends, set a project's
+	// default agent). nil disables the verb with a clear reply.
+	Agents AgentSelector
 }
 
 // Bridge owns the getUpdates long-poll loop. Pairing (/start, /pair —
@@ -78,6 +81,7 @@ type Bridge struct {
 	logger      *log.Logger
 	cmdCtxFor   CommandContextFactory
 	runner      RunController
+	agents      AgentSelector
 
 	mu     sync.Mutex
 	paired map[int64]models.TelegramPairedChat
@@ -105,6 +109,23 @@ type Bridge struct {
 	tailPoll      time.Duration
 	outcomeRetry  time.Duration
 
+	// Plain-text auto-started chat sessions (conversation path): one
+	// pending record per project while its chat agent boots, plus the
+	// readiness pacing knobs (defaults set in New; tests shrink them).
+	chatStartMu     sync.Mutex
+	chatPending     map[string]*chatPendingStart
+	chatStartPoll   time.Duration
+	chatStartWait   time.Duration
+	chatStartSettle time.Duration
+
+	// Typing-indicator pacing (defaults set in New; tests shrink them).
+	typingEvery  time.Duration
+	typingWindow time.Duration
+
+	// sayEnterDelay is the beat between injectSay's text write and its
+	// Enter write (default set in New; tests shrink it).
+	sayEnterDelay time.Duration
+
 	// sleepFn + persistFn + setDefaultFn + persistWatchFn +
 	// persistMutedFn + tailerForFn are test seams; production uses the
 	// defaults set in New.
@@ -131,37 +152,45 @@ func New(cfg Config) *Bridge {
 		paired[c.ChatID] = c
 	}
 	return &Bridge{
-		token:          cfg.Token,
-		pairing:        cfg.Pairing,
-		hostname:       cfg.Hostname,
-		pollTimeout:    cfg.PollTimeout,
-		client:         client,
-		logger:         logger,
-		cmdCtxFor:      cfg.CommandContextFor,
-		runner:         cfg.Runner,
-		paired:         paired,
-		lastProjects:   make(map[int64][]echo.ProjectInfo),
-		sessions:       cfg.Sessions,
-		relays:         make(map[int64]*chatRelay),
-		watchPoll:      sessionPollInterval,
-		flushEvery:     senderFlushTick,
-		coalesceEvery:  coalesceInterval,
-		screenEvery:    screenDeltaInterval,
-		tailPoll:       tailPollInterval,
-		outcomeRetry:   outcomeRetryInterval,
-		sleepFn:        sleepCtx,
-		persistFn:      persistPairedChat,
-		setDefaultFn:   persistDefaultProject,
-		persistWatchFn: persistWatch,
-		persistMutedFn: persistMuted,
-		tailerForFn:    defaultTailerFor,
+		token:           cfg.Token,
+		pairing:         cfg.Pairing,
+		hostname:        cfg.Hostname,
+		pollTimeout:     cfg.PollTimeout,
+		client:          client,
+		logger:          logger,
+		cmdCtxFor:       cfg.CommandContextFor,
+		runner:          cfg.Runner,
+		agents:          cfg.Agents,
+		paired:          paired,
+		lastProjects:    make(map[int64][]echo.ProjectInfo),
+		sessions:        cfg.Sessions,
+		relays:          make(map[int64]*chatRelay),
+		watchPoll:       sessionPollInterval,
+		flushEvery:      senderFlushTick,
+		coalesceEvery:   coalesceInterval,
+		screenEvery:     screenDeltaInterval,
+		tailPoll:        tailPollInterval,
+		outcomeRetry:    outcomeRetryInterval,
+		chatPending:     make(map[string]*chatPendingStart),
+		chatStartPoll:   chatStartPollInterval,
+		chatStartWait:   chatStartWaitTimeout,
+		chatStartSettle: chatStartSettleDelay,
+		typingEvery:     typingInterval,
+		typingWindow:    typingActivityWindow,
+		sayEnterDelay:   sayEnterDelayDefault,
+		sleepFn:         sleepCtx,
+		persistFn:       persistPairedChat,
+		setDefaultFn:    persistDefaultProject,
+		persistWatchFn:  persistWatch,
+		persistMutedFn:  persistMuted,
+		tailerForFn:     defaultTailerFor,
 	}
 }
 
 // NewFromConfig builds the production Bridge from the loaded
 // integrations config. Returns nil — meaning "do not start anything" —
 // unless Telegram is enabled AND a bot token resolved from the keyring.
-func NewFromConfig(cfg *models.IntegrationsConfig, pairing *Pairing, hostname string, cmdCtxFor CommandContextFactory, sessions SessionSource, runner RunController, logger *log.Logger) *Bridge {
+func NewFromConfig(cfg *models.IntegrationsConfig, pairing *Pairing, hostname string, cmdCtxFor CommandContextFactory, sessions SessionSource, runner RunController, agents AgentSelector, logger *log.Logger) *Bridge {
 	if cfg == nil || cfg.Telegram == nil || !cfg.Telegram.Enabled {
 		return nil
 	}
@@ -179,6 +208,7 @@ func NewFromConfig(cfg *models.IntegrationsConfig, pairing *Pairing, hostname st
 		CommandContextFor: cmdCtxFor,
 		Sessions:          sessions,
 		Runner:            runner,
+		Agents:            agents,
 		Logger:            logger,
 	})
 }
@@ -311,9 +341,12 @@ func (b *Bridge) handleUpdate(ctx context.Context, u telegrambot.Update) {
 		return // unpaired silence — unchanged from 0136
 	}
 	if cmd == "" {
-		// Plain text from a paired chat is dropped: input reaches an
-		// agent session only through the explicit /say verb, never
-		// implicitly.
+		// Plain text from a paired chat talks to the live agent session
+		// (v10 follow-up): Telegram is a conversation surface, not only a
+		// command console. Delivery still goes through injectSay — the
+		// package's single sanctioned PTY write — targeting the same
+		// session watch mode streams.
+		b.handlePlainText(ctx, msg.Chat.ID, msg.Text)
 		return
 	}
 	b.dispatchCommand(ctx, msg, cmd, rest)
@@ -326,12 +359,24 @@ func (b *Bridge) handlePairing(ctx context.Context, msg *telegrambot.Message, ar
 	chatID := msg.Chat.ID
 
 	if b.pairing != nil && b.pairing.Consume(arg) {
+		// Watch is on by default: WatchOff's zero value means watching
+		// (a newly paired chat that stays silent while an agent runs
+		// reads as broken). Re-pairs keep the chat's existing choices
+		// (mirrored here; persistPairedChat applies the same merge on
+		// disk).
 		chat := models.TelegramPairedChat{
 			ChatID:   chatID,
 			UserID:   msg.From.ID,
 			Username: msg.From.Username,
 			PairedAt: time.Now().UTC(),
 		}
+		b.mu.Lock()
+		if prev, ok := b.paired[chatID]; ok {
+			chat.DefaultProjectID = prev.DefaultProjectID
+			chat.Muted = prev.Muted
+			chat.WatchOff = prev.WatchOff
+		}
+		b.mu.Unlock()
 		if err := b.persistFn(chat); err != nil {
 			b.logger.Printf("ERROR: telegram bridge: persist paired chat %d: %v", chatID, err)
 			b.reply(ctx, chatID, "Pairing failed on the daemon side — please run <code>watchfire telegram pair</code> again.")
@@ -342,7 +387,12 @@ func (b *Bridge) handlePairing(ctx context.Context, msg *telegrambot.Message, ar
 		b.mu.Unlock()
 		b.pairing.Complete(chat)
 		b.logger.Printf("INFO: telegram bridge: paired chat %d (@%s)", chatID, msg.From.Username)
-		b.reply(ctx, chatID, "🔥 Paired with Watchfire on <b>"+html.EscapeString(b.hostname)+"</b>.\nSend /help to see what you can do.")
+		welcome := "🔥 Paired with Watchfire on <b>" + html.EscapeString(b.hostname) + "</b>."
+		if chat.Watching() {
+			welcome += "\n🔭 Live watch is on — agent activity streams here (send /watch off to stop)."
+		}
+		welcome += "\nSend /help to see what you can do."
+		b.reply(ctx, chatID, welcome)
 		return
 	}
 
@@ -414,7 +464,7 @@ func persistPairedChat(chat models.TelegramPairedChat) error {
 		}
 		chat.DefaultProjectID = cfg.Telegram.PairedChats[i].DefaultProjectID
 		chat.Muted = cfg.Telegram.PairedChats[i].Muted
-		chat.Watch = cfg.Telegram.PairedChats[i].Watch
+		chat.WatchOff = cfg.Telegram.PairedChats[i].WatchOff
 		cfg.Telegram.PairedChats[i] = chat
 		replaced = true
 		break

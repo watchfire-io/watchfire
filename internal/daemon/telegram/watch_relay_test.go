@@ -14,9 +14,16 @@ import (
 
 // fakeSessions is a scripted SessionSource.
 type fakeSessions struct {
-	mu   sync.Mutex
-	sess map[string]*WatchedSession
-	out  map[int]TaskOutcome
+	mu      sync.Mutex
+	sess    map[string]*WatchedSession
+	out     map[int]TaskOutcome
+	created []TaskSummary // returned by TasksCreatedSince
+}
+
+func (f *fakeSessions) TasksCreatedSince(string, time.Time) []TaskSummary {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]TaskSummary(nil), f.created...)
 }
 
 func (f *fakeSessions) ActiveSession(projectID string) (*WatchedSession, bool) {
@@ -24,6 +31,16 @@ func (f *fakeSessions) ActiveSession(projectID string) (*WatchedSession, bool) {
 	defer f.mu.Unlock()
 	s, ok := f.sess[projectID]
 	return s, ok
+}
+
+func (f *fakeSessions) ActiveProjects() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]string, 0, len(f.sess))
+	for pid := range f.sess {
+		out = append(out, pid)
+	}
+	return out
 }
 
 func (f *fakeSessions) TaskOutcome(_ string, taskNumber int) (TaskOutcome, error) {
@@ -45,12 +62,13 @@ func speedUp(b *Bridge) {
 	b.screenEvery = 5 * time.Millisecond
 	b.tailPoll = 2 * time.Millisecond
 	b.outcomeRetry = time.Millisecond
+	b.sayEnterDelay = time.Millisecond
 }
 
 func watchingChat42(projectID string) []models.TelegramPairedChat {
 	return []models.TelegramPairedChat{{
 		ChatID: 42, UserID: 42, Username: "nuno", PairedAt: time.Now(),
-		DefaultProjectID: projectID, Watch: true,
+		DefaultProjectID: projectID,
 	}}
 }
 
@@ -282,7 +300,7 @@ func TestWatchRelayStopsWhenWatchTurnsOff(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadIntegrations: %v", err)
 	}
-	if cfg.Telegram.PairedChats[0].Watch {
+	if cfg.Telegram.PairedChats[0].Watching() {
 		t.Fatal("/watch off did not persist")
 	}
 }
@@ -311,7 +329,7 @@ func TestWatchCommandTogglePersists(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LoadIntegrations: %v", err)
 	}
-	if len(cfg.Telegram.PairedChats) != 1 || !cfg.Telegram.PairedChats[0].Watch {
+	if len(cfg.Telegram.PairedChats) != 1 || !cfg.Telegram.PairedChats[0].Watching() {
 		t.Fatalf("watch flag not persisted: %+v", cfg.Telegram.PairedChats)
 	}
 
@@ -319,15 +337,15 @@ func TestWatchCommandTogglePersists(t *testing.T) {
 	// starts with the chat already watching.
 	b2 := New(Config{Token: testToken, Pairing: NewPairing(), Hostname: "h", PairedChats: cfg.Telegram.PairedChats})
 	b2.mu.Lock()
-	restored := b2.paired[42].Watch
+	restored := b2.paired[42].Watching()
 	b2.mu.Unlock()
 	if !restored {
 		t.Fatal("restarted bridge lost the watch flag")
 	}
 }
 
-// TestWatchCommandStateAndUsage: bare /watch reports the current state;
-// junk arguments draw usage.
+// TestWatchCommandStateAndUsage: bare /watch reports the current state
+// — ON by default (WatchOff zero value) — and junk arguments draw usage.
 func TestWatchCommandStateAndUsage(t *testing.T) {
 	withTestEnv(t)
 	fake := newFakeBotAPI(t,
@@ -340,10 +358,68 @@ func TestWatchCommandStateAndUsage(t *testing.T) {
 
 	waitFor(t, "two replies", func() bool { return len(fake.sentMessages()) >= 2 })
 	sent := fake.sentMessages()
-	if !strings.Contains(sent[0].Text, "Watch is <b>off</b>") || !strings.Contains(sent[0].Text, "/watch on|off") {
+	if !strings.Contains(sent[0].Text, "Watch is <b>on</b>") || !strings.Contains(sent[0].Text, "/watch on|off") {
 		t.Fatalf("bare /watch should report state + usage: %q", sent[0].Text)
 	}
 	if !strings.Contains(sent[1].Text, "Usage: /watch on|off") {
 		t.Fatalf("junk argument should draw usage: %q", sent[1].Text)
+	}
+}
+
+// TestStartMarker: wildfire sessions get phase-specific milestone
+// markers; task sessions name the task; plain chat opens silently.
+func TestStartMarker(t *testing.T) {
+	cases := []struct {
+		sess WatchedSession
+		want string
+	}{
+		{WatchedSession{Mode: "wildfire", Phase: "generate"}, "🔥 wildfire — generating new tasks…"},
+		{WatchedSession{Mode: "wildfire", Phase: "refine"}, "🔥 wildfire — reviewing the plan and refining the backlog…"},
+		{WatchedSession{Mode: "wildfire", Phase: "execute", TaskNumber: 7, TaskTitle: "Ship"}, "🔥 wildfire — implementing task 0007 — Ship"},
+		{WatchedSession{Mode: "task", TaskNumber: 9, TaskTitle: "Fix"}, "▶ task 0009 — Fix"},
+		{WatchedSession{Mode: "chat"}, ""},
+	}
+	for _, c := range cases {
+		if got := startMarker(&c.sess); got != c.want {
+			t.Errorf("startMarker(%+v) = %q, want %q", c.sess, got, c.want)
+		}
+	}
+}
+
+// TestWildfireMilestoneRelay: a wildfire planning-phase session relays
+// milestones only — no raw screen stream — closing with the tasks it
+// generated; and the typing indicator fires while the relay is active.
+func TestWildfireMilestoneRelay(t *testing.T) {
+	withTestEnv(t)
+	fake := newFakeBotAPI(t)
+
+	done := make(chan struct{})
+	sess := &WatchedSession{
+		ProjectID: "p1", ProjectPath: "/tmp/proj", Mode: "wildfire", Phase: "generate",
+		BackendName: "claude-code", StartedAt: time.Now(), Done: done,
+		Snapshot: func() []string { return []string{"raw screen noise"} },
+	}
+	fs := &fakeSessions{
+		sess:    map[string]*WatchedSession{"p1": sess},
+		created: []TaskSummary{{Number: 151, Title: "Do X"}, {Number: 152, Title: "Do Y"}},
+	}
+	b := New(Config{
+		Token: testToken, Pairing: NewPairing(), Hostname: "h",
+		PairedChats: watchingChat42("p1"), Sessions: fs,
+	})
+	speedUp(b)
+	b.typingEvery = 3 * time.Millisecond
+	startBridge(t, b)
+
+	waitFor(t, "generate start marker", func() bool { return sentContaining(fake, "generating new tasks") })
+	waitFor(t, "typing action", func() bool { return fake.chatActionCount() >= 1 })
+	close(done)
+	waitFor(t, "generated task markers", func() bool {
+		return sentContaining(fake, "✚ generated task 0151 — Do X") && sentContaining(fake, "✚ generated task 0152 — Do Y")
+	})
+	for _, m := range fake.sentMessages() {
+		if strings.Contains(m.Text, "raw screen noise") || strings.HasPrefix(m.Text, "<pre>") {
+			t.Fatalf("wildfire planning phases must not stream the raw screen: %q", m.Text)
+		}
 	}
 }

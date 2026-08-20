@@ -21,6 +21,7 @@ import { useTerminalStore } from '../../stores/terminal-store'
 import { useIntegrationsStore } from '../../stores/integrations-store'
 import { OpenInIDEButton } from './OpenInIDEButton'
 import { ExportPill } from '../../components/ExportPill'
+import { RunStatusLine } from './RunStatusLine'
 
 // v8 Inferno: the reference region (Tasks/Definition/etc.) now lives in the
 // RIGHT pane; the agent chat/terminal is the primary LEFT pane.
@@ -252,6 +253,10 @@ export function ProjectView() {
           )}
         </div>
 
+        {/* Row 3: live run state (wildfire phase / current task / stop) —
+            only while a non-chat agent runs. Lived in the chat toolbar
+            before, where it wrapped into a mess next to the mode buttons. */}
+        <RunStatusLine projectId={projectId} />
       </div>
 
       {/* Content area */}

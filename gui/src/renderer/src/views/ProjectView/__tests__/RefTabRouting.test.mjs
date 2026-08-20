@@ -154,9 +154,30 @@ test('idle Wildfire button carries the fire-orange (primary) emphasis and keeps 
   // The idle start button opens the confirm modal and is styled primary
   // (bg-fire-500 family via Button variant).
   assert.match(s, /variant="primary"[\s\S]{0,200}?setConfirmOpen\(true\)/)
-  // Confirm gate + phase indicator survive.
+  // Confirm gate survives.
   assert.match(s, /<Modal/)
-  assert.match(s, /WildfirePhaseBadge/)
+})
+
+test('live run state renders as the header RunStatusLine, not inside the chat toolbar', async () => {
+  // The current task + stop moved to a dedicated header line under the
+  // title/git rows; duplicated in the chat toolbar it wrapped into a
+  // two-row jumble at typical pane widths. No phase stepper — the header
+  // AgentBadge already names the mode and wildfire phase.
+  const line = await src('../RunStatusLine.tsx')
+  assert.ok(!line.includes('WildfirePhaseBadge'), 'no phase stepper in the run status line')
+  assert.match(line, /stopAgent/)
+
+  const projectView = await src('../ProjectView.tsx')
+  assert.ok(projectView.includes('<RunStatusLine'),
+    'ProjectView header must mount RunStatusLine')
+
+  const wildfire = await src('../WildfireControl.tsx')
+  assert.ok(!wildfire.includes('WildfirePhaseBadge'),
+    'running-state UI must not remain in WildfireControl')
+
+  const chatTab = await src('../RightPanel/ChatTab.tsx')
+  assert.ok(!chatTab.includes('<AgentBadge'),
+    'ChatTab toolbar must not duplicate the header AgentBadge')
 })
 
 test('app-store exposes the settings focus target', async () => {

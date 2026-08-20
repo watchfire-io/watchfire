@@ -129,6 +129,6 @@ func pairedChatToProto(pc models.TelegramPairedChat) *pb.TelegramPairedChatInfo 
 		PairedAt:         timestamppb.New(pc.PairedAt),
 		DefaultProjectId: pc.DefaultProjectID,
 		Muted:            pc.Muted,
-		Watch:            pc.Watch,
+		Watch:            pc.Watching(),
 	}
 }

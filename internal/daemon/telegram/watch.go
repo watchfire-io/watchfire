@@ -71,6 +71,24 @@ const (
 	// session ends (the merge runs asynchronously after process exit).
 	outcomeAttempts      = 10
 	outcomeRetryInterval = time.Second
+	// chatStartPollInterval / chatStartWaitTimeout bound how long the
+	// plain-text conversation path waits for an auto-started chat agent
+	// to paint its first screen before giving up on delivery.
+	chatStartPollInterval = 500 * time.Millisecond
+	chatStartWaitTimeout  = 30 * time.Second
+	// chatStartSettleDelay is the grace between first screen paint and
+	// the injection, so the CLI's input loop is accepting keys.
+	chatStartSettleDelay = 1500 * time.Millisecond
+	// sayEnterDelayDefault is the beat between injectSay's text write
+	// and its Enter write — long enough that the CLI's paste detection
+	// treats them as separate keystrokes.
+	sayEnterDelayDefault = 250 * time.Millisecond
+	// typingInterval is how often the relay re-sends the "typing…" chat
+	// action (the Bot API clears it after ~5s); typingActivityWindow is
+	// how long after the last emission the indicator keeps showing —
+	// past it the agent is considered idle at its prompt.
+	typingInterval       = 4 * time.Second
+	typingActivityWindow = 15 * time.Second
 )
 
 // floodNotice is sent once when the flood cap engages.
@@ -90,6 +108,12 @@ const (
 	EmissionScreen
 	// EmissionMarker is a session lifecycle marker ("▶ task 0141 — …").
 	EmissionMarker
+	// EmissionTurnBreak carries no text: a real user turn appeared in
+	// the transcript, so the sender must end the current edit-grown
+	// message — the answer to a new question has to arrive as a NEW
+	// message (after the user's own), not spliced onto the previous
+	// reply.
+	EmissionTurnBreak
 )
 
 // Emission is one unit of relayed content, produced by a source tier
@@ -107,6 +131,10 @@ type WatchedSession struct {
 	ProjectID   string
 	ProjectPath string
 	Mode        string
+	// Phase is the wildfire phase ("execute" / "refine" / "generate"),
+	// empty outside wildfire mode. Drives the high-level milestone
+	// markers wildfire sessions relay instead of a raw stream.
+	Phase       string
 	TaskNumber  int
 	TaskTitle   string
 	BackendName string
@@ -115,6 +143,12 @@ type WatchedSession struct {
 	StartedAt   time.Time
 	Done        <-chan struct{}
 	Snapshot    func() []string
+}
+
+// TaskSummary is the number + title of one task, for milestone markers.
+type TaskSummary struct {
+	Number int
+	Title  string
 }
 
 // TaskOutcome is the final state of a task after its session ended,
@@ -133,8 +167,16 @@ type TaskOutcome struct {
 type SessionSource interface {
 	// ActiveSession returns the live session for projectID, if any.
 	ActiveSession(projectID string) (*WatchedSession, bool)
+	// ActiveProjects lists the projects that currently have a live
+	// session — the candidate pool a watching chat with no /use
+	// selection auto-attaches to.
+	ActiveProjects() []string
 	// TaskOutcome reports the task's state after its session ended.
 	TaskOutcome(projectPath string, taskNumber int) (TaskOutcome, error)
+	// TasksCreatedSince lists tasks created at/after since — how the
+	// wildfire milestone feed reports "generated task NNNN — title"
+	// after a generate/refine session ends.
+	TasksCreatedSince(projectPath string, since time.Time) []TaskSummary
 }
 
 // ---------------------------------------------------------------------------
@@ -205,12 +247,20 @@ type claudeWatchBlock struct {
 	Input map[string]any `json:"input"`
 }
 
-// ParseLine emits assistant text blocks verbatim and tool uses as
-// one-liners. Everything else — user/tool_result entries, thinking
-// blocks, the custom-title line, progress records — is skipped.
+// ParseLine emits assistant text blocks verbatim, tool uses as
+// one-liners, and a TurnBreak for real user turns (typed text — NOT
+// the "user" entries that merely carry tool_result blocks). Everything
+// else — thinking blocks, the custom-title line, progress records — is
+// skipped.
 func (c *claudeTranscript) ParseLine(line []byte) []Emission {
 	var entry claudeWatchEntry
 	if err := json.Unmarshal(line, &entry); err != nil {
+		return nil
+	}
+	if entry.Type == "user" && len(entry.Message.Content) > 0 {
+		if userEntryIsTurn(entry.Message.Content) {
+			return []Emission{{Kind: EmissionTurnBreak}}
+		}
 		return nil
 	}
 	if entry.Type != "assistant" || len(entry.Message.Content) == 0 {
@@ -262,6 +312,27 @@ func toolOneLiner(name string, input map[string]any) string {
 	return "⚒ " + name
 }
 
+// userEntryIsTurn reports whether a transcript "user" entry is an
+// actual typed turn: a plain-string content, or a block list carrying
+// a text block. Entries whose blocks are only tool_result carriers are
+// mid-turn plumbing, not a new question.
+func userEntryIsTurn(content json.RawMessage) bool {
+	var s string
+	if err := json.Unmarshal(content, &s); err == nil {
+		return strings.TrimSpace(s) != ""
+	}
+	var blocks []claudeWatchBlock
+	if err := json.Unmarshal(content, &blocks); err != nil {
+		return false
+	}
+	for _, b := range blocks {
+		if b.Type == "text" && strings.TrimSpace(b.Text) != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // firstLineTrunc reduces s to its first non-empty line, capped at max
 // runes with an ellipsis.
 func firstLineTrunc(s string, max int) string {
@@ -287,6 +358,16 @@ type TranscriptTailer struct {
 	Poll   time.Duration // 0 → tailPollInterval
 }
 
+// staleRelocateAfter is how many consecutive no-growth polls the tailer
+// tolerates before re-running Locate. A tailer can lock onto the wrong
+// file when it locates before the session's own transcript exists (the
+// live failure: a just-killed predecessor's file matched, was replayed,
+// and was then tailed forever while the real session streamed unseen).
+// Re-locating on staleness self-heals: once the live file exists it is
+// the freshest match, and switching resets the offset so the session's
+// content is delivered from the top.
+const staleRelocateAfter = 8
+
 // Run tails until ctx is cancelled or done closes; the done path does
 // one final drain so trailing lines written at session end still land.
 func (t *TranscriptTailer) Run(ctx context.Context, done <-chan struct{}) error {
@@ -298,6 +379,7 @@ func (t *TranscriptTailer) Run(ctx context.Context, done <-chan struct{}) error 
 		path    string
 		offset  int64
 		partial []byte
+		stale   int
 	)
 	for {
 		final := false
@@ -314,13 +396,23 @@ func (t *TranscriptTailer) Run(ctx context.Context, done <-chan struct{}) error 
 			}
 		}
 		if path != "" {
-			if err := t.drain(path, &offset, &partial); err != nil {
-				if os.IsNotExist(err) {
-					// The file vanished (or was never created despite
-					// Locate) — restart discovery from scratch.
-					path, offset, partial = "", 0, nil
-				} else {
-					return err
+			grew, err := t.drain(path, &offset, &partial)
+			switch {
+			case err != nil && os.IsNotExist(err):
+				// The file vanished (or was never created despite
+				// Locate) — restart discovery from scratch.
+				path, offset, partial, stale = "", 0, nil, 0
+			case err != nil:
+				return err
+			case grew:
+				stale = 0
+			default:
+				stale++
+				if stale >= staleRelocateAfter {
+					stale = 0
+					if p, err := t.Source.Locate(); err == nil && p != "" && p != path {
+						path, offset, partial = p, 0, nil
+					}
 				}
 			}
 		}
@@ -341,28 +433,30 @@ func (t *TranscriptTailer) Run(ctx context.Context, done <-chan struct{}) error 
 
 // drain reads bytes appended since *offset and emits every complete
 // line; a trailing partial line is buffered until its newline arrives.
-func (t *TranscriptTailer) drain(path string, offset *int64, partial *[]byte) error {
+// The bool reports whether the file had new bytes (the staleness
+// signal for the re-locate logic in Run).
+func (t *TranscriptTailer) drain(path string, offset *int64, partial *[]byte) (bool, error) {
 	fi, err := os.Stat(path)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if fi.Size() < *offset {
 		*offset, *partial = 0, nil // truncated / rewritten
 	}
 	if fi.Size() == *offset {
-		return nil
+		return false, nil
 	}
 	f, err := os.Open(path) //nolint:gosec // path comes from the backend's transcript discovery
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer func() { _ = f.Close() }()
 	if _, err := f.Seek(*offset, io.SeekStart); err != nil {
-		return err
+		return false, err
 	}
 	data, err := io.ReadAll(f)
 	if err != nil {
-		return err
+		return false, err
 	}
 	*offset += int64(len(data))
 	buf := append(*partial, data...)
@@ -381,7 +475,7 @@ func (t *TranscriptTailer) drain(path string, offset *int64, partial *[]byte) er
 		}
 	}
 	*partial = append([]byte(nil), buf...)
-	return nil
+	return true, nil
 }
 
 // ---------------------------------------------------------------------------
@@ -482,11 +576,22 @@ type chatSender struct {
 	lastFlush time.Time
 	sendLog   []time.Time // delivery timestamps inside the flood window
 	throttled bool
+	// lastActivity is when the last emission was queued (seeded to
+	// sender creation, i.e. session start). Drives the typing indicator.
+	lastActivity time.Time
+}
+
+// activeWithin reports whether an emission was queued within window.
+func (cs *chatSender) activeWithin(window time.Duration) bool {
+	cs.mu.Lock()
+	defer cs.mu.Unlock()
+	return cs.now().Sub(cs.lastActivity) < window
 }
 
 // Add queues one emission for the next flush.
 func (cs *chatSender) Add(e Emission) {
 	cs.mu.Lock()
+	cs.lastActivity = cs.now()
 	cs.pending = append(cs.pending, e)
 	cs.mu.Unlock()
 }
@@ -514,6 +619,23 @@ func (cs *chatSender) flush(ctx context.Context, force bool) {
 	batch := cs.pending
 	cs.pending = nil
 	cs.lastFlush = now
+
+	// Turn breaks: a real user turn ends the current edit-grown message
+	// so the answer to a new question starts a NEW bubble, positioned
+	// after the user's own message. The break itself renders nothing.
+	if hasTurnBreak(batch) {
+		cs.growID, cs.growText = 0, ""
+		kept := batch[:0]
+		for _, e := range batch {
+			if e.Kind != EmissionTurnBreak {
+				kept = append(kept, e)
+			}
+		}
+		batch = kept
+		if len(batch) == 0 {
+			return
+		}
+	}
 
 	// Edit-in-place growth: while the batch is pure assistant text and
 	// the combined message stays under the growth ceiling, edit the
@@ -572,6 +694,16 @@ func (cs *chatSender) recordDeliveryLocked(ctx context.Context, now time.Time) {
 		cs.logf("WARN: telegram watch: flood notice failed: %v", err)
 	}
 	cs.sendLog = append(cs.sendLog, now)
+}
+
+// hasTurnBreak reports whether the batch contains a user-turn break.
+func hasTurnBreak(batch []Emission) bool {
+	for _, e := range batch {
+		if e.Kind == EmissionTurnBreak {
+			return true
+		}
+	}
+	return false
 }
 
 // allAssistantText reports whether the batch is non-empty pure
@@ -695,7 +827,28 @@ func (b *Bridge) watchLoop(ctx context.Context) {
 	}
 }
 
-// reconcileWatch starts relays for watching chats whose project has a
+// resolveWatchSession picks the session a watching chat should relay:
+// its /use-selected project's live session, or — when the chat never
+// selected one — the most recently started live session anywhere, so a
+// fresh pairing streams activity instead of sitting silent.
+func (b *Bridge) resolveWatchSession(projectID string) (*WatchedSession, bool) {
+	if projectID != "" {
+		return b.sessions.ActiveSession(projectID)
+	}
+	var best *WatchedSession
+	for _, pid := range b.sessions.ActiveProjects() {
+		sess, ok := b.sessions.ActiveSession(pid)
+		if !ok {
+			continue
+		}
+		if best == nil || sess.StartedAt.After(best.StartedAt) {
+			best = sess
+		}
+	}
+	return best, best != nil
+}
+
+// reconcileWatch starts relays for watching chats that resolve to a
 // live session, and stops relays whose chat stopped watching or whose
 // session was replaced. Each watching chat gets its own relay state.
 func (b *Bridge) reconcileWatch(ctx context.Context) {
@@ -705,7 +858,8 @@ func (b *Bridge) reconcileWatch(ctx context.Context) {
 	watching := make(map[int64]string)
 	b.mu.Lock()
 	for chatID, chat := range b.paired {
-		if chat.Watch && chat.DefaultProjectID != "" {
+		if chat.Watching() {
+			// Empty DefaultProjectID = auto-attach (resolveWatchSession).
 			watching[chatID] = chat.DefaultProjectID
 		}
 	}
@@ -720,7 +874,7 @@ func (b *Bridge) reconcileWatch(ctx context.Context) {
 			delete(b.relays, chatID)
 			continue
 		}
-		sess, live := b.sessions.ActiveSession(projectID)
+		sess, live := b.resolveWatchSession(projectID)
 		if !live {
 			// Session gone — drop the relay once its final flush ran.
 			select {
@@ -732,7 +886,8 @@ func (b *Bridge) reconcileWatch(ctx context.Context) {
 		}
 		if r.key != sessionKey(sess) {
 			// A different session took over (project switched via /use,
-			// or a new task chained) — restart below.
+			// a new task chained, or auto-attach moved to a newer
+			// session) — restart below.
 			r.cancel()
 			delete(b.relays, chatID)
 		}
@@ -741,7 +896,7 @@ func (b *Bridge) reconcileWatch(ctx context.Context) {
 		if _, exists := b.relays[chatID]; exists {
 			continue
 		}
-		sess, ok := b.sessions.ActiveSession(projectID)
+		sess, ok := b.resolveWatchSession(projectID)
 		if !ok {
 			continue
 		}
@@ -794,10 +949,11 @@ func (b *Bridge) newChatSender(chatID int64) *chatSender {
 		edit: func(ctx context.Context, messageID int64, text string) error {
 			return b.client.EditMessageText(ctx, b.token, chatID, messageID, text)
 		},
-		now:         time.Now,
-		logf:        b.logger.Printf,
-		coalesce:    b.coalesceEvery,
-		throttleGap: throttleInterval,
+		now:          time.Now,
+		logf:         b.logger.Printf,
+		coalesce:     b.coalesceEvery,
+		throttleGap:  throttleInterval,
+		lastActivity: time.Now(),
 	}
 }
 
@@ -805,8 +961,8 @@ func (b *Bridge) newChatSender(chatID int64) *chatSender {
 // (transcript tail, else screen deltas), outcome marker, final flush.
 func (b *Bridge) runRelay(ctx context.Context, chatID int64, sess *WatchedSession) {
 	sender := b.newChatSender(chatID)
-	if sess.TaskNumber > 0 {
-		sender.Add(Emission{Kind: EmissionMarker, Text: fmt.Sprintf("▶ task %04d — %s", sess.TaskNumber, sess.TaskTitle)})
+	if marker := startMarker(sess); marker != "" {
+		sender.Add(Emission{Kind: EmissionMarker, Text: marker})
 	}
 
 	stopFlush := make(chan struct{})
@@ -826,22 +982,55 @@ func (b *Bridge) runRelay(ctx context.Context, chatID int64, sess *WatchedSessio
 		}
 	}()
 
-	relayed := false
-	if src, ok := b.tailerForFn(sess); ok {
-		relayed = true
-		tailer := &TranscriptTailer{Source: src, Emit: sender.Add, Poll: b.tailPoll}
-		if err := tailer.Run(ctx, sess.Done); err != nil {
-			b.logger.Printf("WARN: telegram watch: transcript tailer for project %s failed (%v) — falling back to screen deltas", sess.ProjectID, err)
-			relayed = false
-		}
-	}
-	if !relayed {
-		if sess.Snapshot != nil {
-			runScreenDeltas(ctx, sess.Done, sess.Snapshot, sender.Add, b.screenEvery)
-		} else {
+	// Typing indicator: keep the chat's "typing…" status alive while the
+	// session is recently active, so between coalesced sends (and while
+	// the agent thinks) the user sees that something is happening.
+	go func() {
+		b.sendTyping(ctx, chatID)
+		for {
+			timer := time.NewTimer(b.typingEvery)
 			select {
 			case <-ctx.Done():
-			case <-sess.Done:
+				timer.Stop()
+				return
+			case <-stopFlush:
+				timer.Stop()
+				return
+			case <-timer.C:
+				if sender.activeWithin(b.typingWindow) {
+					b.sendTyping(ctx, chatID)
+				}
+			}
+		}
+	}()
+
+	if sess.Mode == "wildfire" && sess.TaskNumber == 0 {
+		// Wildfire planning phases (generate / refine) relay milestones,
+		// not a raw stream — the high-level "what did the loop decide"
+		// feed. Execute-phase task sessions and every other mode keep
+		// the full conversation relay below.
+		select {
+		case <-ctx.Done():
+		case <-sess.Done:
+		}
+	} else {
+		relayed := false
+		if src, ok := b.tailerForFn(sess); ok {
+			relayed = true
+			tailer := &TranscriptTailer{Source: src, Emit: sender.Add, Poll: b.tailPoll}
+			if err := tailer.Run(ctx, sess.Done); err != nil {
+				b.logger.Printf("WARN: telegram watch: transcript tailer for project %s failed (%v) — falling back to screen deltas", sess.ProjectID, err)
+				relayed = false
+			}
+		}
+		if !relayed {
+			if sess.Snapshot != nil {
+				runScreenDeltas(ctx, sess.Done, sess.Snapshot, sender.Add, b.screenEvery)
+			} else {
+				select {
+				case <-ctx.Done():
+				case <-sess.Done:
+				}
 			}
 		}
 	}
@@ -852,7 +1041,46 @@ func (b *Bridge) runRelay(ctx context.Context, chatID int64, sess *WatchedSessio
 	if sess.TaskNumber > 0 {
 		sender.Add(Emission{Kind: EmissionMarker, Text: b.outcomeMarker(ctx, sess)})
 	}
+	// Wildfire planning phases close with what they produced: the tasks
+	// created during the session window ("generated task NNNN — title").
+	if sess.Mode == "wildfire" && sess.TaskNumber == 0 && b.sessions != nil {
+		created := b.sessions.TasksCreatedSince(sess.ProjectPath, sess.StartedAt)
+		for _, t := range created {
+			sender.Add(Emission{Kind: EmissionMarker, Text: fmt.Sprintf("✚ generated task %04d — %s", t.Number, t.Title)})
+		}
+		if len(created) == 0 && sess.Phase == "generate" {
+			sender.Add(Emission{Kind: EmissionMarker, Text: "🔥 wildfire — no new tasks generated"})
+		}
+	}
 	sender.flush(ctx, true)
+}
+
+// startMarker renders the session-start milestone. Wildfire sessions get
+// phase-specific markers (the milestone feed); task sessions in any mode
+// name the task; plain chat/generate sessions open silently.
+func startMarker(sess *WatchedSession) string {
+	if sess.Mode == "wildfire" {
+		switch {
+		case sess.TaskNumber > 0:
+			return fmt.Sprintf("🔥 wildfire — implementing task %04d — %s", sess.TaskNumber, sess.TaskTitle)
+		case sess.Phase == "generate":
+			return "🔥 wildfire — generating new tasks…"
+		case sess.Phase == "refine":
+			return "🔥 wildfire — reviewing the plan and refining the backlog…"
+		default:
+			return "🔥 wildfire — " + sess.Phase
+		}
+	}
+	if sess.TaskNumber > 0 {
+		return fmt.Sprintf("▶ task %04d — %s", sess.TaskNumber, sess.TaskTitle)
+	}
+	return ""
+}
+
+// sendTyping best-effort sets the chat's "typing…" status. Cosmetic —
+// errors are ignored (the next real send will surface a broken chat).
+func (b *Bridge) sendTyping(ctx context.Context, chatID int64) {
+	_ = b.client.SendChatAction(ctx, b.token, chatID, "typing")
 }
 
 // outcomeMarker resolves the session-end marker from the task's final
@@ -903,7 +1131,7 @@ func (b *Bridge) cmdWatch(ctx context.Context, chatID int64, rest string) {
 		}
 		msg := "🔭 Watch is <b>on</b> — I'll relay the agent conversation for your active project here. Send /watch off to stop."
 		if chat.DefaultProjectID == "" {
-			msg += "\nNo project selected yet — send /projects, then /use &lt;name|number&gt;."
+			msg += "\nNo project selected — I'll follow whichever session is live. Pin one with /projects, then /use &lt;name|number&gt;."
 		}
 		b.reply(ctx, chatID, msg)
 		b.reconcileWatch(ctx)
@@ -917,7 +1145,7 @@ func (b *Bridge) cmdWatch(ctx context.Context, chatID int64, rest string) {
 		b.reconcileWatch(ctx)
 	case "":
 		state := "off"
-		if chat.Watch {
+		if chat.Watching() {
 			state = "on"
 		}
 		b.reply(ctx, chatID, "Watch is <b>"+state+"</b>. Usage: /watch on|off")
@@ -934,7 +1162,7 @@ func (b *Bridge) setWatch(chatID int64, on bool) error {
 	}
 	b.mu.Lock()
 	if chat, ok := b.paired[chatID]; ok {
-		chat.Watch = on
+		chat.WatchOff = !on
 		b.paired[chatID] = chat
 	}
 	b.mu.Unlock()
@@ -956,7 +1184,7 @@ func persistWatch(chatID int64, watch bool) error {
 		if cfg.Telegram.PairedChats[i].ChatID != chatID {
 			continue
 		}
-		cfg.Telegram.PairedChats[i].Watch = watch
+		cfg.Telegram.PairedChats[i].WatchOff = !watch
 		return config.SaveIntegrations(cfg)
 	}
 	return fmt.Errorf("chat %d is not paired", chatID)

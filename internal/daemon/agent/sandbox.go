@@ -92,7 +92,7 @@ func DefaultPolicy(homeDir, projectDir string, extras backend.SandboxExtras) San
 		HomeDir:       homeDir,
 		ProjectDir:    projectDir,
 		WritablePaths: writable,
-		DeniedPaths: joinAll(homeDir, append(append([]string{}, credentialDenyDirs...), credentialDenyFiles...)),
+		DeniedPaths:   joinAll(homeDir, append(append([]string{}, credentialDenyDirs...), credentialDenyFiles...)),
 		WriteProtectedPatterns: []string{
 			`/\.env($|[^/]*)`,
 			filepath.Join(projectDir, ".git", "hooks"),

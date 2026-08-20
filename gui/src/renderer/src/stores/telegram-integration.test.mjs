@@ -79,8 +79,14 @@ describe('IntegrationsSection wiring', () => {
     }
   })
 
-  test('card renders only when the daemon reports a telegram config (old-daemon safe)', () => {
-    assert.match(src, /config\?\.telegram &&/)
+  test('card is always listed with an explicit setup CTA / configured state', () => {
+    // v10 follow-up: hiding the card until the daemon reported a telegram
+    // config buried setup in the Add-integration picker. The card is now a
+    // permanent singleton entry; TelegramDetail renders its blank state for
+    // an unset config (old daemons included), so this stays crash-free.
+    assert.match(src, /Set up Telegram/)
+    assert.match(src, /Configured ✓/)
+    assert.match(src, /telegramConfigured/)
   })
 })
 

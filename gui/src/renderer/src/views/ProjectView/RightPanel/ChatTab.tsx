@@ -3,7 +3,6 @@ import { Play } from 'lucide-react'
 import { useAgentStore } from '../../../stores/agent-store'
 import { useAgentTerminal } from '../../../hooks/useAgentTerminal'
 import { IssueBanner } from '../../../components/IssueBanner'
-import { AgentBadge } from '../../../components/AgentBadge'
 import { Button } from '../../../components/ui/Button'
 import { useToast } from '../../../components/ui/Toast'
 import { ModesControl } from '../ModesControl'
@@ -79,12 +78,13 @@ export function ChatTab({ projectId }: Props) {
 
   return (
     <div className="flex flex-col h-full">
-      {/* Modes toolbar + agent badge. Wildfire leads the mode cluster (v10
-          Torch, task 0148) with fire-orange emphasis — it's the flagship
-          action; its confirm gate and live phase indicator are unchanged. */}
+      {/* Modes toolbar. Wildfire leads the mode cluster (v10 Torch, task
+          0148) with fire-orange emphasis — it's the flagship action; its
+          confirm gate is unchanged. Live run state (badge, phase, current
+          task, stop) lives in the project header's RunStatusLine, not here —
+          duplicated in this toolbar it wrapped into a two-row jumble. */}
       <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--wf-border)]">
-        {isRunning && <AgentBadge status={agentStatus} />}
-        <div className="ml-auto flex items-center gap-1">
+        <div className="flex items-center gap-1">
           <WildfireControl projectId={projectId} />
           <ModesControl projectId={projectId} layout="row" />
         </div>

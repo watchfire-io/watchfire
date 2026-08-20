@@ -277,3 +277,54 @@ func TestBuildMessagesScreenPre(t *testing.T) {
 		}
 	}
 }
+
+// TestSenderTurnBreakEndsGrowth: a user-turn break ends the current
+// edit-grown message — the answer to a NEW question must arrive as a
+// new message positioned after the user's own, never spliced onto the
+// previous reply (observed live: four answers merged into one bubble
+// above the questions they answered).
+func TestSenderTurnBreakEndsGrowth(t *testing.T) {
+	h := newSenderHarness()
+
+	h.cs.Add(text("First answer."))
+	h.flush()
+	if len(h.sends) != 1 {
+		t.Fatalf("initial sends = %v", h.sends)
+	}
+
+	// User asks a new question; the agent answers. The answer must be a
+	// NEW message, not an edit of "First answer.".
+	h.advance(3 * time.Second)
+	h.cs.Add(Emission{Kind: EmissionTurnBreak})
+	h.cs.Add(text("Second answer."))
+	h.flush()
+	if len(h.edits) != 0 {
+		t.Fatalf("turn break must prevent growth: edits = %+v", h.edits)
+	}
+	if len(h.sends) != 2 || h.sends[1] != "Second answer." {
+		t.Fatalf("sends = %v, want a fresh second message", h.sends)
+	}
+
+	// Growth still works WITHIN the new turn.
+	h.advance(3 * time.Second)
+	h.cs.Add(text("More of the second answer."))
+	h.flush()
+	if len(h.edits) != 1 || h.edits[0].ID != 2 {
+		t.Fatalf("within-turn growth should edit message 2: %+v", h.edits)
+	}
+
+	// A lone turn break delivers nothing but still ends the growth, so
+	// the eventual answer opens a fresh message.
+	h.advance(3 * time.Second)
+	h.cs.Add(Emission{Kind: EmissionTurnBreak})
+	h.flush()
+	if len(h.sends) != 2 || len(h.edits) != 1 {
+		t.Fatalf("a bare turn break must deliver nothing (sends=%d edits=%d)", len(h.sends), len(h.edits))
+	}
+	h.advance(3 * time.Second)
+	h.cs.Add(text("Third answer."))
+	h.flush()
+	if len(h.sends) != 3 || h.sends[2] != "Third answer." || len(h.edits) != 1 {
+		t.Fatalf("answer after a bare break must be a new message (sends=%v edits=%+v)", h.sends, h.edits)
+	}
+}

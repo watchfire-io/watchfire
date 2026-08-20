@@ -7,6 +7,8 @@ package server
 
 import (
 	"fmt"
+	"sort"
+	"time"
 
 	"github.com/watchfire-io/watchfire/internal/config"
 	"github.com/watchfire-io/watchfire/internal/daemon/agent"
@@ -39,6 +41,7 @@ func (s *agentSessionSource) ActiveSession(projectID string) (*telegram.WatchedS
 		ProjectID:   ag.ProjectID,
 		ProjectPath: ag.ProjectPath,
 		Mode:        string(ag.Mode),
+		Phase:       string(ag.WildfirePhase),
 		TaskNumber:  ag.TaskNumber,
 		TaskTitle:   ag.TaskTitle,
 		BackendName: ag.BackendName,
@@ -54,6 +57,42 @@ func (s *agentSessionSource) ActiveSession(projectID string) (*telegram.WatchedS
 			return su.Lines
 		},
 	}, true
+}
+
+// ActiveProjects lists projects that currently have a running agent —
+// the auto-attach candidate pool for watching chats with no /use
+// selection.
+func (s *agentSessionSource) ActiveProjects() []string {
+	if s == nil || s.mgr == nil {
+		return nil
+	}
+	agents := s.mgr.ListAgents()
+	out := make([]string, 0, len(agents))
+	for _, ag := range agents {
+		if ag != nil {
+			out = append(out, ag.ProjectID)
+		}
+	}
+	return out
+}
+
+// TasksCreatedSince lists tasks created at/after since, oldest first —
+// the wildfire milestone feed's "generated task NNNN — title" source.
+// Best-effort: a load error reads as "nothing created".
+func (s *agentSessionSource) TasksCreatedSince(projectPath string, since time.Time) []telegram.TaskSummary {
+	tasks, err := config.LoadAllTasks(projectPath)
+	if err != nil {
+		return nil
+	}
+	var out []telegram.TaskSummary
+	for _, t := range tasks {
+		if t == nil || t.CreatedAt.Before(since) {
+			continue
+		}
+		out = append(out, telegram.TaskSummary{Number: t.TaskNumber, Title: t.Title})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Number < out[j].Number })
+	return out
 }
 
 // TaskOutcome reads the task's final state from its YAML — the same

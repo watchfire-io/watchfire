@@ -59,7 +59,7 @@ type ProjectStatus int
 
 const (
 	ProjectIdle    ProjectStatus = iota
-	ProjectWorking               // an autonomous (non-chat) agent is running
+	ProjectWorking               // an agent is running (chat included)
 	ProjectFailed                // has at least one failed task
 )
 

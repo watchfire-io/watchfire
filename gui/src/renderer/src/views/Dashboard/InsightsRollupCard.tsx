@@ -11,11 +11,13 @@ import { AlertTriangle, Sparkles } from 'lucide-react'
 import { useAppStore } from '../../stores/app-store'
 import {
   agentSegmentWidths,
+  aggregateDayBuckets,
+  churnBarHeights,
   classifyRollup,
   codeCoverageNote,
   dayBarHeights,
   dayChartSummary,
-  formatBucketDate,
+  formatBucketLabel,
   formatCost,
   formatDuration,
   formatInt,
@@ -23,10 +25,16 @@ import {
   formatPercent,
   formatSignedLines,
   hasCodeData,
+  INSIGHTS_GRANULARITIES,
   INSIGHTS_WINDOWS,
   mergeRate,
+  readSavedCompare,
+  readSavedGranularity,
+  saveCompare,
+  saveGranularity,
   successRate,
   tooltipAnchor,
+  type InsightsGranularity,
   type InsightsWindow
 } from '../../lib/insights-rollup'
 import { cn } from '../../lib/utils'
@@ -82,19 +90,36 @@ export function InsightsRollupCard({
 }: InsightsRollupCardProps) {
   const state = classifyRollup(insights, loading)
 
+  // Chart controls (v10 Torch): bucket granularity + tasks-vs-lines compare.
+  // Persisted like the window preset so the dashboard reopens as configured.
+  const [granularity, setGranularity] = useState<InsightsGranularity>(readSavedGranularity)
+  const [compareLines, setCompareLines] = useState<boolean>(readSavedCompare)
+  const updateGranularity = (g: InsightsGranularity) => {
+    setGranularity(g)
+    saveGranularity(g)
+  }
+  const updateCompare = (on: boolean) => {
+    setCompareLines(on)
+    saveCompare(on)
+  }
+
   return (
     <section
       aria-label="Fleet insights"
       className="rounded-[var(--wf-radius-md)] border border-[var(--wf-border)] bg-[var(--wf-bg-secondary)] p-4"
     >
-      <header className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <Sparkles size={14} className="text-[var(--wf-fire)]" />
-          <h3 className="text-sm font-semibold text-[var(--wf-text-primary)]">
+      <header className="flex items-center justify-between gap-2 mb-3">
+        <div className="flex items-center gap-2 min-w-0">
+          <Sparkles size={14} className="text-[var(--wf-fire)] shrink-0" />
+          <h3 className="text-sm font-semibold text-[var(--wf-text-primary)] truncate">
             Fleet insights
           </h3>
         </div>
-        <WindowSelector value={window} onChange={onWindowChange} />
+        <div className="flex items-center gap-1.5 shrink-0">
+          <CompareToggle on={compareLines} onChange={updateCompare} />
+          <GranularitySelector value={granularity} onChange={updateGranularity} />
+          <WindowSelector value={window} onChange={onWindowChange} />
+        </div>
       </header>
 
       {error ? (
@@ -106,9 +131,81 @@ export function InsightsRollupCard({
       ) : state === 'empty' ? (
         <EmptyState />
       ) : (
-        <RollupBody insights={insights as GlobalInsights} />
+        <RollupBody
+          insights={insights as GlobalInsights}
+          granularity={granularity}
+          compareLines={compareLines}
+        />
       )}
     </section>
+  )
+}
+
+const GRANULARITY_LABEL: Record<InsightsGranularity, string> = {
+  day: 'D',
+  week: 'W',
+  month: 'M'
+}
+
+const GRANULARITY_TITLE: Record<InsightsGranularity, string> = {
+  day: 'Aggregate per day',
+  week: 'Aggregate per week',
+  month: 'Aggregate per month'
+}
+
+function GranularitySelector({
+  value,
+  onChange
+}: {
+  value: InsightsGranularity
+  onChange: (next: InsightsGranularity) => void
+}) {
+  return (
+    <div
+      role="group"
+      aria-label="Chart granularity"
+      className="inline-flex items-center gap-0.5 p-0.5 rounded-[var(--wf-radius-md)] border border-[var(--wf-border)] bg-[var(--wf-bg-elevated)] shrink-0"
+    >
+      {INSIGHTS_GRANULARITIES.map((g) => {
+        const active = g === value
+        return (
+          <button
+            key={g}
+            type="button"
+            title={GRANULARITY_TITLE[g]}
+            aria-pressed={active}
+            onClick={() => onChange(g)}
+            className={cn(
+              'px-2 py-0.5 text-[11px] rounded-[var(--wf-radius-sm)] transition-colors',
+              active
+                ? 'bg-[var(--wf-bg-secondary)] text-[var(--wf-text-primary)] font-medium'
+                : 'text-[var(--wf-text-muted)] hover:text-[var(--wf-text-primary)]'
+            )}
+          >
+            {GRANULARITY_LABEL[g]}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+function CompareToggle({ on, onChange }: { on: boolean; onChange: (next: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      aria-pressed={on}
+      title="Pair the tasks chart with an aligned lines-of-code chart"
+      onClick={() => onChange(!on)}
+      className={cn(
+        'px-2 py-0.5 text-[11px] rounded-[var(--wf-radius-md)] border transition-colors shrink-0',
+        on
+          ? 'border-fire-500/40 bg-fire-500/15 text-fire-500 font-medium'
+          : 'border-[var(--wf-border)] bg-[var(--wf-bg-elevated)] text-[var(--wf-text-muted)] hover:text-[var(--wf-text-primary)]'
+      )}
+    >
+      vs lines
+    </button>
   )
 }
 
@@ -171,9 +268,11 @@ function RollupSkeleton() {
 
 interface RollupBodyProps {
   insights: GlobalInsights
+  granularity: InsightsGranularity
+  compareLines: boolean
 }
 
-function RollupBody({ insights }: RollupBodyProps) {
+function RollupBody({ insights, granularity, compareLines }: RollupBodyProps) {
   const selectProject = useAppStore((s) => s.selectProject)
   const partialCost = insights.tasksMissingCost > 0
 
@@ -200,7 +299,11 @@ function RollupBody({ insights }: RollupBodyProps) {
 
       <ShippedKpis insights={insights} />
 
-      <DayStackedBar buckets={insights.tasksByDay} />
+      <DayStackedBar
+        buckets={insights.tasksByDay}
+        granularity={granularity}
+        compareLines={compareLines}
+      />
 
       <TopProjectsPills
         projects={insights.topProjects}
@@ -287,29 +390,54 @@ function KpiCell({ label, value, warn, warnHint, sub }: KpiCellProps) {
 
 interface DayStackedBarProps {
   buckets: GlobalInsights['tasksByDay']
+  granularity: InsightsGranularity
+  compareLines: boolean
 }
 
-function DayStackedBar({ buckets }: DayStackedBarProps) {
-  // Trim to the last MAX_DAY_CELLS so a 90d window doesn't crush the
-  // chart into invisible slivers; the SVG width adapts with flex.
-  const slice = buckets.length > MAX_DAY_CELLS ? buckets.slice(-MAX_DAY_CELLS) : buckets
+const CHURN_BAR_HEIGHT_PX = 36
+
+const GRANULARITY_NOUN: Record<InsightsGranularity, string> = {
+  day: 'day',
+  week: 'week',
+  month: 'month'
+}
+
+function DayStackedBar({ buckets, granularity, compareLines }: DayStackedBarProps) {
+  // Re-bucket the daemon's per-day series to the selected granularity, then
+  // (day view only) trim to the last MAX_DAY_CELLS so a 90d window doesn't
+  // crush the chart into invisible slivers.
+  const aggregated = useMemo(
+    () => aggregateDayBuckets(buckets, granularity),
+    [buckets, granularity]
+  )
+  const slice =
+    granularity === 'day' && aggregated.length > MAX_DAY_CELLS
+      ? aggregated.slice(-MAX_DAY_CELLS)
+      : aggregated
   const cells = useMemo(() => dayBarHeights(slice, BAR_HEIGHT_PX), [slice])
   const summary = useMemo(() => dayChartSummary(slice), [slice])
+  const churnCells = useMemo(
+    () => (compareLines ? churnBarHeights(slice, CHURN_BAR_HEIGHT_PX) : []),
+    [slice, compareLines]
+  )
   const [hovered, setHovered] = useState<number | null>(null)
+
+  const noun = GRANULARITY_NOUN[granularity]
 
   if (cells.length === 0) {
     return (
       <div
         className="h-16 rounded-[var(--wf-radius-sm)] bg-[var(--wf-bg-elevated)] flex items-center justify-center"
-        aria-label="Tasks per day"
+        aria-label={`Tasks per ${noun}`}
       >
-        <span className="text-[10px] text-[var(--wf-text-muted)]">No daily activity</span>
+        <span className="text-[10px] text-[var(--wf-text-muted)]">No activity</span>
       </div>
     )
   }
 
-  const truncated = buckets.length > slice.length
+  const truncated = aggregated.length > slice.length
   const hasChurn = summary.linesAdded > 0 || summary.linesRemoved > 0
+  const showChurnRow = compareLines && hasChurn
   const bucket = hovered === null ? null : slice[hovered]
   const anchor = hovered === null ? null : tooltipAnchor(hovered, cells.length)
 
@@ -318,17 +446,17 @@ function DayStackedBar({ buckets }: DayStackedBarProps) {
       className="rounded-[var(--wf-radius-sm)] bg-[var(--wf-bg-elevated)] p-2"
       role="img"
       aria-label={
-        `Tasks per day over the last ${summary.days} days: ${summary.total} tasks, ` +
-        `peak ${summary.peak} in a day, ${summary.succeeded} succeeded, ${summary.failed} failed`
+        `Tasks per ${noun} over ${summary.days} ${noun}s: ${summary.total} tasks, ` +
+        `peak ${summary.peak} in a ${noun}, ${summary.succeeded} succeeded, ${summary.failed} failed`
       }
     >
       <ChartHeader
-        label={truncated ? `Tasks per day · last ${slice.length}d` : 'Tasks per day'}
+        label={truncated ? `Tasks per ${noun} · last ${slice.length}d` : `Tasks per ${noun}`}
         stats={
           <>
-            <span title="Busiest single day in the window">peak {formatInt(summary.peak)}</span>
+            <span title={`Busiest single ${noun} in the window`}>peak {formatInt(summary.peak)}</span>
             <Dot />
-            <span title={`${summary.activeDays} of ${summary.days} days had activity`}>
+            <span title={`${summary.activeDays} of ${summary.days} ${noun}s had activity`}>
               {formatInt(summary.total)} total
             </span>
             {hasChurn && (
@@ -367,8 +495,48 @@ function DayStackedBar({ buckets }: DayStackedBarProps) {
           ))}
         </div>
 
+        {/* Aligned lines-of-code row ("vs lines"): same buckets, same column
+            order and shared hover, so tasks and churn compare per-column. */}
+        {showChurnRow && (
+          <>
+            <div className="mt-1.5 mb-0.5 text-[9px] uppercase tracking-wide text-[var(--wf-text-muted)]">
+              Lines changed
+            </div>
+            <div
+              className="flex items-stretch gap-0.5"
+              style={{ height: `${CHURN_BAR_HEIGHT_PX}px` }}
+              aria-label={`Lines changed per ${noun}`}
+            >
+              {churnCells.map((c, i) => (
+                <div
+                  key={c.date}
+                  onMouseEnter={() => setHovered(i)}
+                  className={cn(
+                    'flex-1 flex flex-col-reverse min-w-[2px] h-full rounded-[1px] transition-opacity',
+                    hovered !== null && hovered !== i && 'opacity-40',
+                    hovered === i && 'bg-[var(--wf-bg-secondary)]'
+                  )}
+                >
+                  <div style={{ height: `${c.addedHeight}px`, backgroundColor: '#3b82f6' }} />
+                  <div style={{ height: `${c.removedHeight}px`, backgroundColor: '#94a3b8' }} />
+                </div>
+              ))}
+            </div>
+            <div className="mt-1 flex items-center gap-3 text-[9px] text-[var(--wf-text-muted)]">
+              <span className="inline-flex items-center gap-1">
+                <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#3b82f6' }} />
+                added
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="inline-block w-1.5 h-1.5 rounded-full" style={{ backgroundColor: '#94a3b8' }} />
+                removed
+              </span>
+            </div>
+          </>
+        )}
+
         {bucket && anchor && (
-          <ChartTooltip anchor={anchor} title={formatBucketDate(bucket.date)}>
+          <ChartTooltip anchor={anchor} title={formatBucketLabel(bucket.date, granularity)}>
             <TooltipRow
               label={`${formatInt(bucket.count)} task${bucket.count === 1 ? '' : 's'}`}
               detail={
@@ -377,7 +545,7 @@ function DayStackedBar({ buckets }: DayStackedBarProps) {
                   : undefined
               }
             />
-            {(Number(bucket.linesAdded) > 0 || Number(bucket.linesRemoved) > 0) && (
+            {(bucket.linesAdded > 0 || bucket.linesRemoved > 0) && (
               <TooltipRow
                 label={`${formatLinesPair(bucket.linesAdded, bucket.linesRemoved)} lines`}
               />

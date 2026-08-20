@@ -240,7 +240,7 @@ export function GlobalSettings() {
         resultsRef={resultsRef}
       />
       <div className="flex-1 overflow-y-auto p-6">
-        <div className="flex items-baseline gap-3 mb-6">
+        <div className="flex items-baseline gap-3 mb-6 titlebar-drag">
           <h2 className="font-heading text-xl font-semibold">{CATEGORY_LABELS[selected]}</h2>
           <span className="text-xs text-[var(--wf-text-muted)]">Settings</span>
         </div>

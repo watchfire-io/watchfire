@@ -69,13 +69,20 @@ func TestBridgeSetMyCommandsOnStart(t *testing.T) {
 
 	waitFor(t, "setMyCommands", func() bool { return len(fake.recordedMyCommands()) >= 1 })
 	got := fake.recordedMyCommands()[0]
+	// The menu carries the full canonical verb set; only the hidden
+	// aliases (/runall, /unmute) stay out.
 	for _, cmd := range []string{
-		"projects", "use", "status", "tasks",
-		"run", "runall", "retry", "cancel", "screen", "say", "watch", "mute", "unmute",
-		"help", "pair",
+		"projects", "use", "status", "tasks", "agent",
+		"run", "new", "wildfire", "stop", "generate", "plan", "retry", "cancel",
+		"watch", "screen", "say", "mute", "pair", "help",
 	} {
 		if !strings.Contains(got, `"`+cmd+`"`) {
 			t.Fatalf("setMyCommands payload missing %q: %s", cmd, got)
+		}
+	}
+	for _, hidden := range []string{"runall", "unmute"} {
+		if strings.Contains(got, `"`+hidden+`"`) {
+			t.Fatalf("menu should not list the hidden alias %q: %s", hidden, got)
 		}
 	}
 }
@@ -354,7 +361,8 @@ func TestBridgeTasksCommand(t *testing.T) {
 // TestBridgeHelpAndUnknown: /help lists the full 0142 verb set with no
 // "(soon)" markers; unknown commands point at /help; a run-control verb
 // on a bridge built without a RunController draws a clear reply; plain
-// text stays silent.
+// text forwards to the agent session (and, without a runner wired,
+// draws the same clear reply instead of silence).
 func TestBridgeHelpAndUnknown(t *testing.T) {
 	withTestEnv(t)
 	fake := newFakeBotAPI(t,
@@ -371,16 +379,17 @@ func TestBridgeHelpAndUnknown(t *testing.T) {
 	startBridge(t, b)
 
 	waitFor(t, "script drained", fake.scriptDrained)
-	waitFor(t, "three replies", func() bool { return len(fake.sentMessages()) >= 3 })
+	waitFor(t, "four replies", func() bool { return len(fake.sentMessages()) >= 4 })
 	time.Sleep(100 * time.Millisecond)
 	sent := fake.sentMessages()
-	if len(sent) != 3 {
-		t.Fatalf("expected 3 replies (help, unknown, no-runner) — plain text must stay silent: %+v", sent)
+	if len(sent) != 4 {
+		t.Fatalf("expected 4 replies (help, unknown, no-runner /say, no-runner plain text): %+v", sent)
 	}
 	help := sent[0].Text
 	for _, want := range []string{
-		"/projects", "/use", "/status", "/tasks",
-		"/run", "/runall", "/retry", "/cancel", "/screen", "/say", "/watch", "/mute", "/unmute",
+		"/projects", "/use", "/status", "/tasks", "/agent",
+		"/run", "/new", "/wildfire", "/stop", "/generate", "/plan",
+		"/retry", "/cancel", "/screen", "/say", "/watch", "/mute",
 		"/pair", "/help",
 	} {
 		if !strings.Contains(help, want) {
@@ -395,6 +404,9 @@ func TestBridgeHelpAndUnknown(t *testing.T) {
 	}
 	if !strings.Contains(sent[2].Text, "not wired up") {
 		t.Fatalf("/say without a RunController should say so: %q", sent[2].Text)
+	}
+	if !strings.Contains(sent[3].Text, "not wired up") {
+		t.Fatalf("plain text without a RunController should say so: %q", sent[3].Text)
 	}
 }
 
@@ -485,5 +497,154 @@ func TestBridgeUsePersistsAcrossRestart(t *testing.T) {
 	txt := fake2.sentMessages()[0].Text
 	if !strings.Contains(txt, "Alpha") || strings.Contains(txt, "No project selected") {
 		t.Fatalf("restarted bridge lost the selection: %q", txt)
+	}
+}
+
+// TestGenerateWithoutRunner: /generate on a bridge without a
+// RunController draws the clear reply instead of panicking (the method
+// selection is deferred behind the requireRunner guard).
+func TestGenerateWithoutRunner(t *testing.T) {
+	withTestEnv(t)
+	fake := newFakeBotAPI(t, updateJSON(1, 42, 42, "nuno", "/generate"))
+	b := New(Config{
+		Token: testToken, Pairing: NewPairing(), Hostname: "h",
+		PairedChats:       pairedChat42(),
+		CommandContextFor: fakeCommandContextFor(testProjects, nil),
+	})
+	startBridge(t, b)
+
+	waitFor(t, "no-runner reply", func() bool { return sentContaining(fake, "not wired up") })
+}
+
+// stubAgents is a scripted AgentSelector.
+type stubAgents struct {
+	mu      sync.Mutex
+	current string
+	sets    []string
+	choices []AgentChoice
+}
+
+func (a *stubAgents) ListAgents(context.Context) ([]AgentChoice, error) {
+	return append([]AgentChoice(nil), a.choices...), nil
+}
+func (a *stubAgents) ProjectAgent(context.Context, string) (string, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.current, nil
+}
+func (a *stubAgents) SetProjectAgent(_ context.Context, _ string, agent string) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.sets = append(a.sets, agent)
+	a.current = agent
+	return nil
+}
+
+// TestAgentCommand: bare /agent lists backends with the current mark
+// and install state; /agent <prefix> switches by unique match; an
+// uninstalled backend is refused; junk gets a pointer to the list.
+func TestAgentCommand(t *testing.T) {
+	withTestEnv(t)
+	fake := newFakeBotAPI(t,
+		updateJSON(1, 42, 42, "nuno", "/agent"),
+		updateJSON(2, 42, 42, "nuno", "/agent cod"),
+		updateJSON(3, 42, 42, "nuno", "/agent gemini"),
+		updateJSON(4, 42, 42, "nuno", "/agent nosuch"),
+	)
+	agents := &stubAgents{
+		current: "claude-code",
+		choices: []AgentChoice{
+			{Name: "claude-code", DisplayName: "Claude Code", Available: true},
+			{Name: "codex", DisplayName: "Codex", Available: true},
+			{Name: "gemini", DisplayName: "Gemini CLI", Available: false},
+		},
+	}
+	chats := pairedChat42()
+	chats[0].DefaultProjectID = "p1"
+	b := New(Config{
+		Token: testToken, Pairing: NewPairing(), Hostname: "h",
+		PairedChats:       chats,
+		CommandContextFor: fakeCommandContextFor(testProjects, nil),
+		Agents:            agents,
+	})
+	startBridge(t, b)
+
+	waitFor(t, "four replies", func() bool { return len(fake.sentMessages()) >= 4 })
+	sent := fake.sentMessages()
+	if !strings.Contains(sent[0].Text, "Claude Code (claude-code) ✓") {
+		t.Fatalf("list should mark the current agent: %q", sent[0].Text)
+	}
+	if !strings.Contains(sent[0].Text, "Gemini CLI (gemini) — not installed") {
+		t.Fatalf("list should mark uninstalled backends: %q", sent[0].Text)
+	}
+	if !strings.Contains(sent[1].Text, "Default agent set to <b>Codex</b>") {
+		t.Fatalf("prefix switch reply: %q", sent[1].Text)
+	}
+	if !strings.Contains(sent[2].Text, "not installed on this machine") {
+		t.Fatalf("uninstalled backend must be refused: %q", sent[2].Text)
+	}
+	if !strings.Contains(sent[3].Text, "No agent matches") {
+		t.Fatalf("unknown agent reply: %q", sent[3].Text)
+	}
+	agents.mu.Lock()
+	sets := append([]string(nil), agents.sets...)
+	agents.mu.Unlock()
+	if len(sets) != 1 || sets[0] != "codex" {
+		t.Fatalf("SetProjectAgent calls = %v, want [codex]", sets)
+	}
+}
+
+// TestRunAllViaRunAll: "/run all" folds the old /runall in, and the
+// bare /runall alias keeps working (both via the same seam call).
+func TestRunAllViaRunAll(t *testing.T) {
+	withTestEnv(t)
+	fake := newFakeBotAPI(t,
+		updateJSON(1, 42, 42, "nuno", "/run all"),
+		updateJSON(2, 42, 42, "nuno", "/runall"),
+	)
+	runner := &stubRunner{start: RunStart{TaskNumber: 3, TaskTitle: "First"}}
+	b := runControlBridge(runner, idleSessions(), chatOnProject("p1"))
+	startBridge(t, b)
+
+	waitFor(t, "two confirmations", func() bool { return len(fake.sentMessages()) >= 2 })
+	runner.mu.Lock()
+	n := len(runner.runAllStarts)
+	runner.mu.Unlock()
+	if n != 2 {
+		t.Fatalf("StartRunAll calls = %d, want 2 (/run all + /runall alias)", n)
+	}
+}
+
+// TestStatusAll: "/status all" renders one line per project with live
+// session state from the SessionSource and a working count; the active
+// project carries the ✓ marker.
+func TestStatusAll(t *testing.T) {
+	withTestEnv(t)
+	fake := newFakeBotAPI(t, updateJSON(1, 42, 42, "nuno", "/status all"))
+	sessions := &fakeSessions{sess: map[string]*WatchedSession{
+		"p-alpha": {ProjectID: "p-alpha", Mode: "wildfire", Phase: "generate"},
+		"p-beta":  {ProjectID: "p-beta", Mode: "chat"},
+	}}
+	chats := pairedChat42()
+	chats[0].DefaultProjectID = "p-beta"
+	b := New(Config{
+		Token: testToken, Pairing: NewPairing(), Hostname: "h",
+		PairedChats:       chats,
+		CommandContextFor: fakeCommandContextFor(testProjects, nil),
+		Sessions:          sessions,
+	})
+	startBridge(t, b)
+
+	waitFor(t, "fleet reply", func() bool { return sentContaining(fake, "Fleet") })
+	txt := fake.sentMessages()[0].Text
+	for _, want := range []string{
+		"3 projects, 2 working",
+		"🟢 <b>Alpha</b> — wildfire (generate)",
+		"🟢 <b>Beta</b> ✓ — chat session",
+		"⚪ <b>Evil &lt;script&gt;alert(1)&lt;/script&gt; &amp; Co</b> — idle",
+	} {
+		if !strings.Contains(txt, want) {
+			t.Fatalf("fleet view missing %q:\n%s", want, txt)
+		}
 	}
 }

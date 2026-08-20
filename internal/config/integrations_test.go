@@ -304,7 +304,7 @@ func TestIntegrationsRoundTripTelegramTokenViaKeyring(t *testing.T) {
 				PairedAt:         pairedAt,
 				DefaultProjectID: "proj-1",
 				Muted:            false,
-				Watch:            true,
+				WatchOff:         true,
 			}},
 		},
 	}
@@ -355,7 +355,7 @@ func TestIntegrationsRoundTripTelegramTokenViaKeyring(t *testing.T) {
 	}
 	pc := tg.PairedChats[0]
 	if pc.ChatID != 987654321 || pc.UserID != 987654321 || pc.Username != "nuno" ||
-		pc.DefaultProjectID != "proj-1" || pc.Muted || !pc.Watch || !pc.PairedAt.Equal(pairedAt) {
+		pc.DefaultProjectID != "proj-1" || pc.Muted || !pc.WatchOff || !pc.PairedAt.Equal(pairedAt) {
 		t.Fatalf("paired chat round-trip mismatch: %+v", pc)
 	}
 	if v, ok := fk.Get(tg.BotTokenRef); !ok || v != "123456:tg-secret-token" {

@@ -26,9 +26,11 @@ export function agentStatusEqual(a: AgentStatus | undefined, b: AgentStatus): bo
 }
 
 /**
- * Returns true if the agent is doing autonomous work (not idle chat).
- * Used to decide whether status dots should pulse.
+ * Returns true if an agent is running — chat included. "Working" used to
+ * exclude chat sessions, which made a project with a live, responding
+ * chat agent read as idle everywhere (dashboard dots, mini monitor,
+ * tray). A running agent is a running agent.
  */
 export function isAgentWorking(status: AgentStatus | undefined): boolean {
-  return !!status?.isRunning && status.mode !== 'chat'
+  return !!status?.isRunning
 }

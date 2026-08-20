@@ -479,10 +479,16 @@ func snapshotInputs() MenuInputs {
 		status := ProjectIdle
 		var taskTitle string
 		var taskNumber int32
-		if a, ok := agentByID[p.ProjectID]; ok && a.Mode != "chat" {
+		// Any running agent counts as working — chat included. Chat was
+		// excluded once, which made a live, responding chat session read
+		// as idle.
+		if a, ok := agentByID[p.ProjectID]; ok {
 			status = ProjectWorking
 			taskTitle = a.TaskTitle
 			taskNumber = int32(a.TaskNumber)
+			if a.Mode == "chat" && taskTitle == "" {
+				taskTitle = "chat session"
+			}
 		}
 		if failedCounts[p.ProjectID] > 0 {
 			// Failed wins over working — a busted run with a still-restarting

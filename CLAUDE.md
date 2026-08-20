@@ -48,8 +48,9 @@ The daemon can be supervised from Telegram: a long-polling bridge
 the allowlist, live watch-mode relay, and an outbound relay adapter. See
 `ARCHITECTURE.md` → "Telegram Bridge (`internal/daemon/telegram/`) — v10.0
 Torch" for the design. Two invariants for anyone touching bridge code: it
-**never calls `Resize`**, and the explicit `/say` path is the **only** PTY
-write — both enforced by `internal/daemon/telegram/watch_guard_test.go`.
+**never calls `Resize`**, and `injectSay` (the `/say` verb and plain-text
+chat forwarding) is the **only** PTY write — both enforced by
+`internal/daemon/telegram/watch_guard_test.go`.
 
 ## Cycle ground rules
 
@@ -58,6 +59,9 @@ remote, never create PRs or tags, and never touch release bookkeeping —
 `version.json`, `CHANGELOG.md` release headers, or the project definition's
 "Shipped" sections. Release bookkeeping and the push happen manually, only
 after the cycle's validation gate passes and the user explicitly signs off.
+When it does happen, the bump is `version.json` + `make sync-version` (which
+propagates into `gui/package.json` — the v9.3/v9.4 releases skipped this and
+the GUI self-reported 9.2.0) + the CHANGELOG header + project.yaml "Shipped".
 
 ## Repository Structure
 

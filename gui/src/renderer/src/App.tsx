@@ -182,8 +182,10 @@ export default function App() {
         {isProjectWindow ? (
           <ProjectWindowHeader inSettings={view === 'settings'} />
         ) : (
-          /* macOS title bar drag area */
-          <div className="titlebar-drag h-8 shrink-0" />
+          /* macOS title bar drag area. Settings brings its own draggable top
+             region — a stacked strip above its two-column layout reads as a
+             stray black bar over the lighter settings sidebar. */
+          view !== 'settings' && <div className="titlebar-drag h-8 shrink-0" />
         )}
         <UpdateBanner />
 

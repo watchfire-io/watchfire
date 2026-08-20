@@ -25,25 +25,30 @@ const tasksLimit = 10
 // keyboards (0142 run controls) can share the callback pipe.
 const callbackUsePrefix = "use:"
 
-// botCommands is the full verb set registered via setMyCommands for
-// Telegram's autocomplete menu (complete as of task 0142).
+// botCommands is the canonical verb set registered via setMyCommands
+// for Telegram's autocomplete menu — every command, minus the hidden
+// aliases (/runall, /unmute) that only exist for muscle memory.
 func botCommands() []telegrambot.BotCommand {
 	return []telegrambot.BotCommand{
 		{Command: "projects", Description: "List registered projects"},
 		{Command: "use", Description: "Select the active project for this chat"},
-		{Command: "status", Description: "Status of the active project"},
+		{Command: "status", Description: "Status of the active project, or 'all' for the fleet"},
 		{Command: "tasks", Description: "Top active tasks of the active project"},
-		{Command: "run", Description: "Start a task (refuses while an agent runs)"},
-		{Command: "runall", Description: "Run every ready task in sequence"},
+		{Command: "agent", Description: "Show or switch the project's agent backend"},
+		{Command: "run", Description: "Start a task, or 'all' for every ready task"},
+		{Command: "new", Description: "Start a fresh chat session (clears context)"},
+		{Command: "wildfire", Description: "Start the autonomous loop (off to stop)"},
+		{Command: "stop", Description: "Stop the running agent (chains end too)"},
+		{Command: "generate", Description: "Generate the project definition from the codebase"},
+		{Command: "plan", Description: "Generate tasks from the project definition"},
 		{Command: "retry", Description: "Re-queue a failed task"},
 		{Command: "cancel", Description: "Cancel a running or queued task"},
-		{Command: "screen", Description: "Plain-text snapshot of the live session"},
-		{Command: "say", Description: "Send text to the running agent"},
 		{Command: "watch", Description: "Toggle the live conversation relay (on|off)"},
-		{Command: "mute", Description: "Pause event pushes to this chat"},
-		{Command: "unmute", Description: "Resume event pushes to this chat"},
-		{Command: "help", Description: "Show available commands"},
+		{Command: "screen", Description: "Plain-text snapshot of the live session"},
+		{Command: "say", Description: "Type into the working session explicitly"},
+		{Command: "mute", Description: "Pause/resume event pushes (on|off)"},
 		{Command: "pair", Description: "Pair this chat with a one-time code"},
+		{Command: "help", Description: "All commands"},
 	}
 }
 
@@ -57,13 +62,43 @@ func (b *Bridge) dispatchCommand(ctx context.Context, msg *telegrambot.Message, 
 	case "/use":
 		b.cmdUse(ctx, chatID, userID, rest)
 	case "/status":
+		// "/status all" is the fleet view; bare /status stays the
+		// active project's detail.
+		if strings.EqualFold(strings.TrimSpace(rest), "all") {
+			b.cmdStatusAll(ctx, chatID, userID)
+			return
+		}
 		b.cmdStatus(ctx, chatID, userID)
 	case "/tasks":
 		b.cmdTasks(ctx, chatID, userID)
 	case "/run":
+		// "/run all" folds the old /runall in; the bare alias still works.
+		if strings.EqualFold(strings.TrimSpace(rest), "all") {
+			b.cmdRunAll(ctx, chatID)
+			return
+		}
 		b.cmdRun(ctx, chatID, rest)
 	case "/runall":
 		b.cmdRunAll(ctx, chatID)
+	case "/wildfire":
+		b.cmdWildfire(ctx, chatID, rest)
+	case "/new":
+		b.cmdNew(ctx, chatID)
+	case "/stop":
+		b.cmdStop(ctx, chatID)
+	case "/agent":
+		b.cmdAgent(ctx, chatID, rest)
+	case "/generate":
+		// Closures, not method values: b.runner may be nil, and a method
+		// value on a nil interface panics at selection — cmdSimpleMode's
+		// requireRunner guard must run first.
+		b.cmdSimpleMode(ctx, chatID,
+			func(ctx context.Context, pid string) (RunStart, error) { return b.runner.StartGenerate(ctx, pid) },
+			"📝 Generating the project definition from the codebase — the session streams here while watch is on.")
+	case "/plan":
+		b.cmdSimpleMode(ctx, chatID,
+			func(ctx context.Context, pid string) (RunStart, error) { return b.runner.StartPlan(ctx, pid) },
+			"🗺 Planning — generating tasks from the project definition. The session streams here while watch is on.")
 	case "/retry":
 		b.cmdRouteVerb(ctx, chatID, userID, "retry", rest)
 	case "/cancel":
@@ -76,7 +111,16 @@ func (b *Bridge) dispatchCommand(ctx context.Context, msg *telegrambot.Message, 
 		// meant to type into the session.
 		b.cmdSay(ctx, chatID, sayVerbatim(msg.Text))
 	case "/mute":
-		b.cmdMute(ctx, chatID, true)
+		// "/mute off" folds the old /unmute in; bare /mute mutes, and
+		// the /unmute alias still works.
+		switch strings.ToLower(strings.TrimSpace(rest)) {
+		case "", "on":
+			b.cmdMute(ctx, chatID, true)
+		case "off":
+			b.cmdMute(ctx, chatID, false)
+		default:
+			b.reply(ctx, chatID, "Usage: /mute on|off")
+		}
 	case "/unmute":
 		b.cmdMute(ctx, chatID, false)
 	case "/watch":
@@ -91,20 +135,31 @@ func (b *Bridge) dispatchCommand(ctx context.Context, msg *telegrambot.Message, 
 func helpHTML() string {
 	return strings.Join([]string{
 		"<b>Watchfire commands</b>",
+		"<i>Just type to talk to a chat agent — I'll start one if nothing is running.</i>",
+		"",
+		"<b>Project</b>",
 		"/projects — list registered projects",
 		"/use &lt;name|number&gt; — select the active project for this chat",
-		"/status — status of the active project",
+		"/status [all] — status of the active project, or the whole fleet",
 		"/tasks — top active tasks of the active project",
-		"/run &lt;n&gt; — start a task (refuses while an agent is running)",
-		"/runall — run every ready task in sequence",
-		"/retry &lt;n&gt; — re-queue a failed task",
-		"/cancel &lt;n&gt; — cancel a running or queued task",
-		"/screen — plain-text snapshot of the live session",
-		"/say &lt;text&gt; — send text to the running agent",
+		"/agent [name] — show or switch the project's agent backend",
+		"",
+		"<b>Run</b>",
+		"/run &lt;n&gt;|all — start a task, or every ready task in sequence",
+		"/new — fresh chat session (clears the conversation context)",
+		"/wildfire — start the autonomous loop (milestones via watch; /wildfire off stops)",
+		"/stop — stop whatever agent is running (a run-all/wildfire chain ends too)",
+		"/generate — write the project definition from the codebase",
+		"/plan — generate tasks from the project definition",
+		"/retry &lt;n&gt; · /cancel &lt;n&gt; — re-queue a failed task / cancel one",
+		"",
+		"<b>Session</b>",
 		"/watch on|off — relay the live agent conversation here",
-		"/mute, /unmute — pause/resume event pushes to this chat",
-		"/pair &lt;code&gt; — pair this chat with a one-time code",
-		"/help — this list",
+		"/screen — plain-text snapshot of the live session",
+		"/say &lt;text&gt; — type into the working session explicitly",
+		"/mute on|off — pause/resume event pushes to this chat",
+		"",
+		"/pair &lt;code&gt; — pair this chat · /help — this list",
 	}, "\n")
 }
 
@@ -385,6 +440,90 @@ func pickProject(projects, last []echo.ProjectInfo, arg string) (echo.ProjectInf
 }
 
 // projectGlyph maps live agent state onto a list glyph.
+// cmdStatusAll renders the fleet view: one line per project with its
+// live session state (mode, wildfire phase, current task) resolved
+// through the SessionSource so it matches what watch mode would relay.
+func (b *Bridge) cmdStatusAll(ctx context.Context, chatID, userID int64) {
+	cc, ok := b.commandContext(ctx, chatID, userID)
+	if !ok {
+		return
+	}
+	projects, err := cc.FindProjects(ctx)
+	if err != nil {
+		b.reply(ctx, chatID, "Failed to load projects: "+EscapeHTML(err.Error()))
+		return
+	}
+	if len(projects) == 0 {
+		b.reply(ctx, chatID, "No projects are registered on this daemon yet.")
+		return
+	}
+	b.mu.Lock()
+	current := b.paired[chatID].DefaultProjectID
+	b.mu.Unlock()
+
+	working := 0
+	lines := make([]string, 0, len(projects)+2)
+	for _, p := range projects {
+		state := "idle"
+		glyph := "⚪"
+		if b.sessions != nil {
+			if sess, live := b.sessions.ActiveSession(p.ID); live {
+				working++
+				glyph = "🟢"
+				state = sessionStateLine(sess)
+			}
+		} else if p.AgentRunning {
+			working++
+			glyph = "🟢"
+			state = "agent running"
+		}
+		marker := ""
+		if p.ID == current {
+			marker = " ✓"
+		}
+		lines = append(lines, fmt.Sprintf("%s <b>%s</b>%s — %s", glyph, EscapeHTML(p.Name), marker, state))
+	}
+	header := fmt.Sprintf("<b>Fleet</b> — %d project%s, %d working", len(projects), plural(len(projects)), working)
+	b.reply(ctx, chatID, header+"\n"+strings.Join(lines, "\n"))
+}
+
+// sessionStateLine compresses one live session into a phone-width
+// description: "wildfire (generate)", "task #0012 — Fix the flux…",
+// "chat session", …
+func sessionStateLine(sess *WatchedSession) string {
+	switch {
+	case sess.Mode == "wildfire":
+		state := "wildfire"
+		if sess.Phase != "" {
+			state += " (" + EscapeHTML(sess.Phase) + ")"
+		}
+		if sess.TaskNumber > 0 {
+			state += fmt.Sprintf(" · task #%04d", sess.TaskNumber)
+		}
+		return state
+	case sess.TaskNumber > 0:
+		state := fmt.Sprintf("task #%04d", sess.TaskNumber)
+		if sess.TaskTitle != "" {
+			state += " — " + EscapeHTML(firstLineTrunc(sess.TaskTitle, 40))
+		}
+		if sess.Mode == "start-all" {
+			state = "run-all · " + state
+		}
+		return state
+	case sess.Mode == "chat":
+		return "chat session"
+	default:
+		return EscapeHTML(sess.Mode)
+	}
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
 func projectGlyph(p echo.ProjectInfo) string {
 	if p.AgentRunning {
 		return "🟢"

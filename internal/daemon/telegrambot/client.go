@@ -235,6 +235,18 @@ func (c *Client) SendMessageWithKeyboard(ctx context.Context, token string, chat
 	return msg.MessageID, nil
 }
 
+// SendChatAction sets the chat's transient status line (e.g. action
+// "typing" renders "typing…"). The Bot API clears it after ~5 seconds
+// or when the next message arrives, so callers re-send it periodically
+// while work is in flight.
+func (c *Client) SendChatAction(ctx context.Context, token string, chatID int64, action string) error {
+	params := url.Values{}
+	params.Set("chat_id", strconv.FormatInt(chatID, 10))
+	params.Set("action", action)
+	var ok bool
+	return c.call(ctx, token, "sendChatAction", params, &ok, false)
+}
+
 // EditMessageText replaces the text of a previously sent message.
 func (c *Client) EditMessageText(ctx context.Context, token string, chatID, messageID int64, text string) error {
 	params := url.Values{}

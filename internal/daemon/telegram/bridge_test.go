@@ -81,13 +81,14 @@ type fakeBotAPI struct {
 	t  *testing.T
 	mu sync.Mutex
 
-	script     []string // raw JSON bodies for successive getUpdates calls
-	offsets    []string // recorded getUpdates offset params
-	sent       []sentMessage
-	edited     []editedMessage
-	callbacks  []answeredCallback
-	myCommands []string // raw setMyCommands `commands` JSON payloads
-	nextMsgID  int64    // incrementing sendMessage message_id
+	script      []string // raw JSON bodies for successive getUpdates calls
+	offsets     []string // recorded getUpdates offset params
+	sent        []sentMessage
+	edited      []editedMessage
+	callbacks   []answeredCallback
+	myCommands  []string // raw setMyCommands `commands` JSON payloads
+	chatActions []string // "chat_id:action" pairs from sendChatAction
+	nextMsgID   int64    // incrementing sendMessage message_id
 
 	srv *httptest.Server
 }
@@ -166,6 +167,11 @@ func (f *fakeBotAPI) handle(w http.ResponseWriter, r *http.Request) {
 	case "answerCallbackQuery":
 		f.mu.Lock()
 		f.callbacks = append(f.callbacks, answeredCallback{ID: r.Form.Get("callback_query_id"), Text: r.Form.Get("text")})
+		f.mu.Unlock()
+		_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
+	case "sendChatAction":
+		f.mu.Lock()
+		f.chatActions = append(f.chatActions, r.Form.Get("chat_id")+":"+r.Form.Get("action"))
 		f.mu.Unlock()
 		_, _ = w.Write([]byte(`{"ok":true,"result":true}`))
 	default:
@@ -578,7 +584,7 @@ func TestNewFromConfigGating(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got := NewFromConfig(tc.cfg, pairing, "h", nil, nil, nil, nil)
+			got := NewFromConfig(tc.cfg, pairing, "h", nil, nil, nil, nil, nil)
 			if (got != nil) != tc.want {
 				t.Fatalf("NewFromConfig = %v, want bridge=%v", got, tc.want)
 			}
@@ -606,4 +612,10 @@ func TestParseCommand(t *testing.T) {
 			t.Errorf("parseCommand(%q) = (%q, %q), want (%q, %q)", tc.in, cmd, arg, tc.cmd, tc.arg)
 		}
 	}
+}
+
+func (f *fakeBotAPI) chatActionCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.chatActions)
 }

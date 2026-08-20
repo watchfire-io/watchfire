@@ -50,12 +50,14 @@ type DashboardLayout = 'grid' | 'list'
 const LAYOUT_KEY = 'wf-dashboard-layout'
 const FILTER_KEY = 'wf-dashboard-filter'
 
+// List is the default; only an explicit saved choice ('grid' or 'list')
+// overrides it.
 function readSavedLayout(): DashboardLayout {
   try {
     const saved = localStorage.getItem(LAYOUT_KEY)
-    return saved === 'list' ? 'list' : 'grid'
+    return saved === 'grid' ? 'grid' : 'list'
   } catch {
-    return 'grid'
+    return 'list'
   }
 }
 
@@ -289,16 +291,6 @@ function LayoutToggle({ layout, onChange }: LayoutToggleProps) {
     >
       <button
         type="button"
-        title="Grid view"
-        aria-label="Grid view"
-        aria-pressed={layout === 'grid'}
-        onClick={() => onChange('grid')}
-        className={cn(buttonBase, layout === 'grid' ? active : inactive)}
-      >
-        <LayoutGrid size={14} />
-      </button>
-      <button
-        type="button"
         title="List view"
         aria-label="List view"
         aria-pressed={layout === 'list'}
@@ -306,6 +298,16 @@ function LayoutToggle({ layout, onChange }: LayoutToggleProps) {
         className={cn(buttonBase, layout === 'list' ? active : inactive)}
       >
         <Rows3 size={14} />
+      </button>
+      <button
+        type="button"
+        title="Grid view"
+        aria-label="Grid view"
+        aria-pressed={layout === 'grid'}
+        onClick={() => onChange('grid')}
+        className={cn(buttonBase, layout === 'grid' ? active : inactive)}
+      >
+        <LayoutGrid size={14} />
       </button>
     </div>
   )

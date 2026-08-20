@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	"github.com/watchfire-io/watchfire/internal/models"
 )
@@ -204,5 +205,61 @@ func TestClaudeInstallSystemPromptIsNoop(t *testing.T) {
 	}
 	if len(entries) != 0 {
 		t.Errorf("InstallSystemPrompt wrote %d entries into workDir, want 0", len(entries))
+	}
+}
+
+// TestLocateTranscriptPicksLiveSessionAmongReusedNames: session names
+// are reused across runs ("<slug>:chat" every time), so several
+// transcripts can carry the same customTitle. The locator must pick the
+// one touched during THIS session — returning an arbitrary match made
+// watch mode replay a stale conversation and tail a dead file.
+func TestLocateTranscriptPicksLiveSessionAmongReusedNames(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("posix paths")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	workDir := "/Users/x/proj"
+	dir := filepath.Join(home, ".claude", "projects", "-Users-x-proj")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	write := func(name, title string, mtime time.Time) string {
+		t.Helper()
+		p := filepath.Join(dir, name)
+		line := `{"type":"custom-title","customTitle":"` + title + `"}` + "\n"
+		if err := os.WriteFile(p, []byte(line), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chtimes(p, mtime, mtime); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+
+	started := time.Now()
+	// Directory order puts the stale transcripts first — the old
+	// first-match behavior returned one of them. The 30s-old file is
+	// the sharp case: a predecessor session killed moments before this
+	// one started (daemon restart) — its mtime is recent, but still
+	// before `started`, so it must lose.
+	write("aaaa-old.jsonl", "proj:chat", started.Add(-2*time.Hour))
+	write("bbbb-just-died.jsonl", "proj:chat", started.Add(-30*time.Second))
+	fresh := write("zzzz-live.jsonl", "proj:chat", started.Add(30*time.Second))
+	write("mmmm-other.jsonl", "proj:task:#0001", started.Add(time.Minute))
+
+	c := &Claude{}
+	got, err := c.LocateTranscript(workDir, started, "proj:chat")
+	if err != nil {
+		t.Fatalf("LocateTranscript: %v", err)
+	}
+	if got != fresh {
+		t.Fatalf("LocateTranscript = %q, want the live transcript %q", got, fresh)
+	}
+
+	// When every match predates the session, report not-found — the
+	// tailer keeps retrying until the live file appears.
+	if _, err := c.LocateTranscript(workDir, started.Add(3*time.Hour), "proj:chat"); err == nil {
+		t.Fatalf("want not-found when all matches predate the session")
 	}
 }

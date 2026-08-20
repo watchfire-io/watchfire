@@ -1,12 +1,10 @@
 import { useState } from 'react'
-import { Flame, Square } from 'lucide-react'
+import { Flame } from 'lucide-react'
 import { useProjectsStore } from '../../stores/projects-store'
 import { useAgentStore } from '../../stores/agent-store'
 import { Button } from '../../components/ui/Button'
 import { Modal } from '../../components/ui/Modal'
 import { useToast } from '../../components/ui/Toast'
-import { WildfirePhaseBadge } from '../../components/WildfirePhaseBadge'
-import { formatTaskNumber } from '../../lib/utils'
 
 interface Props {
   projectId: string
@@ -21,14 +19,13 @@ interface Props {
  *
  * - Idle → a "Wildfire" button that opens a confirm-before-start modal
  *   (wildfire is autonomous and spends tokens unattended).
- * - Running → a live phase stepper (Execute → Refine → Generate) plus the
- *   current task being worked, and a Stop control.
+ * - Running → nothing here; the live phase stepper, current task, and Stop
+ *   render as the project header's RunStatusLine.
  */
 export function WildfireControl({ projectId }: Props) {
   const agentStatus = useProjectsStore((s) => s.agentStatuses[projectId])
   const fetchAgentStatus = useProjectsStore((s) => s.fetchAgentStatus)
   const startAgent = useAgentStore((s) => s.startAgent)
-  const stopAgent = useAgentStore((s) => s.stopAgent)
   const { toast } = useToast()
 
   const [confirmOpen, setConfirmOpen] = useState(false)
@@ -51,38 +48,11 @@ export function WildfireControl({ projectId }: Props) {
     }
   }
 
-  const stop = async () => {
-    setBusy(true)
-    try {
-      await stopAgent(projectId)
-      await fetchAgentStatus(projectId)
-    } catch (err) {
-      toast(String(err), 'error')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  if (isWildfire) {
-    return (
-      <div className="flex items-center gap-1.5">
-        <WildfirePhaseBadge phase={agentStatus.wildfirePhase} />
-        {agentStatus.taskNumber > 0 && (
-          <span
-            className="text-xs text-[var(--wf-text-muted)] max-w-[180px] truncate"
-            title={agentStatus.taskTitle || undefined}
-          >
-            T{formatTaskNumber(agentStatus.taskNumber)}
-            {agentStatus.taskTitle ? ` · ${agentStatus.taskTitle}` : ''}
-          </span>
-        )}
-        <Button size="sm" variant="danger" onClick={stop} disabled={busy} title="Stop wildfire">
-          <Square size={12} />
-          Stop
-        </Button>
-      </div>
-    )
-  }
+  // While wildfire runs, its live state (phase stepper, current task, stop)
+  // renders as the project header's RunStatusLine — repeating it here made
+  // the chat toolbar wrap into two rows. The toolbar only carries the start
+  // affordance.
+  if (isWildfire) return null
 
   return (
     <>

@@ -89,6 +89,9 @@ export function IntegrationsSection() {
 
   const closeDetail = () => setTarget(null)
 
+  const telegramConfigured = !!config?.telegram?.enabled && !!config?.telegram?.tokenSet
+  const telegramMutedCount = (config?.telegram?.pairedChats ?? []).filter((c) => c.muted).length
+
   const renderDetail = () => {
     if (!target) return null
     if (target.kind === IntegrationKind.GITHUB) {
@@ -165,23 +168,72 @@ export function IntegrationsSection() {
             onEdit={() => setTarget({ kind: IntegrationKind.DISCORD, id: d.id })}
           />
         ))}
-        {config?.telegram && (
-          <IntegrationCard
-            kind="Telegram"
-            fieldId="integrations-telegram"
-            label={
-              config.telegram.enabled
-                ? config.telegram.tokenSet
-                  ? 'Bot bridge enabled'
-                  : 'Enabled (no token)'
-                : 'Bot bridge (disabled)'
-            }
-            urlLabel={`${config.telegram.pairedChats?.length ?? 0} paired chat(s)`}
-            events={config.telegram.enabledEvents}
-            muteCount={(config.telegram.pairedChats ?? []).filter((c) => c.muted).length}
-            onEdit={() => setTarget({ kind: IntegrationKind.TELEGRAM })}
-          />
-        )}
+        {/* Telegram is single-instance and always listed — hiding it until it
+            existed in the config left setup buried in the Add-integration
+            picker. Unconfigured (or a pre-v10 daemon) gets an explicit
+            call-to-action; a configured bridge gets a status pill. */}
+        <div
+          data-setting-field-id="integrations-telegram"
+          className="flex items-center justify-between gap-3 p-3 rounded-[var(--wf-radius-md)] border border-[var(--wf-border)] hover:border-fire-500/50 cursor-pointer bg-[var(--wf-bg-primary)]"
+          onClick={() => setTarget({ kind: IntegrationKind.TELEGRAM })}
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') setTarget({ kind: IntegrationKind.TELEGRAM })
+          }}
+        >
+          <div className="flex flex-col gap-1 min-w-0">
+            <div className="flex items-center gap-2">
+              <Send size={13} className="text-[var(--wf-text-muted)] shrink-0" />
+              <span className="text-xs uppercase tracking-wider text-[var(--wf-text-muted)] font-semibold">
+                Telegram
+              </span>
+              <span className="text-sm font-medium text-[var(--wf-text-primary)]">
+                {telegramConfigured
+                  ? 'Bot bridge'
+                  : config?.telegram
+                    ? 'Setup incomplete'
+                    : 'Supervise from your phone'}
+              </span>
+            </div>
+            {telegramConfigured ? (
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--wf-bg-elevated)] text-[var(--wf-text-secondary)]">
+                  {formatEvents(config?.telegram?.enabledEvents)}
+                </span>
+                <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--wf-bg-elevated)] text-[var(--wf-text-muted)]">
+                  {config?.telegram?.pairedChats?.length ?? 0} paired chat(s)
+                </span>
+                {telegramMutedCount > 0 && (
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-[var(--wf-bg-elevated)] text-[var(--wf-text-muted)]">
+                    {telegramMutedCount} muted
+                  </span>
+                )}
+              </div>
+            ) : (
+              <div className="text-xs text-[var(--wf-text-muted)]">
+                Pair a chat to watch runs live, start tasks, and get failure alerts.
+              </div>
+            )}
+          </div>
+          {telegramConfigured ? (
+            <span className="shrink-0 text-xs px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-medium">
+              Configured ✓
+            </span>
+          ) : (
+            <Button
+              variant="primary"
+              size="sm"
+              className="shrink-0"
+              onClick={(e) => {
+                e.stopPropagation()
+                setTarget({ kind: IntegrationKind.TELEGRAM })
+              }}
+            >
+              {config?.telegram ? 'Finish setup' : 'Set up Telegram'}
+            </Button>
+          )}
+        </div>
         <IntegrationCard
           kind="GitHub"
           label={config?.github?.enabled ? 'Auto-PR enabled' : 'Auto-PR (disabled)'}

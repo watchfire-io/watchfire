@@ -20,11 +20,17 @@ type stubRunner struct {
 	startErr error
 	inputErr error
 
-	taskStarts   []int    // task numbers passed to StartTask
-	taskProjects []string // project ids passed to StartTask
-	runAllStarts []string // project ids passed to StartRunAll
-	inputs       []string // raw byte payloads passed to SendInput
-	inputProj    []string // project ids passed to SendInput
+	taskStarts     []int    // task numbers passed to StartTask
+	taskProjects   []string // project ids passed to StartTask
+	runAllStarts   []string // project ids passed to StartRunAll
+	chatStarts     []string // project ids passed to StartChat
+	wildfireStarts []string // project ids passed to StartWildfire
+	generateStarts []string // project ids passed to StartGenerate
+	planStarts     []string // project ids passed to StartPlan
+	chatRestarts   []string // project ids passed to RestartChat
+	stops          []string // project ids passed to StopAgent
+	inputs         []string // raw byte payloads passed to SendInput
+	inputProj      []string // project ids passed to SendInput
 }
 
 func (r *stubRunner) StartTask(_ context.Context, projectID string, taskNumber int) (RunStart, error) {
@@ -49,6 +55,63 @@ func (r *stubRunner) StartRunAll(_ context.Context, projectID string) (RunStart,
 		return RunStart{}, r.startErr
 	}
 	return r.start, nil
+}
+
+func (r *stubRunner) StartChat(_ context.Context, projectID string) (RunStart, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.chatStarts = append(r.chatStarts, projectID)
+	if r.startErr != nil {
+		return RunStart{}, r.startErr
+	}
+	return r.start, nil
+}
+
+func (r *stubRunner) StartWildfire(_ context.Context, projectID string) (RunStart, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.wildfireStarts = append(r.wildfireStarts, projectID)
+	if r.startErr != nil {
+		return RunStart{}, r.startErr
+	}
+	return r.start, nil
+}
+
+func (r *stubRunner) StartGenerate(_ context.Context, projectID string) (RunStart, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.generateStarts = append(r.generateStarts, projectID)
+	if r.startErr != nil {
+		return RunStart{}, r.startErr
+	}
+	return r.start, nil
+}
+
+func (r *stubRunner) StartPlan(_ context.Context, projectID string) (RunStart, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.planStarts = append(r.planStarts, projectID)
+	if r.startErr != nil {
+		return RunStart{}, r.startErr
+	}
+	return r.start, nil
+}
+
+func (r *stubRunner) RestartChat(_ context.Context, projectID string) (RunStart, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.chatRestarts = append(r.chatRestarts, projectID)
+	if r.startErr != nil {
+		return RunStart{}, r.startErr
+	}
+	return r.start, nil
+}
+
+func (r *stubRunner) StopAgent(projectID string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.stops = append(r.stops, projectID)
+	return nil
 }
 
 func (r *stubRunner) SendInput(projectID string, data []byte) error {
@@ -209,8 +272,9 @@ func TestRunAllStartsWhenIdle(t *testing.T) {
 }
 
 // TestSayInjectsExactBytes: /say writes the user's text VERBATIM
-// (internal whitespace preserved, HTML not escaped) plus exactly one
-// trailing \r, and acks with "→ sent".
+// (internal whitespace preserved, HTML not escaped), then exactly one
+// \r as its own write (a single text+\r chunk trips the CLI's paste
+// detection and the Enter never submits), and acks with "→ sent".
 func TestSayInjectsExactBytes(t *testing.T) {
 	withTestEnv(t)
 	fake := newFakeBotAPI(t, updateJSON(1, 42, 42, "nuno", "/say echo  hi <there>"))
@@ -223,14 +287,11 @@ func TestSayInjectsExactBytes(t *testing.T) {
 		t.Fatalf("ack = %q, want %q", txt, "→ sent")
 	}
 	_, _, inputs := runner.snapshot()
-	if len(inputs) != 1 {
-		t.Fatalf("SendInput calls = %d, want 1", len(inputs))
+	if len(inputs) != 2 {
+		t.Fatalf("SendInput calls = %d, want 2 (text, then Enter)", len(inputs))
 	}
-	if inputs[0] != "echo  hi <there>\r" {
-		t.Fatalf("injected bytes = %q, want %q", inputs[0], "echo  hi <there>\r")
-	}
-	if strings.Count(inputs[0], "\r") != 1 || strings.Contains(inputs[0], "\n") {
-		t.Fatalf("payload must end in exactly one \\r and no \\n: %q", inputs[0])
+	if inputs[0] != "echo  hi <there>" || inputs[1] != "\r" {
+		t.Fatalf("injected chunks = %q, want text then a lone \\r", inputs)
 	}
 	runner.mu.Lock()
 	proj := runner.inputProj[0]
@@ -451,5 +512,371 @@ func TestSayVerbatim(t *testing.T) {
 		if got := sayVerbatim(c.in); got != c.want {
 			t.Errorf("sayVerbatim(%q) = %q, want %q", c.in, got, c.want)
 		}
+	}
+}
+
+// chatSession is a live chat-mode session — the target the plain-text
+// conversation path may type into.
+func chatSession() *fakeSessions {
+	return &fakeSessions{sess: map[string]*WatchedSession{
+		"p1": {ProjectID: "p1", Mode: "chat", Snapshot: func() []string { return []string{"> "} }},
+	}}
+}
+
+// TestPlainTextTalksToChatAgent: a paired chat's non-command message is
+// forwarded verbatim (plus exactly one \r) to the live CHAT session —
+// the no-prefix conversation path. This chat opted out of watch, so the
+// bridge acks with a /watch hint (a watching chat gets the reply via
+// the relay instead — TestPlainTextAutoAttaches).
+func TestPlainTextTalksToChatAgent(t *testing.T) {
+	withTestEnv(t)
+	fake := newFakeBotAPI(t, updateJSON(1, 42, 42, "nuno", "how is it going?"))
+	runner := &stubRunner{}
+	chats := chatOnProject("p1")
+	chats[0].WatchOff = true
+	b := runControlBridge(runner, chatSession(), chats)
+	startBridge(t, b)
+
+	waitFor(t, "watch hint ack", func() bool { return sentContaining(fake, "/watch on to stream") })
+	_, _, inputs := runner.snapshot()
+	if len(inputs) != 2 || inputs[0] != "how is it going?" || inputs[1] != "\r" {
+		t.Fatalf("injected chunks = %q, want text then a lone Enter", inputs)
+	}
+	runner.mu.Lock()
+	proj := runner.inputProj[0]
+	runner.mu.Unlock()
+	if proj != "p1" {
+		t.Fatalf("SendInput project = %q, want p1", proj)
+	}
+}
+
+// TestPlainTextAutoAttaches: with no /use selection the message still
+// reaches the (only) live chat session — a fresh pairing can talk
+// without setup. The chat watches by default, so no ack is sent (the
+// relay carries the conversation).
+func TestPlainTextAutoAttaches(t *testing.T) {
+	withTestEnv(t)
+	fake := newFakeBotAPI(t, updateJSON(1, 42, 42, "nuno", "hello there"))
+	runner := &stubRunner{}
+	b := runControlBridge(runner, chatSession(), pairedChat42()) // no default project
+	startBridge(t, b)
+
+	waitFor(t, "delivery", func() bool {
+		_, _, inputs := runner.snapshot()
+		return len(inputs) >= 2
+	})
+	_, _, inputs := runner.snapshot()
+	if inputs[0] != "hello there" || inputs[1] != "\r" {
+		t.Fatalf("injected chunks = %q, want text then a lone Enter", inputs)
+	}
+	runner.mu.Lock()
+	proj := runner.inputProj[0]
+	runner.mu.Unlock()
+	if proj != "p1" {
+		t.Fatalf("auto-attach should target the live session's project, got %q", proj)
+	}
+	// Watching chat → no "→ sent" ack; the hint would be noise.
+	time.Sleep(20 * time.Millisecond)
+	if sentContaining(fake, "→ sent") {
+		t.Fatalf("watching chat must not get a send ack: %+v", fake.sentMessages())
+	}
+}
+
+// TestPlainTextBusyAgentOffersOptions: a live NON-chat session is never
+// typed into implicitly — the reply names what's running and lists the
+// ways out (/watch, /screen, explicit /say, /cancel), and neither the
+// PTY seam nor StartChat is touched.
+func TestPlainTextBusyAgentOffersOptions(t *testing.T) {
+	withTestEnv(t)
+	fake := newFakeBotAPI(t, updateJSON(1, 42, 42, "nuno", "are we ready for a release?"))
+	runner := &stubRunner{}
+	b := runControlBridge(runner, busySession(), chatOnProject("p1"))
+	startBridge(t, b)
+
+	waitFor(t, "busy options reply", func() bool { return len(fake.sentMessages()) >= 1 })
+	txt := fake.sentMessages()[0].Text
+	// No "/watch on" line: the chat watches by default, so that option
+	// is omitted as redundant.
+	for _, want := range []string{"busy", "#0007", "/screen", "/say", "/cancel 7"} {
+		if !strings.Contains(txt, want) {
+			t.Fatalf("busy reply missing %q: %q", want, txt)
+		}
+	}
+	if _, _, inputs := runner.snapshot(); len(inputs) != 0 {
+		t.Fatalf("nothing may reach SendInput: %v", inputs)
+	}
+	runner.mu.Lock()
+	chatStarts := len(runner.chatStarts)
+	runner.mu.Unlock()
+	if chatStarts != 0 {
+		t.Fatalf("busy path must not auto-start a chat agent")
+	}
+}
+
+// TestPlainTextStartsChatAgent: with a selected project and nothing
+// running, plain text auto-starts a chat agent, announces it, and
+// delivers the message once the session paints its first screen.
+func TestPlainTextStartsChatAgent(t *testing.T) {
+	withTestEnv(t)
+	fake := newFakeBotAPI(t, updateJSON(1, 42, 42, "nuno", "Are we ready for a release?"))
+	runner := &stubRunner{}
+	sessions := idleSessions()
+	b := runControlBridge(runner, sessions, chatOnProject("p1"))
+	b.chatStartPoll = 2 * time.Millisecond
+	b.chatStartWait = 500 * time.Millisecond
+	b.chatStartSettle = time.Millisecond
+	startBridge(t, b)
+
+	waitFor(t, "start announcement", func() bool { return len(fake.sentMessages()) >= 1 })
+	txt := fake.sentMessages()[0].Text
+	if !strings.Contains(txt, "starting a chat agent") {
+		t.Fatalf("should announce the auto-start: %q", txt)
+	}
+	runner.mu.Lock()
+	chatStarts := append([]string(nil), runner.chatStarts...)
+	runner.mu.Unlock()
+	if len(chatStarts) != 1 || chatStarts[0] != "p1" {
+		t.Fatalf("StartChat calls = %v, want [p1]", chatStarts)
+	}
+
+	// The agent comes up: expose a live chat session with a painted
+	// screen; the queued message must then be injected verbatim.
+	sessions.mu.Lock()
+	sessions.sess["p1"] = &WatchedSession{
+		ProjectID: "p1", Mode: "chat",
+		Snapshot: func() []string { return []string{"Claude Code", "> "} },
+	}
+	sessions.mu.Unlock()
+
+	waitFor(t, "queued delivery", func() bool {
+		_, _, inputs := runner.snapshot()
+		return len(inputs) >= 2
+	})
+	_, _, inputs := runner.snapshot()
+	if inputs[0] != "Are we ready for a release?" || inputs[1] != "\r" {
+		t.Fatalf("injected chunks = %q, want text then a lone Enter", inputs)
+	}
+}
+
+// TestPlainTextNoProjectNoSession: nothing running and no /use
+// selection → guidance to pick a project; nothing is started or typed.
+func TestPlainTextNoProjectNoSession(t *testing.T) {
+	withTestEnv(t)
+	fake := newFakeBotAPI(t, updateJSON(1, 42, 42, "nuno", "anyone home?"))
+	runner := &stubRunner{}
+	b := runControlBridge(runner, idleSessions(), pairedChat42())
+	startBridge(t, b)
+
+	waitFor(t, "guidance reply", func() bool { return len(fake.sentMessages()) >= 1 })
+	if txt := fake.sentMessages()[0].Text; !strings.Contains(txt, "No project selected") {
+		t.Fatalf("should ask for a project: %q", txt)
+	}
+	if _, _, inputs := runner.snapshot(); len(inputs) != 0 {
+		t.Fatalf("nothing may reach SendInput: %v", inputs)
+	}
+}
+
+// TestWildfireVerb: bare /wildfire starts the loop through the seam
+// (refusal-gated like /run; "on"/"start" are aliases), /wildfire off
+// user-stops a running wildfire, and the degenerate cases reply
+// clearly.
+func TestWildfireVerb(t *testing.T) {
+	withTestEnv(t)
+	fake := newFakeBotAPI(t, updateJSON(1, 42, 42, "nuno", "/wildfire"))
+	runner := &stubRunner{}
+	b := runControlBridge(runner, idleSessions(), chatOnProject("p1"))
+	startBridge(t, b)
+
+	waitFor(t, "start reply", func() bool { return sentContaining(fake, "Wildfire started") })
+	if !sentContaining(fake, "milestones") {
+		t.Fatalf("watching chat should be promised the milestone feed: %+v", fake.sentMessages())
+	}
+	runner.mu.Lock()
+	wf := append([]string(nil), runner.wildfireStarts...)
+	runner.mu.Unlock()
+	if len(wf) != 1 || wf[0] != "p1" {
+		t.Fatalf("StartWildfire calls = %v, want [p1]", wf)
+	}
+}
+
+func TestWildfireVerbRefusesWhileBusy(t *testing.T) {
+	withTestEnv(t)
+	fake := newFakeBotAPI(t, updateJSON(1, 42, 42, "nuno", "/wildfire"))
+	runner := &stubRunner{}
+	b := runControlBridge(runner, busySession(), chatOnProject("p1"))
+	startBridge(t, b)
+
+	waitFor(t, "refusal", func() bool { return sentContaining(fake, "already running") })
+	runner.mu.Lock()
+	wf := len(runner.wildfireStarts)
+	runner.mu.Unlock()
+	if wf != 0 {
+		t.Fatalf("busy refusal must not start wildfire")
+	}
+}
+
+func TestWildfireVerbStop(t *testing.T) {
+	withTestEnv(t)
+	fake := newFakeBotAPI(t,
+		updateJSON(1, 42, 42, "nuno", "/wildfire off"),
+	)
+	runner := &stubRunner{}
+	sessions := &fakeSessions{sess: map[string]*WatchedSession{
+		"p1": {ProjectID: "p1", Mode: "wildfire", Phase: "execute", TaskNumber: 8, TaskTitle: "T"},
+	}}
+	b := runControlBridge(runner, sessions, chatOnProject("p1"))
+	startBridge(t, b)
+
+	waitFor(t, "stop reply", func() bool { return sentContaining(fake, "Wildfire stopped") })
+	runner.mu.Lock()
+	stops := append([]string(nil), runner.stops...)
+	runner.mu.Unlock()
+	if len(stops) != 1 || stops[0] != "p1" {
+		t.Fatalf("StopAgent calls = %v, want [p1]", stops)
+	}
+}
+
+func TestWildfireVerbStopWhenIdle(t *testing.T) {
+	withTestEnv(t)
+	fake := newFakeBotAPI(t, updateJSON(1, 42, 42, "nuno", "/wildfire off"))
+	runner := &stubRunner{}
+	b := runControlBridge(runner, idleSessions(), chatOnProject("p1"))
+	startBridge(t, b)
+
+	waitFor(t, "not running reply", func() bool { return sentContaining(fake, "not running") })
+	runner.mu.Lock()
+	stops := len(runner.stops)
+	runner.mu.Unlock()
+	if stops != 0 {
+		t.Fatalf("idle /wildfire off must not stop anything")
+	}
+}
+
+// TestGenerateAndPlanVerbs: /generate and /plan start their sessions
+// through the seam when idle and are refusal-gated while an agent runs.
+func TestGenerateAndPlanVerbs(t *testing.T) {
+	withTestEnv(t)
+	fake := newFakeBotAPI(t,
+		updateJSON(1, 42, 42, "nuno", "/generate"),
+		updateJSON(2, 42, 42, "nuno", "/plan"),
+	)
+	runner := &stubRunner{}
+	b := runControlBridge(runner, idleSessions(), chatOnProject("p1"))
+	startBridge(t, b)
+
+	waitFor(t, "both confirmations", func() bool {
+		return sentContaining(fake, "Generating the project definition") && sentContaining(fake, "generating tasks from the project definition")
+	})
+	runner.mu.Lock()
+	gen := append([]string(nil), runner.generateStarts...)
+	plan := append([]string(nil), runner.planStarts...)
+	runner.mu.Unlock()
+	if len(gen) != 1 || gen[0] != "p1" || len(plan) != 1 || plan[0] != "p1" {
+		t.Fatalf("StartGenerate=%v StartPlan=%v, want [p1] each", gen, plan)
+	}
+}
+
+func TestGenerateRefusesWhileBusy(t *testing.T) {
+	withTestEnv(t)
+	fake := newFakeBotAPI(t, updateJSON(1, 42, 42, "nuno", "/generate"))
+	runner := &stubRunner{}
+	b := runControlBridge(runner, busySession(), chatOnProject("p1"))
+	startBridge(t, b)
+
+	waitFor(t, "refusal", func() bool { return sentContaining(fake, "already running") })
+	runner.mu.Lock()
+	gen := len(runner.generateStarts)
+	runner.mu.Unlock()
+	if gen != 0 {
+		t.Fatalf("busy refusal must not start generate")
+	}
+}
+
+// TestNewChatSession: /new restarts the chat session — replacing a
+// running chat through the seam's RestartChat (the daemon's atomic
+// chat-over-chat path) — and works from idle too; a working non-chat
+// agent is refused, never displaced.
+func TestNewChatSession(t *testing.T) {
+	withTestEnv(t)
+	fake := newFakeBotAPI(t, updateJSON(1, 42, 42, "nuno", "/new"))
+	runner := &stubRunner{}
+	b := runControlBridge(runner, chatSession(), chatOnProject("p1"))
+	startBridge(t, b)
+
+	waitFor(t, "fresh-session reply", func() bool { return sentContaining(fake, "Fresh chat session started") })
+	runner.mu.Lock()
+	restarts := append([]string(nil), runner.chatRestarts...)
+	runner.mu.Unlock()
+	if len(restarts) != 1 || restarts[0] != "p1" {
+		t.Fatalf("RestartChat calls = %v, want [p1]", restarts)
+	}
+}
+
+func TestNewChatSessionFromIdle(t *testing.T) {
+	withTestEnv(t)
+	fake := newFakeBotAPI(t, updateJSON(1, 42, 42, "nuno", "/new"))
+	runner := &stubRunner{}
+	b := runControlBridge(runner, idleSessions(), chatOnProject("p1"))
+	startBridge(t, b)
+
+	waitFor(t, "fresh-session reply", func() bool { return sentContaining(fake, "Fresh chat session started") })
+	runner.mu.Lock()
+	restarts := len(runner.chatRestarts)
+	runner.mu.Unlock()
+	if restarts != 1 {
+		t.Fatalf("RestartChat calls = %d, want 1", restarts)
+	}
+}
+
+func TestNewRefusesWhileBusy(t *testing.T) {
+	withTestEnv(t)
+	fake := newFakeBotAPI(t, updateJSON(1, 42, 42, "nuno", "/new"))
+	runner := &stubRunner{}
+	b := runControlBridge(runner, busySession(), chatOnProject("p1"))
+	startBridge(t, b)
+
+	waitFor(t, "refusal", func() bool { return sentContaining(fake, "already running") })
+	runner.mu.Lock()
+	restarts := len(runner.chatRestarts)
+	runner.mu.Unlock()
+	if restarts != 0 {
+		t.Fatalf("/new must never displace a working agent")
+	}
+}
+
+// TestStopVerb: /stop user-stops whatever is running (naming it) and
+// reports idle projects plainly; the seam is untouched when idle.
+func TestStopVerb(t *testing.T) {
+	withTestEnv(t)
+	fake := newFakeBotAPI(t, updateJSON(1, 42, 42, "nuno", "/stop"))
+	runner := &stubRunner{}
+	sessions := &fakeSessions{sess: map[string]*WatchedSession{
+		"p1": {ProjectID: "p1", Mode: "wildfire", Phase: "execute", TaskNumber: 8, TaskTitle: "T"},
+	}}
+	b := runControlBridge(runner, sessions, chatOnProject("p1"))
+	startBridge(t, b)
+
+	waitFor(t, "stop reply", func() bool { return sentContaining(fake, "🛑 Stopped: wildfire (execute)") })
+	runner.mu.Lock()
+	stops := append([]string(nil), runner.stops...)
+	runner.mu.Unlock()
+	if len(stops) != 1 || stops[0] != "p1" {
+		t.Fatalf("StopAgent calls = %v, want [p1]", stops)
+	}
+}
+
+func TestStopVerbWhenIdle(t *testing.T) {
+	withTestEnv(t)
+	fake := newFakeBotAPI(t, updateJSON(1, 42, 42, "nuno", "/stop"))
+	runner := &stubRunner{}
+	b := runControlBridge(runner, idleSessions(), chatOnProject("p1"))
+	startBridge(t, b)
+
+	waitFor(t, "idle reply", func() bool { return sentContaining(fake, "Nothing is running") })
+	runner.mu.Lock()
+	stops := len(runner.stops)
+	runner.mu.Unlock()
+	if stops != 0 {
+		t.Fatalf("idle /stop must not touch the seam")
 	}
 }

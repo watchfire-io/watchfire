@@ -354,3 +354,84 @@ func TestNormalizeScreen(t *testing.T) {
 		t.Fatal("blank screen should normalize to empty")
 	}
 }
+
+// TestTailerRelocatesWhenFileGoesStale: a tailer that locked onto the
+// wrong file (e.g. a just-killed predecessor session's transcript,
+// located before the live session's file existed) re-runs Locate after
+// consecutive no-growth polls and switches to the fresh path, draining
+// it from the top — instead of tailing a dead file forever.
+func TestTailerRelocatesWhenFileGoesStale(t *testing.T) {
+	dir := t.TempDir()
+	stalePath := filepath.Join(dir, "stale.jsonl")
+	livePath := filepath.Join(dir, "live.jsonl")
+	appendFile(t, stalePath, assistantTextLine("Old conversation.")+"\n")
+
+	var mu sync.Mutex
+	current := stalePath
+	rec := &emissionLog{}
+	done := make(chan struct{})
+	tailer := &TranscriptTailer{
+		Source: &claudeTranscript{locateFn: func() (string, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			return current, nil
+		}},
+		Emit: rec.add,
+		Poll: 2 * time.Millisecond,
+	}
+	runErr := make(chan error, 1)
+	go func() { runErr <- tailer.Run(context.Background(), done) }()
+
+	// The stale file's content is replayed once...
+	waitFor(t, "stale replay", func() bool { return rec.len() >= 1 })
+
+	// ...then the live file appears and Locate starts returning it. The
+	// stale file never grows, so after staleRelocateAfter polls the
+	// tailer must switch and deliver the live content.
+	appendFile(t, livePath, assistantTextLine("Fresh session reply.")+"\n")
+	mu.Lock()
+	current = livePath
+	mu.Unlock()
+	waitFor(t, "live content after relocate", func() bool {
+		for _, txt := range rec.texts() {
+			if txt == "Fresh session reply." {
+				return true
+			}
+		}
+		return false
+	})
+
+	close(done)
+	select {
+	case err := <-runErr:
+		if err != nil {
+			t.Fatalf("Run returned error: %v", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("tailer did not exit after done closed")
+	}
+}
+
+// TestParseLineUserTurnBreak: a real user turn (typed text) emits a
+// TurnBreak; tool_result-carrying "user" entries are mid-turn plumbing
+// and emit nothing.
+func TestParseLineUserTurnBreak(t *testing.T) {
+	c := &claudeTranscript{}
+
+	typed := `{"type":"user","message":{"role":"user","content":"so what'sup?"}}`
+	got := c.ParseLine([]byte(typed))
+	if len(got) != 1 || got[0].Kind != EmissionTurnBreak {
+		t.Fatalf("typed user turn should emit a TurnBreak: %+v", got)
+	}
+
+	blockTurn := `{"type":"user","message":{"role":"user","content":[{"type":"text","text":"hello"}]}}`
+	got = c.ParseLine([]byte(blockTurn))
+	if len(got) != 1 || got[0].Kind != EmissionTurnBreak {
+		t.Fatalf("text-block user turn should emit a TurnBreak: %+v", got)
+	}
+
+	toolResult := `{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1"}]}}`
+	if got := c.ParseLine([]byte(toolResult)); len(got) != 0 {
+		t.Fatalf("tool_result carrier must emit nothing: %+v", got)
+	}
+}

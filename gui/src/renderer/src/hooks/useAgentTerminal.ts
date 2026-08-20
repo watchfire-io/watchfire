@@ -58,18 +58,26 @@ export function useAgentTerminal({ projectId, containerRef, active = false }: Us
     const fit = new FitAddon()
     term.loadAddon(fit)
 
-    // Defer open() until the container has non-zero dimensions.
-    // xterm's Viewport constructor crashes if the container has no layout.
+    // Defer open() until the container has non-zero dimensions — xterm's
+    // Viewport constructor crashes if the container has no layout — and
+    // ALWAYS by at least one frame, guarded by a disposed flag: open()
+    // schedules an internal Viewport setTimeout that dereferences the
+    // renderer, so a terminal opened and disposed within the same commit
+    // (React StrictMode's dev double-mount) crashes when that timer fires.
+    // Deferring means the throwaway first mount never opens at all.
     const container = containerRef.current
+    let disposed = false
+    let openRaf = 0
     const tryOpen = (): void => {
+      if (disposed) return
       if (!container.isConnected || container.clientWidth === 0 || container.clientHeight === 0) {
-        requestAnimationFrame(tryOpen)
+        openRaf = requestAnimationFrame(tryOpen)
         return
       }
       term.open(container)
       fit.fit()
     }
-    tryOpen()
+    openRaf = requestAnimationFrame(tryOpen)
 
     termRef.current = term
     fitRef.current = fit
@@ -100,6 +108,8 @@ export function useAgentTerminal({ projectId, containerRef, active = false }: Us
     observer.observe(containerRef.current)
 
     return () => {
+      disposed = true
+      cancelAnimationFrame(openRaf)
       abortRef.current?.abort()
       abortRef.current = null
       if (unsubDelayRef.current) clearTimeout(unsubDelayRef.current)

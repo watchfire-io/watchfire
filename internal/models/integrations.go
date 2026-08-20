@@ -235,8 +235,16 @@ type TelegramPairedChat struct {
 	PairedAt         time.Time `yaml:"paired_at" json:"paired_at"`
 	DefaultProjectID string    `yaml:"default_project_id,omitempty" json:"default_project_id,omitempty"`
 	Muted            bool      `yaml:"muted,omitempty" json:"muted,omitempty"`
-	Watch            bool      `yaml:"watch,omitempty" json:"watch,omitempty"`
+	// WatchOff persists the /watch opt-OUT. The polarity is negative so
+	// the zero value (field absent in YAML) means watching: the live
+	// conversation relay is the default for every paired chat, including
+	// chats paired before the field existed. Read through Watching().
+	WatchOff bool `yaml:"watch_off,omitempty" json:"watch_off,omitempty"`
 }
+
+// Watching reports whether the chat receives the live conversation
+// relay — true unless the chat explicitly sent /watch off.
+func (c TelegramPairedChat) Watching() bool { return !c.WatchOff }
 
 // TelegramConfig is the single-instance Telegram bridge configuration
 // (v10.0 Torch). The bot token lives in the OS keyring under

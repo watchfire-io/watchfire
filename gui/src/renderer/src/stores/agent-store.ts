@@ -1,7 +1,17 @@
 import { create } from 'zustand'
+import { Code, ConnectError } from '@connectrpc/connect'
 import type { AgentStatus, AgentIssue } from '../generated/watchfire_pb'
 import { getAgentClient } from '../lib/grpc-client'
 import { agentStatusEqual } from '../lib/agent-utils'
+
+// True for errors that are part of normal stream lifecycle and should not be
+// logged: our own AbortController tearing a subscription down surfaces as
+// either a DOM AbortError or a ConnectError with code Canceled, depending on
+// where in the connect-web pipeline the abort lands.
+function isCanceled(err: unknown): boolean {
+  if (err instanceof ConnectError) return err.code === Code.Canceled
+  return err instanceof Error && err.name === 'AbortError'
+}
 
 interface AgentState {
   statuses: Record<string, AgentStatus>
@@ -174,7 +184,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           onUpdate(buf.ansiContent, buf.cols, buf.rows)
         }
       } catch (err: unknown) {
-        if (err instanceof Error && err.name !== 'AbortError') {
+        if (!isCanceled(err)) {
           console.error('Screen subscription error:', err)
         }
       } finally {
@@ -207,7 +217,7 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           onData(chunk.data)
         }
       } catch (err: unknown) {
-        if (err instanceof Error && err.name !== 'AbortError') {
+        if (!isCanceled(err)) {
           console.error('Raw output subscription error:', err)
         }
       } finally {
@@ -236,7 +246,13 @@ export const useAgentStore = create<AgentState>((set, get) => ({
           set((s) => ({ issues: { ...s.issues, [projectId]: resolved } }))
         }
       } catch (err: unknown) {
-        if (err instanceof Error && err.name !== 'AbortError') {
+        // "no agent running" is a benign race, not a fault: callers gate
+        // subscriptions on polled isRunning status, and the agent can exit
+        // between that poll and the stream opening (agent_service.go:487).
+        const benign =
+          isCanceled(err) ||
+          (err instanceof ConnectError && err.rawMessage.includes('no agent running'))
+        if (!benign) {
           console.error('Issue subscription error:', err)
         }
       }
