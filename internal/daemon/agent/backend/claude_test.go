@@ -263,3 +263,48 @@ func TestLocateTranscriptPicksLiveSessionAmongReusedNames(t *testing.T) {
 		t.Fatalf("want not-found when all matches predate the session")
 	}
 }
+
+// TestClaudeProjectDirName: Claude Code's transcript directory name is
+// the work dir with every non-alphanumeric rune replaced by "-" — not
+// just slashes. A dotted project dir (n9o.xyz) never resolved before,
+// so watch mode never relayed it and no session transcript was kept.
+func TestClaudeProjectDirName(t *testing.T) {
+	cases := map[string]string{
+		"/Users/x/source/watchfire":         "-Users-x-source-watchfire",
+		"/Users/x/source/n9o.xyz":           "-Users-x-source-n9o-xyz",
+		"/Users/x/source/blowfish_examples": "-Users-x-source-blowfish-examples",
+		"/Users/x/source/Njord":             "-Users-x-source-Njord",
+		"/tmp/a.b/c_d/e-f":                  "-tmp-a-b-c-d-e-f",
+	}
+	for in, want := range cases {
+		if got := claudeProjectDirName(in); got != want {
+			t.Errorf("claudeProjectDirName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// TestLocateTranscriptDottedWorkDir: the locator finds the transcript
+// for a work dir containing a dot (the live n9o.xyz failure).
+func TestLocateTranscriptDottedWorkDir(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("posix paths")
+	}
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	dir := filepath.Join(home, ".claude", "projects", "-Users-x-source-n9o-xyz")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(dir, "live.jsonl")
+	if err := os.WriteFile(p, []byte(`{"type":"custom-title","customTitle":"n9oxyz:chat"}`+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	started := time.Now().Add(-time.Minute)
+	got, err := (&Claude{}).LocateTranscript("/Users/x/source/n9o.xyz", started, "n9oxyz:chat")
+	if err != nil {
+		t.Fatalf("LocateTranscript: %v", err)
+	}
+	if got != p {
+		t.Fatalf("LocateTranscript = %q, want %q", got, p)
+	}
+}

@@ -1,5 +1,13 @@
 # Changelog
 
+## [10.0.1] Torch
+
+Patch release: one transcript-lookup bug that silently disabled watch mode and session-transcript capture for any project whose path contains a dot or underscore (found live when `n9o.xyz` never streamed to Telegram while `watchfire-website` did).
+
+### Fixed
+
+- **Projects with dots or underscores in their path get transcripts again.** Claude Code names its per-project transcript directory by replacing *every* non-alphanumeric character in the working directory with `-` (`/Users/x/source/n9o.xyz` → `-Users-x-source-n9o-xyz`, `blowfish_examples` → `blowfish-examples`); `LocateTranscript` only replaced `/`, so for such projects no transcript was ever found — watch mode relayed nothing (the tailer retried forever, silently) and the end-of-session log copier never captured a transcript (the project log shows the "transcript dir not found" line on every session end). The encoding now matches Claude's rule, pinned by a table test and a dotted-work-dir locate test.
+
 ## [10.0.0] Torch
 
 Torch puts the fleet in your pocket: a **Telegram bridge** lets you supervise the daemon from any phone — and not just with commands: **just type in a paired chat to talk to a chat agent** (one is auto-started if nothing is running), watch mode streams the replies back by default, `/wildfire` runs the autonomous loop with a phone-glanceable milestone feed, and task/run/digest events are pushed as they happen. Everything rides the bot's outgoing long-poll connection, so nothing ever listens on the machine. Pairing is the security boundary: anyone on Telegram can DM a bot, so the paired-chats list is the allowlist and a crypto-random one-time code is the only way onto it. Two invariants are enforced by a source-parsing guard test: the bridge never calls `Resize`, and `injectSay` — the `/say` verb and plain-text chat forwarding — is the only PTY write in the package.

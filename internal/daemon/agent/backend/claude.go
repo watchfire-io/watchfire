@@ -111,8 +111,7 @@ func (c *Claude) LocateTranscript(workDir string, started time.Time, sessionHint
 		return "", err
 	}
 
-	encoded := strings.ReplaceAll(workDir, "/", "-")
-	transcriptDir := filepath.Join(homeDir, ".claude", "projects", encoded)
+	transcriptDir := filepath.Join(homeDir, ".claude", "projects", claudeProjectDirName(workDir))
 
 	entries, err := os.ReadDir(transcriptDir)
 	if err != nil {
@@ -162,6 +161,27 @@ func (c *Claude) LocateTranscript(workDir string, started time.Time, sessionHint
 	}
 
 	return "", fmt.Errorf("no transcript found for session %q in %s", sessionHint, transcriptDir)
+}
+
+// claudeProjectDirName reproduces Claude Code's per-project transcript
+// directory name: the working directory with EVERY non-alphanumeric
+// character replaced by "-" (observed: "/Users/x/source/n9o.xyz" →
+// "-Users-x-source-n9o-xyz", "blowfish_examples" → "blowfish-examples";
+// case is preserved). Replacing only "/" — the old behavior — missed
+// dots and underscores, so projects like n9o.xyz never had a transcript
+// located: no watch-mode relay and no session-log transcript capture.
+func claudeProjectDirName(workDir string) string {
+	var b strings.Builder
+	b.Grow(len(workDir))
+	for _, r := range workDir {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('-')
+		}
+	}
+	return b.String()
 }
 
 func readClaudeTranscriptTitle(path string) (string, error) {
