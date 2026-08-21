@@ -143,6 +143,10 @@ type WatchedSession struct {
 	StartedAt   time.Time
 	Done        <-chan struct{}
 	Snapshot    func() []string
+	// IssueType returns the session's current detected issue type
+	// ("auth_required", "rate_limited", …) or "" — read-only, like
+	// Snapshot; drives the auto-relayed /login hint.
+	IssueType func() string
 }
 
 // TaskSummary is the number + title of one task, for milestone markers.
@@ -978,6 +982,29 @@ func (b *Bridge) runRelay(ctx context.Context, chatID int64, sess *WatchedSessio
 				return
 			case <-timer.C:
 				sender.flush(ctx, false)
+			}
+		}
+	}()
+
+	// Auth watch: when the session raises auth_required (Claude's OAuth
+	// token revoked — "Please run /login"), tell the chat once how to
+	// fix it from the phone. Polled on the typing tick; cheap.
+	loginHinted := false
+	go func() {
+		for {
+			timer := time.NewTimer(b.typingEvery)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return
+			case <-stopFlush:
+				timer.Stop()
+				return
+			case <-timer.C:
+				if !loginHinted && sess.IssueType != nil && sess.IssueType() == "auth_required" {
+					loginHinted = true
+					sender.Add(Emission{Kind: EmissionMarker, Text: loginHint(sess)})
+				}
 			}
 		}
 	}()

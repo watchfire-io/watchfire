@@ -39,6 +39,7 @@ func botCommands() []telegrambot.BotCommand {
 		{Command: "new", Description: "Start a fresh chat session (clears context)"},
 		{Command: "wildfire", Description: "Start the autonomous loop (off to stop)"},
 		{Command: "stop", Description: "Stop the running agent (chains end too)"},
+		{Command: "login", Description: "Re-authenticate Claude in the session (link + code)"},
 		{Command: "generate", Description: "Generate the project definition from the codebase"},
 		{Command: "plan", Description: "Generate tasks from the project definition"},
 		{Command: "retry", Description: "Re-queue a failed task"},
@@ -86,6 +87,8 @@ func (b *Bridge) dispatchCommand(ctx context.Context, msg *telegrambot.Message, 
 		b.cmdNew(ctx, chatID)
 	case "/stop":
 		b.cmdStop(ctx, chatID)
+	case "/login":
+		b.cmdLogin(ctx, chatID)
 	case "/agent":
 		b.cmdAgent(ctx, chatID, rest)
 	case "/generate":
@@ -149,6 +152,7 @@ func helpHTML() string {
 		"/new — fresh chat session (clears the conversation context)",
 		"/wildfire — start the autonomous loop (milestones via watch; /wildfire off stops)",
 		"/stop — stop whatever agent is running (a run-all/wildfire chain ends too)",
+		"/login — re-auth Claude: I send the sign-in link, you send me back the code",
 		"/generate — write the project definition from the codebase",
 		"/plan — generate tasks from the project definition",
 		"/retry &lt;n&gt; · /cancel &lt;n&gt; — re-queue a failed task / cancel one",

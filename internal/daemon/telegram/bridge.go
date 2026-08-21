@@ -122,6 +122,11 @@ type Bridge struct {
 	typingEvery  time.Duration
 	typingWindow time.Duration
 
+	// loginPending arms a chat after /login relayed the sign-in link:
+	// its next plain-text message is pasted into projectID's session
+	// as the OAuth code instead of being treated as conversation.
+	loginPending map[int64]string
+
 	// sayEnterDelay is the beat between injectSay's text write and its
 	// Enter write (default set in New; tests shrink it).
 	sayEnterDelay time.Duration
@@ -172,6 +177,7 @@ func New(cfg Config) *Bridge {
 		tailPoll:        tailPollInterval,
 		outcomeRetry:    outcomeRetryInterval,
 		chatPending:     make(map[string]*chatPendingStart),
+		loginPending:    make(map[int64]string),
 		chatStartPoll:   chatStartPollInterval,
 		chatStartWait:   chatStartWaitTimeout,
 		chatStartSettle: chatStartSettleDelay,

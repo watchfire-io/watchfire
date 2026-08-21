@@ -422,6 +422,10 @@ func (b *Bridge) handlePlainText(ctx context.Context, chatID int64, text string)
 		b.reply(ctx, chatID, "Sessions are not wired up on this daemon.")
 		return
 	}
+	// A chat armed by /login pastes its next message as the OAuth code.
+	if b.handleLoginCode(ctx, chatID, text) {
+		return
+	}
 	b.mu.Lock()
 	chat := b.paired[chatID]
 	b.mu.Unlock()

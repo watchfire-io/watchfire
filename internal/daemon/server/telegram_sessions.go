@@ -56,6 +56,12 @@ func (s *agentSessionSource) ActiveSession(projectID string) (*telegram.WatchedS
 			}
 			return su.Lines
 		},
+		IssueType: func() string {
+			if iss := proc.GetIssue(); iss != nil {
+				return string(iss.Type)
+			}
+			return ""
+		},
 	}, true
 }
 

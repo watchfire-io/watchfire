@@ -20,17 +20,18 @@ type stubRunner struct {
 	startErr error
 	inputErr error
 
-	taskStarts     []int    // task numbers passed to StartTask
-	taskProjects   []string // project ids passed to StartTask
-	runAllStarts   []string // project ids passed to StartRunAll
-	chatStarts     []string // project ids passed to StartChat
-	wildfireStarts []string // project ids passed to StartWildfire
-	generateStarts []string // project ids passed to StartGenerate
-	planStarts     []string // project ids passed to StartPlan
-	chatRestarts   []string // project ids passed to RestartChat
-	stops          []string // project ids passed to StopAgent
-	inputs         []string // raw byte payloads passed to SendInput
-	inputProj      []string // project ids passed to SendInput
+	taskStarts     []int              // task numbers passed to StartTask
+	taskProjects   []string           // project ids passed to StartTask
+	runAllStarts   []string           // project ids passed to StartRunAll
+	chatStarts     []string           // project ids passed to StartChat
+	wildfireStarts []string           // project ids passed to StartWildfire
+	generateStarts []string           // project ids passed to StartGenerate
+	planStarts     []string           // project ids passed to StartPlan
+	chatRestarts   []string           // project ids passed to RestartChat
+	stops          []string           // project ids passed to StopAgent
+	inputs         []string           // raw byte payloads passed to SendInput
+	inputProj      []string           // project ids passed to SendInput
+	onInput        func(chunk string) // optional hook, called per SendInput chunk
 }
 
 func (r *stubRunner) StartTask(_ context.Context, projectID string, taskNumber int) (RunStart, error) {
@@ -116,10 +117,14 @@ func (r *stubRunner) StopAgent(projectID string) error {
 
 func (r *stubRunner) SendInput(projectID string, data []byte) error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	r.inputProj = append(r.inputProj, projectID)
 	r.inputs = append(r.inputs, string(data))
-	return r.inputErr
+	hook, err := r.onInput, r.inputErr
+	r.mu.Unlock()
+	if hook != nil {
+		hook(string(data))
+	}
+	return err
 }
 
 func (r *stubRunner) snapshot() (taskStarts []int, runAllStarts, inputs []string) {
@@ -907,5 +912,131 @@ func TestStopVerbWhenIdle(t *testing.T) {
 	runner.mu.Unlock()
 	if stops != 0 {
 		t.Fatalf("idle /stop must not touch the seam")
+	}
+}
+
+// loginScreenSession is a scripted chat session whose screen advances
+// through the real /login dialog (captured live from Claude Code
+// v2.1.238) as the bridge types into it: prompt → method picker →
+// sign-in URL. The URL's PKCE challenge is per-process, which is why
+// the flow must drive the live session rather than pre-generate a link.
+type loginScreenSession struct {
+	mu    sync.Mutex
+	stage int // 0 prompt, 1 picker, 2 url screen
+}
+
+const loginTestURL = "https://claude.com/cai/oauth/authorize?code=true&client_id=9d1c250a&response_type=code&code_challenge=CYTYPPF9vuYP&code_challenge_method=S256&state=2J_3XQ48"
+
+func (l *loginScreenSession) screen() []string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	switch l.stage {
+	case 1:
+		return []string{"Login", "Select login method:", "  ❯ 1. Claude account with subscription", "    2. Anthropic Console account", "Esc to cancel"}
+	case 2:
+		// The terminal wraps the long URL across lines.
+		return []string{"Login", "Browser didn't open? Use the url below to sign in (c to copy)",
+			loginTestURL[:60], loginTestURL[60:], "Paste code here if prompted >"}
+	default:
+		return []string{"❯ Try \"how do I log an error?\"", "⏵⏵ bypass permissions on"}
+	}
+}
+
+// advanceOnInput moves the dialog forward as the bridge's writes arrive,
+// mirroring the real CLI: "/login" + its Enter opens the picker (the
+// Enter that submits the command is NOT a picker selection); the next
+// lone Enter selects option 1 and shows the URL.
+func (l *loginScreenSession) advanceOnInput(chunk string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	switch {
+	case l.stage == 0 && chunk == "/login":
+		l.stage = -1 // command typed, awaiting its Enter
+	case l.stage == -1 && chunk == "\r":
+		l.stage = 1
+	case l.stage == 1 && chunk == "\r":
+		l.stage = 2
+	}
+}
+
+// TestLoginFlow: /login types into the session, steps the picker, scrapes
+// the (wrapped) OAuth URL, sends it, and arms the chat so the next plain
+// message is pasted as the code — never treated as conversation.
+func TestLoginFlow(t *testing.T) {
+	withTestEnv(t)
+	fake := newFakeBotAPI(t,
+		updateJSON(1, 42, 42, "nuno", "/login"),
+	)
+	screen := &loginScreenSession{}
+	runner := &stubRunner{}
+	runner.onInput = screen.advanceOnInput
+	sessions := &fakeSessions{sess: map[string]*WatchedSession{
+		"p1": {ProjectID: "p1", Mode: "chat", Snapshot: screen.screen},
+	}}
+	b := runControlBridge(runner, sessions, chatOnProject("p1"))
+	b.chatStartPoll = 2 * time.Millisecond
+	b.sayEnterDelay = time.Millisecond
+	startBridge(t, b)
+
+	waitFor(t, "sign-in link relayed", func() bool { return sentContaining(fake, "Sign in to Claude") })
+	if !sentContaining(fake, loginTestURL) {
+		t.Fatalf("the full (unwrapped) OAuth URL must be relayed: %+v", fake.sentMessages())
+	}
+	// The bridge typed "/login" then Enter (two injectSay calls = four
+	// chunks: "/login", "\r", "", "\r").
+	_, _, inputs := runner.snapshot()
+	if len(inputs) != 4 || inputs[0] != "/login" || inputs[1] != "\r" || inputs[2] != "" || inputs[3] != "\r" {
+		t.Fatalf("expected /login + Enter + Enter, got %q", inputs)
+	}
+	b.mu.Lock()
+	armed := b.loginPending[42]
+	b.mu.Unlock()
+	if armed != "p1" {
+		t.Fatalf("chat should be armed for the code on p1, got %q", armed)
+	}
+
+	// Now the user sends the code as plain text: it's pasted, not chatted.
+	fake.mu.Lock()
+	fake.script = append(fake.script, updateJSON(2, 42, 42, "nuno", "AbC123-code#xyz"))
+	fake.mu.Unlock()
+	waitFor(t, "code pasted", func() bool { return sentContaining(fake, "Code pasted") })
+	_, _, inputs = runner.snapshot()
+	if len(inputs) != 6 || inputs[4] != "AbC123-code#xyz" || inputs[5] != "\r" {
+		t.Fatalf("code should be pasted verbatim + Enter, got %q", inputs)
+	}
+	runner.mu.Lock()
+	chatStarts := len(runner.chatStarts)
+	runner.mu.Unlock()
+	if chatStarts != 0 {
+		t.Fatalf("the code must not be treated as conversation (no chat start)")
+	}
+	b.mu.Lock()
+	_, still := b.loginPending[42]
+	b.mu.Unlock()
+	if still {
+		t.Fatalf("chat must be disarmed after the code is pasted")
+	}
+}
+
+// TestLoginCancelAndNoSession: "cancel" disarms without pasting; /login
+// with nothing running explains.
+func TestLoginCancelAndNoSession(t *testing.T) {
+	withTestEnv(t)
+	fake := newFakeBotAPI(t, updateJSON(1, 42, 42, "nuno", "/login"))
+	runner := &stubRunner{}
+	b := runControlBridge(runner, idleSessions(), chatOnProject("p1"))
+	startBridge(t, b)
+	waitFor(t, "no-session reply", func() bool { return sentContaining(fake, "No agent is running") })
+
+	// Arm manually and cancel.
+	b.mu.Lock()
+	b.loginPending[42] = "p1"
+	b.mu.Unlock()
+	fake.mu.Lock()
+	fake.script = append(fake.script, updateJSON(2, 42, 42, "nuno", "cancel"))
+	fake.mu.Unlock()
+	waitFor(t, "cancelled", func() bool { return sentContaining(fake, "Login cancelled") })
+	if _, _, inputs := runner.snapshot(); len(inputs) != 0 {
+		t.Fatalf("cancel must not paste anything: %q", inputs)
 	}
 }

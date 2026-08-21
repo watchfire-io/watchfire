@@ -1,5 +1,13 @@
 # Changelog
 
+## [10.0.3] Torch
+
+Patch release: Claude's periodic OAuth revocation ("Please run /login") can now be fixed from Telegram.
+
+### Added
+
+- **`/login` — re-authenticate Claude from your phone.** Claude Code's OAuth token gets revoked periodically (observed roughly every 12 hours on some accounts); the agent prints "Please run /login · API Error: 401 OAuth access token has been revoked" and stalls until someone at the machine re-auths. Watchfire can't stop the expiry — it's Claude's token lifetime — but it can make the fix remote. The sign-in URL the CLI shows carries a per-process PKCE challenge, so it can't be pre-generated; `/login` instead drives the live session's own dialog using only the bridge's existing read (screen snapshots) and write (`injectSay`) primitives: type `/login`, confirm the method picker, scrape the `oauth/authorize` URL off the screen (joining wrapped lines), send it to the chat, and arm the chat so your next plain-text message is pasted into the session as the code — you tap the link, approve, copy the code, send it back, done. "cancel" disarms. When a watched session raises `auth_required`, the relay posts a one-time hint pointing at `/login`, so the stall announces its own remedy. The dialog's screen markers were pinned from a live capture of Claude Code v2.1.238 and the flow is covered by a scripted-dialog test.
+
 ## [10.0.2] Torch
 
 Patch release: mode switches from Telegram now behave like every other client.
