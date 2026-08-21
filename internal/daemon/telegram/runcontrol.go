@@ -46,9 +46,12 @@ type RunStart struct {
 // in the server package over the agent manager (the telegram package
 // must never import it — guard-tested); tests inject stubs.
 //
-// StartTask / StartRunAll follow the MCP run_task contract: they refuse
-// with an error when an agent is already running for the project —
-// they never queue behind it and never replace it.
+// The mode starters REPLACE a running agent through the daemon's atomic
+// kill+restart — the same semantics as the GUI mode buttons and the
+// TUI. (The MCP run_task "never replace" contract is MCP-only, where
+// the caller is another agent.) StartChat is the exception: a chat
+// start never displaces a working non-chat agent — the daemon refuses
+// that itself.
 type RunController interface {
 	// StartTask starts a task-mode session on taskNumber.
 	StartTask(ctx context.Context, projectID string, taskNumber int) (RunStart, error)
@@ -124,14 +127,23 @@ func (b *Bridge) runningSession(projectID string) (*WatchedSession, bool) {
 	return b.sessions.ActiveSession(projectID)
 }
 
-// runRefusal renders the never-queue-never-replace refusal — the same
-// contract as the MCP run_task tool, worded for chat.
-func runRefusal(sess *WatchedSession) string {
-	desc := "mode " + EscapeHTML(sess.Mode)
-	if sess.TaskNumber > 0 {
-		desc = fmt.Sprintf("task #%04d — %s", sess.TaskNumber, EscapeHTML(sess.TaskTitle))
+// replacedNote is the suffix a starter's confirmation carries when it
+// displaced a running agent. Mode switches from Telegram REPLACE the
+// running agent — exactly like the GUI's mode buttons and the TUI —
+// through the daemon's atomic kill+restart; the MCP "never replace"
+// contract stays MCP-only, where the caller is another agent. The
+// note keeps the replacement honest rather than silent.
+func replacedNote(prev *WatchedSession, had bool) string {
+	if !had {
+		return ""
 	}
-	return "⛔ An agent is already running for this project (" + desc + "). Runs are never queued or replaced — wait for it to finish or /cancel it first."
+	return " Replaced the running " + sessionStateLine(prev) + "."
+}
+
+// chatRefusal is the one remaining refusal: /new (a chat start) never
+// displaces a working non-chat agent — the daemon refuses that too.
+func chatRefusal(sess *WatchedSession) string {
+	return "⛔ A working agent is running for this project (" + sessionStateLine(sess) + "). /stop it first — /new only replaces a chat session."
 }
 
 // requireRunner resolves the run-control seam, replying with a shrug
@@ -145,9 +157,9 @@ func (b *Bridge) requireRunner(ctx context.Context, chatID int64) bool {
 	return true
 }
 
-// cmdRun starts one task for the chat's active project. Refuses while
-// an agent is running — same semantics as MCP run_task: never queue,
-// never replace.
+// cmdRun starts one task for the chat's active project, replacing any
+// running agent (mode switches replace, like the GUI/TUI) and saying
+// so in the confirmation.
 func (b *Bridge) cmdRun(ctx context.Context, chatID int64, rest string) {
 	if !b.requireRunner(ctx, chatID) {
 		return
@@ -161,21 +173,18 @@ func (b *Bridge) cmdRun(ctx context.Context, chatID int64, rest string) {
 	if !ok {
 		return
 	}
-	if sess, live := b.runningSession(projectID); live {
-		b.reply(ctx, chatID, runRefusal(sess))
-		return
-	}
+	prev, had := b.runningSession(projectID)
 	started, err := b.runner.StartTask(ctx, projectID, n)
 	if err != nil {
 		b.reply(ctx, chatID, fmt.Sprintf("Failed to start task #%04d: %s", n, EscapeHTML(err.Error())))
 		return
 	}
-	b.reply(ctx, chatID, fmt.Sprintf("▶ Started task #%04d — <b>%s</b>. Send /watch on to follow the session, or /screen for a snapshot.",
-		started.TaskNumber, EscapeHTML(started.TaskTitle)))
+	b.reply(ctx, chatID, fmt.Sprintf("▶ Started task #%04d — <b>%s</b>.%s Watch streams the session; /screen for a snapshot.",
+		started.TaskNumber, EscapeHTML(started.TaskTitle), replacedNote(prev, had)))
 }
 
-// cmdRunAll starts run-all mode for the chat's active project, with
-// the same refusal semantics as /run.
+// cmdRunAll starts run-all mode for the chat's active project,
+// replacing a running agent like /run.
 func (b *Bridge) cmdRunAll(ctx context.Context, chatID int64) {
 	if !b.requireRunner(ctx, chatID) {
 		return
@@ -184,17 +193,14 @@ func (b *Bridge) cmdRunAll(ctx context.Context, chatID int64) {
 	if !ok {
 		return
 	}
-	if sess, live := b.runningSession(projectID); live {
-		b.reply(ctx, chatID, runRefusal(sess))
-		return
-	}
+	prev, had := b.runningSession(projectID)
 	started, err := b.runner.StartRunAll(ctx, projectID)
 	if err != nil {
 		b.reply(ctx, chatID, "Failed to start run-all: "+EscapeHTML(err.Error()))
 		return
 	}
-	b.reply(ctx, chatID, fmt.Sprintf("▶ Run-all started on task #%04d — <b>%s</b>. The daemon chains through the remaining ready tasks after each merge.",
-		started.TaskNumber, EscapeHTML(started.TaskTitle)))
+	b.reply(ctx, chatID, fmt.Sprintf("▶ Run-all started on task #%04d — <b>%s</b>.%s The daemon chains through the remaining ready tasks after each merge.",
+		started.TaskNumber, EscapeHTML(started.TaskTitle), replacedNote(prev, had)))
 }
 
 // cmdRouteVerb dispatches /retry and /cancel through echo.Route — the
@@ -282,7 +288,7 @@ func (b *Bridge) cmdNew(ctx context.Context, chatID int64) {
 		return
 	}
 	if sess, live := b.runningSession(projectID); live && sess.Mode != "chat" {
-		b.reply(ctx, chatID, runRefusal(sess))
+		b.reply(ctx, chatID, chatRefusal(sess))
 		return
 	}
 	if _, err := b.runner.RestartChat(ctx, projectID); err != nil {
@@ -317,8 +323,8 @@ func (b *Bridge) cmdStop(ctx context.Context, chatID int64) {
 }
 
 // cmdSimpleMode is the shared start path for the one-shot generator
-// verbs (/generate, /plan): resolve the chat's project, refuse while an
-// agent runs (never queue, never replace), start, confirm. The watch
+// verbs (/generate, /plan): resolve the chat's project, start (replacing
+// any running agent, like the GUI), confirm — naming what was replaced. The watch
 // relay (on by default) then streams the session like any other.
 func (b *Bridge) cmdSimpleMode(ctx context.Context, chatID int64, start func(context.Context, string) (RunStart, error), confirm string) {
 	if !b.requireRunner(ctx, chatID) {
@@ -328,21 +334,18 @@ func (b *Bridge) cmdSimpleMode(ctx context.Context, chatID int64, start func(con
 	if !ok {
 		return
 	}
-	if sess, live := b.runningSession(projectID); live {
-		b.reply(ctx, chatID, runRefusal(sess))
-		return
-	}
+	prev, had := b.runningSession(projectID)
 	if _, err := start(ctx, projectID); err != nil {
 		b.reply(ctx, chatID, "Failed to start: "+EscapeHTML(err.Error()))
 		return
 	}
-	b.reply(ctx, chatID, confirm)
+	b.reply(ctx, chatID, confirm+replacedNote(prev, had))
 }
 
 // cmdWildfire starts (bare /wildfire — "on"/"start" are aliases) or
 // stops (/wildfire off) the autonomous loop for the chat's active
-// project. Starting is refusal-gated like /run; stopping user-stops
-// the agent so the chain doesn't continue. The watch relay
+// project. Starting replaces a running agent (like the GUI's Wildfire
+// button); stopping user-stops the agent so the chain doesn't continue. The watch relay
 // (on by default) then carries the high-level milestone feed:
 // "generating new tasks…", "✚ generated task NNNN — title",
 // "implementing task NNNN — title", "✔ task NNNN merged", …
@@ -358,16 +361,13 @@ func (b *Bridge) cmdWildfire(ctx context.Context, chatID int64, rest string) {
 	case "", "on", "start":
 		// Bare /wildfire starts the loop — "on" and "start" are
 		// accepted aliases.
-		if sess, live := b.runningSession(projectID); live {
-			if sess.Mode == "wildfire" {
-				state := "🔥 Wildfire is already running"
-				if sess.Phase != "" {
-					state += " (" + EscapeHTML(sess.Phase) + " phase)"
-				}
-				b.reply(ctx, chatID, state+". /wildfire off to stop it.")
-				return
+		prev, had := b.runningSession(projectID)
+		if had && prev.Mode == "wildfire" {
+			state := "🔥 Wildfire is already running"
+			if prev.Phase != "" {
+				state += " (" + EscapeHTML(prev.Phase) + " phase)"
 			}
-			b.reply(ctx, chatID, runRefusal(sess))
+			b.reply(ctx, chatID, state+". /wildfire off to stop it.")
 			return
 		}
 		if _, err := b.runner.StartWildfire(ctx, projectID); err != nil {
@@ -377,7 +377,7 @@ func (b *Bridge) cmdWildfire(ctx context.Context, chatID int64, rest string) {
 		b.mu.Lock()
 		watching := b.paired[chatID].Watching()
 		b.mu.Unlock()
-		msg := "🔥 Wildfire started — the autonomous loop executes ready tasks, refines the backlog, and generates new tasks until nothing is left. /wildfire off to stop."
+		msg := "🔥 Wildfire started — the autonomous loop executes ready tasks, refines the backlog, and generates new tasks until nothing is left. /wildfire off to stop." + replacedNote(prev, had)
 		if watching {
 			msg += "\nI'll post milestones here as they happen."
 		} else {

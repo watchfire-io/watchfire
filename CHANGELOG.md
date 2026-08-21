@@ -1,5 +1,13 @@
 # Changelog
 
+## [10.0.2] Torch
+
+Patch release: mode switches from Telegram now behave like every other client.
+
+### Fixed
+
+- **Starting a mode from Telegram replaces the running agent instead of refusing.** `/run`, `/run all`, `/wildfire`, `/generate`, and `/plan` had inherited the MCP `run_task` "never queue, never replace" contract — sensible when the caller is another agent, absurd for a human: with the GUI's always-on chat agent live, `/wildfire` answered "⛔ An agent is already running (mode chat)", `/cancel` wanted a task number, and `/stop` then `/wildfire` lost the race to the GUI auto-restarting chat. The starters now go straight through the daemon's `StartAgent` — the same atomic kill+restart the GUI mode buttons and the TUI use — and the confirmation names what was displaced ("▶ Started task #0009 … Replaced the running chat session."). One refusal remains, deliberately: `/new` (a chat start) never displaces a working non-chat agent, and says to `/stop` first. An already-running wildfire is reported rather than restarted. The MCP tools keep their never-replace contract untouched.
+
 ## [10.0.1] Torch
 
 Patch release: one transcript-lookup bug that silently disabled watch mode and session-transcript capture for any project whose path contains a dot or underscore (found live when `n9o.xyz` never streamed to Telegram while `watchfire-website` did).

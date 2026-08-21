@@ -1,9 +1,9 @@
 // v10.0 Torch, task 0142 — the run-control seam the Telegram bridge's
-// /run /runall /say verbs act through. Counterpart of the read-only
+// run verbs and /say act through. Counterpart of the read-only
 // agentSessionSource (telegram_sessions.go): this adapter is the only
-// place Telegram-originated writes touch the agent manager, and it
-// enforces the same contract as the MCP run_task tool — an in-flight
-// agent is never queued behind and never replaced.
+// place Telegram-originated writes touch the agent manager. Mode
+// switches REPLACE the running agent, like the GUI/TUI (v10.0.2); only
+// the plain-text chat auto-start is refusal-gated.
 package server
 
 import (
@@ -22,40 +22,43 @@ type agentRunController struct {
 	watcher *watcher.Watcher
 }
 
-// StartTask starts a task-mode session, refusing while an agent runs.
+// StartTask starts a task-mode session, replacing a running agent
+// (mode switches replace — same as the GUI/TUI; Manager.StartAgent
+// does the atomic kill+restart).
 func (c *agentRunController) StartTask(ctx context.Context, projectID string, taskNumber int) (telegram.RunStart, error) {
-	return c.start(ctx, projectID, string(agent.ModeTask), taskNumber)
+	return c.startUnchecked(ctx, projectID, string(agent.ModeTask), taskNumber)
 }
 
-// StartRunAll starts run-all mode, refusing while an agent runs.
+// StartRunAll starts run-all mode, replacing a running agent.
 func (c *agentRunController) StartRunAll(ctx context.Context, projectID string) (telegram.RunStart, error) {
-	return c.start(ctx, projectID, string(agent.ModeStartAll), 0)
+	return c.startUnchecked(ctx, projectID, string(agent.ModeStartAll), 0)
 }
 
 // StartChat starts an interactive chat-mode session — the bridge's
 // plain-text conversation path auto-starts one when nothing is
-// running. Refuses while an agent runs, like the other starters (and
-// the daemon's own chat-over-non-chat refusal backs this up).
+// running. This is the one CHECKED starter: it refuses while an agent
+// runs (the bridge only calls it when nothing is live; this guards the
+// race), and the daemon's chat-over-non-chat refusal backs it up.
 func (c *agentRunController) StartChat(ctx context.Context, projectID string) (telegram.RunStart, error) {
 	return c.start(ctx, projectID, string(agent.ModeChat), 0)
 }
 
-// StartWildfire starts the autonomous wildfire loop (/wildfire on),
-// refusing while an agent runs.
+// StartWildfire starts the autonomous wildfire loop (/wildfire),
+// replacing a running agent.
 func (c *agentRunController) StartWildfire(ctx context.Context, projectID string) (telegram.RunStart, error) {
-	return c.start(ctx, projectID, string(agent.ModeWildfire), 0)
+	return c.startUnchecked(ctx, projectID, string(agent.ModeWildfire), 0)
 }
 
 // StartGenerate starts a generate-definition session (/generate),
-// refusing while an agent runs.
+// replacing a running agent.
 func (c *agentRunController) StartGenerate(ctx context.Context, projectID string) (telegram.RunStart, error) {
-	return c.start(ctx, projectID, string(agent.ModeGenerateDefinition), 0)
+	return c.startUnchecked(ctx, projectID, string(agent.ModeGenerateDefinition), 0)
 }
 
-// StartPlan starts a generate-tasks session (/plan), refusing while an
-// agent runs.
+// StartPlan starts a generate-tasks session (/plan), replacing a
+// running agent.
 func (c *agentRunController) StartPlan(ctx context.Context, projectID string) (telegram.RunStart, error) {
-	return c.start(ctx, projectID, string(agent.ModeGenerateTasks), 0)
+	return c.startUnchecked(ctx, projectID, string(agent.ModeGenerateTasks), 0)
 }
 
 // RestartChat starts a fresh chat session (/new). Deliberately NO
@@ -73,15 +76,8 @@ func (c *agentRunController) StopAgent(projectID string) error {
 	return c.mgr.StopAgentByUser(projectID)
 }
 
-// start delegates to the agentService StartAgent path — the same code
-// the gRPC surface (and therefore MCP run_task / run_all) goes
-// through, with the same synthetic-request shape the tray uses: rows/
-// cols 0 (daemon default PTY size) and sandbox "auto".
-//
-// Manager.StartAgent REPLACES a running agent, so the refusal check
-// here is mandatory, mirroring the MCP server's requireNoRunningAgent.
-// The bridge pre-checks through its SessionSource for a richer chat
-// message; this is the authoritative backstop.
+// start is the refusal-gated variant (used by StartChat): it refuses
+// while an agent runs, then delegates to startUnchecked.
 func (c *agentRunController) start(ctx context.Context, projectID, mode string, taskNumber int) (telegram.RunStart, error) {
 	if ag, running := c.mgr.GetAgent(projectID); running && ag != nil {
 		desc := fmt.Sprintf("mode %q", ag.Mode)
@@ -93,9 +89,14 @@ func (c *agentRunController) start(ctx context.Context, projectID, mode string, 
 	return c.startUnchecked(ctx, projectID, mode, taskNumber)
 }
 
-// startUnchecked delegates to StartAgent without the refusal pre-check
-// — for RestartChat, where the daemon's own replace/refuse semantics
-// are exactly the desired contract.
+// startUnchecked delegates to the agentService StartAgent path — the
+// same code the gRPC surface (GUI/TUI mode buttons) goes through, with
+// the same synthetic-request shape the tray uses: rows/cols 0 (daemon
+// default PTY size) and sandbox "auto". Manager.StartAgent atomically
+// REPLACES a running agent (kill + wait + spawn), which is the desired
+// mode-switch semantics for a human on Telegram; the daemon itself still
+// refuses a chat start over a working non-chat agent or a mid-chain
+// transition.
 func (c *agentRunController) startUnchecked(ctx context.Context, projectID, mode string, taskNumber int) (telegram.RunStart, error) {
 	svc := &agentService{manager: c.mgr, watcher: c.watcher}
 	st, err := svc.StartAgent(ctx, &pb.StartAgentRequest{

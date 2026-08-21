@@ -159,26 +159,27 @@ func runControlBridge(runner RunController, sessions SessionSource, chats []mode
 	})
 }
 
-// TestRunRefusesWhileAgentRunning: /run against a project with a live
-// session is refused — never queued, never replaced — naming the
-// in-flight task, and the RunController is never invoked.
-func TestRunRefusesWhileAgentRunning(t *testing.T) {
+// TestRunReplacesRunningAgent: /run against a project with a live
+// session REPLACES it — the same mode-switch semantics as the GUI/TUI
+// (v10.0.2) — and the confirmation names what was replaced, escaped.
+func TestRunReplacesRunningAgent(t *testing.T) {
 	withTestEnv(t)
 	fake := newFakeBotAPI(t, updateJSON(1, 42, 42, "nuno", "/run 9"))
 	runner := &stubRunner{}
 	b := runControlBridge(runner, busySession(), chatOnProject("p1"))
 	startBridge(t, b)
 
-	waitFor(t, "refusal reply", func() bool { return len(fake.sentMessages()) >= 1 })
+	waitFor(t, "start confirmation", func() bool { return len(fake.sentMessages()) >= 1 })
 	txt := fake.sentMessages()[0].Text
-	if !strings.Contains(txt, "already running") || !strings.Contains(txt, "#0007") {
-		t.Fatalf("refusal should name the in-flight task: %q", txt)
+	if !strings.Contains(txt, "▶ Started task #0009") {
+		t.Fatalf("should confirm the start: %q", txt)
 	}
-	if !strings.Contains(txt, "Busy &lt;task&gt;") {
-		t.Fatalf("in-flight task title missing or unescaped: %q", txt)
+	if !strings.Contains(txt, "Replaced the running task #0007 — Busy &lt;task&gt;") {
+		t.Fatalf("confirmation should name the replaced session, escaped: %q", txt)
 	}
-	if starts, runAlls, inputs := runner.snapshot(); len(starts)+len(runAlls)+len(inputs) != 0 {
-		t.Fatalf("refusal must not touch the RunController: %v %v %v", starts, runAlls, inputs)
+	starts, _, _ := runner.snapshot()
+	if len(starts) != 1 || starts[0] != 9 {
+		t.Fatalf("StartTask calls = %v, want [9] (replace, not refuse)", starts)
 	}
 }
 
@@ -233,22 +234,22 @@ func TestRunUsageAndStartError(t *testing.T) {
 	}
 }
 
-// TestRunAllRefusesWhileAgentRunning: /runall has the same
-// never-queue-never-replace semantics as /run.
-func TestRunAllRefusesWhileAgentRunning(t *testing.T) {
+// TestRunAllReplacesRunningAgent: /runall replaces a running agent
+// like /run, naming what it replaced.
+func TestRunAllReplacesRunningAgent(t *testing.T) {
 	withTestEnv(t)
 	fake := newFakeBotAPI(t, updateJSON(1, 42, 42, "nuno", "/runall"))
-	runner := &stubRunner{}
+	runner := &stubRunner{start: RunStart{TaskNumber: 3, TaskTitle: "First"}}
 	b := runControlBridge(runner, busySession(), chatOnProject("p1"))
 	startBridge(t, b)
 
-	waitFor(t, "refusal reply", func() bool { return len(fake.sentMessages()) >= 1 })
+	waitFor(t, "start confirmation", func() bool { return len(fake.sentMessages()) >= 1 })
 	txt := fake.sentMessages()[0].Text
-	if !strings.Contains(txt, "already running") || !strings.Contains(txt, "#0007") {
-		t.Fatalf("refusal should name the in-flight task: %q", txt)
+	if !strings.Contains(txt, "▶ Run-all started on task #0003") || !strings.Contains(txt, "Replaced the running task #0007") {
+		t.Fatalf("run-all should replace and say so: %q", txt)
 	}
-	if _, runAlls, _ := runner.snapshot(); len(runAlls) != 0 {
-		t.Fatalf("refusal must not start run-all: %v", runAlls)
+	if _, runAlls, _ := runner.snapshot(); len(runAlls) != 1 {
+		t.Fatalf("StartRunAll calls = %v, want 1 (replace, not refuse)", runAlls)
 	}
 }
 
@@ -699,19 +700,44 @@ func TestWildfireVerb(t *testing.T) {
 	}
 }
 
-func TestWildfireVerbRefusesWhileBusy(t *testing.T) {
+// TestWildfireReplacesRunningAgent: /wildfire over a running task
+// replaces it (like the GUI's Wildfire button), naming what it replaced;
+// a wildfire already running is reported rather than restarted.
+func TestWildfireReplacesRunningAgent(t *testing.T) {
 	withTestEnv(t)
 	fake := newFakeBotAPI(t, updateJSON(1, 42, 42, "nuno", "/wildfire"))
 	runner := &stubRunner{}
 	b := runControlBridge(runner, busySession(), chatOnProject("p1"))
 	startBridge(t, b)
 
-	waitFor(t, "refusal", func() bool { return sentContaining(fake, "already running") })
+	waitFor(t, "start reply", func() bool { return sentContaining(fake, "Wildfire started") })
+	if !sentContaining(fake, "Replaced the running task #0007") {
+		t.Fatalf("wildfire start should name the replaced session: %+v", fake.sentMessages())
+	}
+	runner.mu.Lock()
+	wf := len(runner.wildfireStarts)
+	runner.mu.Unlock()
+	if wf != 1 {
+		t.Fatalf("StartWildfire calls = %d, want 1 (replace, not refuse)", wf)
+	}
+}
+
+func TestWildfireAlreadyRunningIsReported(t *testing.T) {
+	withTestEnv(t)
+	fake := newFakeBotAPI(t, updateJSON(1, 42, 42, "nuno", "/wildfire"))
+	runner := &stubRunner{}
+	sessions := &fakeSessions{sess: map[string]*WatchedSession{
+		"p1": {ProjectID: "p1", Mode: "wildfire", Phase: "refine"},
+	}}
+	b := runControlBridge(runner, sessions, chatOnProject("p1"))
+	startBridge(t, b)
+
+	waitFor(t, "already-running reply", func() bool { return sentContaining(fake, "already running (refine phase)") })
 	runner.mu.Lock()
 	wf := len(runner.wildfireStarts)
 	runner.mu.Unlock()
 	if wf != 0 {
-		t.Fatalf("busy refusal must not start wildfire")
+		t.Fatalf("a running wildfire must not be restarted by /wildfire")
 	}
 }
 
@@ -776,19 +802,22 @@ func TestGenerateAndPlanVerbs(t *testing.T) {
 	}
 }
 
-func TestGenerateRefusesWhileBusy(t *testing.T) {
+func TestGenerateReplacesRunningAgent(t *testing.T) {
 	withTestEnv(t)
 	fake := newFakeBotAPI(t, updateJSON(1, 42, 42, "nuno", "/generate"))
 	runner := &stubRunner{}
 	b := runControlBridge(runner, busySession(), chatOnProject("p1"))
 	startBridge(t, b)
 
-	waitFor(t, "refusal", func() bool { return sentContaining(fake, "already running") })
+	waitFor(t, "confirmation", func() bool { return sentContaining(fake, "Generating the project definition") })
+	if !sentContaining(fake, "Replaced the running task #0007") {
+		t.Fatalf("generate should name the replaced session: %+v", fake.sentMessages())
+	}
 	runner.mu.Lock()
 	gen := len(runner.generateStarts)
 	runner.mu.Unlock()
-	if gen != 0 {
-		t.Fatalf("busy refusal must not start generate")
+	if gen != 1 {
+		t.Fatalf("StartGenerate calls = %d, want 1 (replace, not refuse)", gen)
 	}
 }
 
@@ -835,7 +864,7 @@ func TestNewRefusesWhileBusy(t *testing.T) {
 	b := runControlBridge(runner, busySession(), chatOnProject("p1"))
 	startBridge(t, b)
 
-	waitFor(t, "refusal", func() bool { return sentContaining(fake, "already running") })
+	waitFor(t, "refusal", func() bool { return sentContaining(fake, "/new only replaces a chat session") })
 	runner.mu.Lock()
 	restarts := len(runner.chatRestarts)
 	runner.mu.Unlock()
