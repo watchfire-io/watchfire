@@ -224,14 +224,21 @@ start is the exception: it is refused with `agent.ErrAgentBusy` whenever a
 non-chat agent is running, and also while a run-all/wildfire chain is
 mid-transition (`Manager.chaining[projectID]`, set between "finished agent
 removed from the map" and "next chained agent registered" — a window of a
-second or more while the next worktree is created). Rationale: the GUI/TUI
+second or more while the next worktree is created), and also while a
+deliberate mode switch is mid-replace (`Manager.replacing[projectID]`, v10.0.4,
+set by `StartAgent`'s own kill+restart path between "running agent killed"
+and "requested agent registered"). Rationale: the GUI/TUI
 auto-start chat whenever they observe `isRunning=false`, and that observation
-can land exactly in the transition window; before this guard the resulting
+can land exactly in either window; before the chain guard the resulting
 `StartAgent(chat)` hit the replace path, marked the freshly chained task agent
 `userStopped`, and silently ended the run with ready tasks still queued
-("run-complete" after N tasks despite a non-empty queue). Chat may still
-replace chat, all non-chat starts keep replace semantics, and a user who wants
-chat during a run must stop the agent explicitly first. Clients treat the
+("run-complete" after N tasks despite a non-empty queue); before the replace
+guard it took the empty slot from the user's own switch (Telegram `/wildfire`
+over a running chat), which then failed with a misleading "timed out waiting
+for previous agent to stop" and left a fresh chat behind. Chat may still
+replace chat, all non-chat starts keep replace semantics — **a deliberate mode
+switch always takes effect** — and a user who wants chat during a run must
+stop the agent explicitly first. Clients treat the
 refusal as expected on their opportunistic auto-start paths (GUI suppresses
 the toast; TUI shows a transient status-bar note and re-fetches status).
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## [10.0.4] Torch
+
+Patch release: a mode switch always takes effect — the GUI's chat auto-start can no longer steal the slot mid-switch.
+
+### Fixed
+
+- **`/wildfire` (and any mode switch over a running chat) no longer fails with "timed out waiting for previous agent to stop".** `StartAgent`'s replace path kills the running agent, then waits for the slot to empty before spawning the requested one. The GUI and TUI poll agent status every ~2 s and auto-start chat the moment they see `isRunning=false` — and that poll can land inside the kill→spawn gap. The opportunistic chat start passed the gate (nothing was running, no chain in flight), registered itself, and the user's switch then found "an agent" still present and bailed with the timeout message, leaving a fresh chat where wildfire had been asked for (the project log shows `exited (mode: chat)` immediately followed by `started (chat mode)`). The daemon now marks the replace window (`Manager.replacing`, the sibling of the v10 chain-transition mark) and `refuseChatStart` refuses chat while it is set, so the slot belongs to the switch; the GUI/TUI already treat that refusal as expected on their auto-start paths. The bail-out also says which case it hit — old process never left, or another client's non-chat start took the slot — instead of calling both a timeout.
+
 ## [10.0.3] Torch
 
 Patch release: Claude's periodic OAuth revocation ("Please run /login") can now be fixed from Telegram.

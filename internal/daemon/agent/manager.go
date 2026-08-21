@@ -106,10 +106,14 @@ var ErrAgentBusy = errors.New("agent busy")
 
 // refuseChatStart decides whether an incoming start must be refused instead
 // of displacing current state. Only chat-mode starts are ever refused: chat
-// may replace chat (restart), but never a non-chat agent, and never anything
-// while a chain transition is mid-flight (chaining=true). Non-chat starts
-// keep the existing deliberate replace semantics.
-func refuseChatStart(mode Mode, existing *RunningAgent, chaining bool) error {
+// may replace chat (restart), but never a non-chat agent, never anything
+// while a chain transition is mid-flight (chaining=true), and never anything
+// while a deliberate mode switch is mid-replace (replacing=true — the
+// previous agent has been killed and the requested one is not registered
+// yet; the GUI/TUI opportunistic chat auto-start observes exactly that gap
+// and would otherwise take the slot from the user's switch, v10.0.4).
+// Non-chat starts keep the existing deliberate replace semantics.
+func refuseChatStart(mode Mode, existing *RunningAgent, chaining, replacing bool) error {
 	if mode != ModeChat {
 		return nil
 	}
@@ -118,6 +122,9 @@ func refuseChatStart(mode Mode, existing *RunningAgent, chaining bool) error {
 	}
 	if chaining {
 		return fmt.Errorf("%w: run is chaining to the next task", ErrAgentBusy)
+	}
+	if replacing {
+		return fmt.Errorf("%w: a mode switch is replacing the running agent", ErrAgentBusy)
 	}
 	return nil
 }
@@ -128,6 +135,7 @@ type Manager struct {
 	agents         map[string]*RunningAgent // keyed by ProjectID
 	taskRestarts   map[string]int           // keyed by ProjectID — consecutive restarts of the same task
 	chaining       map[string]bool          // keyed by ProjectID — true between "finished agent removed" and "next chained agent registered"
+	replacing      map[string]bool          // keyed by ProjectID — true while StartAgent is killing a running agent to replace it (v10.0.4)
 	onChangeFn     func()                   // called when agent state changes (for tray updates)
 	nextTaskFn     func(projectID, projectPath string, mode Mode, phase WildfirePhase, rows, cols int) (*StartOptions, error)
 	onTaskDoneFn   func(projectPath string, taskNumber int, worktreePath string) TaskDoneResult // v5.0 — structured outcome; chain advances iff TaskDoneOK
@@ -146,6 +154,7 @@ func NewManager() *Manager {
 		agents:          make(map[string]*RunningAgent),
 		taskRestarts:    make(map[string]int),
 		chaining:        make(map[string]bool),
+		replacing:       make(map[string]bool),
 		preflightIssues: make(map[string]*AgentIssue),
 	}
 }
@@ -255,7 +264,7 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 	// A chat start never displaces a working agent or a chain mid-transition
 	// (see ErrAgentBusy). Checked before the replace path below so the
 	// running agent is never marked userStopped by a racing chat auto-start.
-	if err := refuseChatStart(opts.Mode, m.agents[opts.ProjectID], m.chaining[opts.ProjectID]); err != nil {
+	if err := refuseChatStart(opts.Mode, m.agents[opts.ProjectID], m.chaining[opts.ProjectID], m.replacing[opts.ProjectID]); err != nil {
 		m.mu.Unlock()
 		config.ProjectLogf(opts.ProjectID, "[agent] Chat start refused: %v", err)
 		return nil, err
@@ -265,6 +274,18 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 	if existing, ok := m.agents[opts.ProjectID]; ok {
 		existing.userStopped = true // prevent wildfire/start-all chaining
 		proc := existing.Process
+		// Mark the replace window (v10.0.4). Between the kill below and the
+		// registration of the requested agent, m.agents has no entry for the
+		// project; the GUI/TUI poll status every ~2s and auto-start chat the
+		// moment they see isRunning=false. Without this mark that chat start
+		// passed the gate, grabbed the slot, and the user's deliberate switch
+		// (Telegram /wildfire, a GUI mode button, …) then found "an agent"
+		// still present after its poll and failed with a misleading timeout
+		// — leaving a fresh chat where wildfire was asked for. The gate
+		// refuses chat while replacing is set; the mark is cleared under the
+		// re-acquired lock, which is then held through registration, so no
+		// chat start can interleave after that point either.
+		m.replacing[opts.ProjectID] = true
 		m.mu.Unlock() // release lock — monitorProcess needs it for cleanup
 
 		proc.Stop() // blocking: sends SIGTERM, waits for exit
@@ -281,10 +302,16 @@ func (m *Manager) StartAgent(opts StartOptions) (*RunningAgent, error) {
 		}
 
 		m.mu.Lock() // re-acquire for rest of StartAgent
-		// If still present after timeout, bail
-		if _, ok := m.agents[opts.ProjectID]; ok {
+		delete(m.replacing, opts.ProjectID)
+		// If still present after the wait, bail — and say which case it is:
+		// the old process never left (cleanup stalled), or a different
+		// non-chat start (another client's deliberate switch) took the slot.
+		if curr, ok := m.agents[opts.ProjectID]; ok {
 			m.mu.Unlock()
-			return nil, fmt.Errorf("timed out waiting for previous agent to stop")
+			if curr.Process == proc {
+				return nil, fmt.Errorf("timed out waiting for previous agent to stop")
+			}
+			return nil, fmt.Errorf("another %s agent was started while the previous one was being replaced", curr.Mode)
 		}
 	}
 

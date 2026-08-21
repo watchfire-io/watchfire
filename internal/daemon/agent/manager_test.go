@@ -261,26 +261,29 @@ func TestRefuseChatStartMatrix(t *testing.T) {
 	chatAgent := &RunningAgent{Mode: ModeChat}
 
 	cases := []struct {
-		name     string
-		mode     Mode
-		existing *RunningAgent
-		chaining bool
-		wantBusy bool
+		name      string
+		mode      Mode
+		existing  *RunningAgent
+		chaining  bool
+		replacing bool
+		wantBusy  bool
 	}{
-		{"chat with nothing running", ModeChat, nil, false, false},
-		{"chat replacing chat is allowed", ModeChat, chatAgent, false, false},
-		{"chat over wildfire refused", ModeChat, wildfire, false, true},
-		{"chat over task refused", ModeChat, taskAgent, false, true},
-		{"chat over generate-definition refused", ModeChat, genDef, false, true},
-		{"chat during chain transition refused", ModeChat, nil, true, true},
-		{"wildfire keeps replace semantics", ModeWildfire, chatAgent, false, false},
-		{"wildfire unaffected by chaining flag", ModeWildfire, nil, true, false},
-		{"start-all keeps replace semantics", ModeStartAll, wildfire, false, false},
+		{"chat with nothing running", ModeChat, nil, false, false, false},
+		{"chat replacing chat is allowed", ModeChat, chatAgent, false, false, false},
+		{"chat over wildfire refused", ModeChat, wildfire, false, false, true},
+		{"chat over task refused", ModeChat, taskAgent, false, false, true},
+		{"chat over generate-definition refused", ModeChat, genDef, false, false, true},
+		{"chat during chain transition refused", ModeChat, nil, true, false, true},
+		{"chat during mode-switch replace refused", ModeChat, nil, false, true, true},
+		{"wildfire keeps replace semantics", ModeWildfire, chatAgent, false, false, false},
+		{"wildfire unaffected by chaining flag", ModeWildfire, nil, true, false, false},
+		{"wildfire unaffected by replacing flag", ModeWildfire, nil, false, true, false},
+		{"start-all keeps replace semantics", ModeStartAll, wildfire, false, false, false},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			err := refuseChatStart(tc.mode, tc.existing, tc.chaining)
+			err := refuseChatStart(tc.mode, tc.existing, tc.chaining, tc.replacing)
 			if tc.wantBusy && !errors.Is(err, ErrAgentBusy) {
 				t.Errorf("want ErrAgentBusy, got %v", err)
 			}
@@ -328,4 +331,25 @@ func TestStartAgentChatRefusedDuringChainTransition(t *testing.T) {
 	// The "window closed → chat allowed again" side is covered hermetically
 	// by TestRefuseChatStartMatrix; driving StartAgent past the gate here
 	// would spawn a real agent process.
+}
+
+// v10.0.4 — the mode-switch replace window. Telegram /wildfire (and any GUI
+// mode button) over a running chat goes through StartAgent's kill+restart;
+// the GUI's status poll sees the empty slot and auto-starts chat, which used
+// to win the slot and fail the user's switch with "timed out waiting for
+// previous agent to stop". The replacing mark must make that chat start
+// refuse at the gate, exactly like the chain-transition mark.
+func TestStartAgentChatRefusedDuringModeSwitchReplace(t *testing.T) {
+	m := NewManager()
+	m.replacing["p1"] = true
+
+	_, err := m.StartAgent(StartOptions{
+		ProjectID:   "p1",
+		ProjectPath: t.TempDir(),
+		Mode:        ModeChat,
+		Sandbox:     SandboxNone,
+	})
+	if !errors.Is(err, ErrAgentBusy) {
+		t.Fatalf("want ErrAgentBusy, got %v", err)
+	}
 }
