@@ -917,15 +917,24 @@ func TestStopVerbWhenIdle(t *testing.T) {
 
 // loginScreenSession is a scripted chat session whose screen advances
 // through the real /login dialog (captured live from Claude Code
-// v2.1.238) as the bridge types into it: prompt → method picker →
-// sign-in URL. The URL's PKCE challenge is per-process, which is why
-// the flow must drive the live session rather than pre-generate a link.
+// v2.1.238/v2.1.239) as the bridge types into it: prompt → method
+// picker → sign-in URL → "Login successful. Press Enter to continue…" →
+// back to the prompt. The URL's PKCE challenge is per-process, which is
+// why the flow must drive the live session rather than pre-generate a
+// link; the confirmation screen is why the flow cannot stop at the code.
 type loginScreenSession struct {
 	mu    sync.Mutex
-	stage int // 0 prompt, 1 picker, 2 url screen
+	stage int // 0 prompt, 1 picker, 2 url screen, 3 confirm, 4 done
 }
 
 const loginTestURL = "https://claude.com/cai/oauth/authorize?code=true&client_id=9d1c250a&response_type=code&code_challenge=CYTYPPF9vuYP&code_challenge_method=S256&state=2J_3XQ48"
+
+// at reports the dialog's current stage under the lock.
+func (l *loginScreenSession) at() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.stage
+}
 
 func (l *loginScreenSession) screen() []string {
 	l.mu.Lock()
@@ -933,10 +942,13 @@ func (l *loginScreenSession) screen() []string {
 	switch l.stage {
 	case 1:
 		return []string{"Login", "Select login method:", "  ❯ 1. Claude account with subscription", "    2. Anthropic Console account", "Esc to cancel"}
-	case 2:
+	case 2, -2:
 		// The terminal wraps the long URL across lines.
 		return []string{"Login", "Browser didn't open? Use the url below to sign in (c to copy)",
-			loginTestURL[:60], loginTestURL[60:], "Paste code here if prompted >"}
+			loginTestURL[:60], loginTestURL[60:], "", "Paste code here if prompted >", "Esc to cancel"}
+	case 3:
+		return []string{"Login", "", "Logged in as nuno@example.com",
+			"Login successful. Press Enter to continue…"}
 	default:
 		return []string{"❯ Try \"how do I log an error?\"", "⏵⏵ bypass permissions on"}
 	}
@@ -945,7 +957,9 @@ func (l *loginScreenSession) screen() []string {
 // advanceOnInput moves the dialog forward as the bridge's writes arrive,
 // mirroring the real CLI: "/login" + its Enter opens the picker (the
 // Enter that submits the command is NOT a picker selection); the next
-// lone Enter selects option 1 and shows the URL.
+// lone Enter selects option 1 and shows the URL; the code + its Enter
+// exchanges the token and parks on the confirmation, which only a final
+// Enter dismisses.
 func (l *loginScreenSession) advanceOnInput(chunk string) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -956,6 +970,35 @@ func (l *loginScreenSession) advanceOnInput(chunk string) {
 		l.stage = 1
 	case l.stage == 1 && chunk == "\r":
 		l.stage = 2
+	case l.stage == 2 && chunk != "" && chunk != "\r":
+		l.stage = -2 // code typed, awaiting its Enter
+	case l.stage == -2 && chunk == "\r":
+		l.stage = 3
+	case l.stage == 3 && chunk == "\r":
+		l.stage = 4
+	}
+}
+
+// TestLoginURLFromScreen: the wrapped URL is rebuilt without swallowing
+// the "Paste code here if prompted >" line printed underneath it —
+// v10.0.4 joined the whole screen and welded that text onto the state
+// parameter, corrupting the code the user copied back.
+func TestLoginURLFromScreen(t *testing.T) {
+	screen := (&loginScreenSession{stage: 2}).screen()
+	got := loginURLFromScreen(screen)
+	if got != loginTestURL {
+		t.Fatalf("URL mis-scraped:\n got %q\nwant %q", got, loginTestURL)
+	}
+	if strings.Contains(strings.ToLower(got), "paste") {
+		t.Fatalf("trailing screen text glued onto the URL: %q", got)
+	}
+	// A URL sharing its line with other text ends at the space.
+	boxed := []string{"│ Open https://claude.com/cai/oauth/authorize?state=abc now │"}
+	if got := loginURLFromScreen(boxed); got != "https://claude.com/cai/oauth/authorize?state=abc" {
+		t.Fatalf("boxed URL mis-scraped: %q", got)
+	}
+	if got := loginURLFromScreen([]string{"nothing here"}); got != "" {
+		t.Fatalf("no URL should read as empty, got %q", got)
 	}
 }
 
@@ -999,10 +1042,19 @@ func TestLoginFlow(t *testing.T) {
 	fake.mu.Lock()
 	fake.script = append(fake.script, updateJSON(2, 42, 42, "nuno", "AbC123-code#xyz"))
 	fake.mu.Unlock()
-	waitFor(t, "code pasted", func() bool { return sentContaining(fake, "Code pasted") })
+	waitFor(t, "login confirmed", func() bool { return sentContaining(fake, "Logged in as") })
+	if !sentContaining(fake, "nuno@example.com") {
+		t.Fatalf("the confirmation should name the account: %+v", fake.sentMessages())
+	}
+	// The code + its Enter, then the Enter that dismisses "Login
+	// successful. Press Enter to continue…" — without that last one the
+	// session stays parked on the dialog (the v10.0.4 bug).
 	_, _, inputs = runner.snapshot()
-	if len(inputs) != 6 || inputs[4] != "AbC123-code#xyz" || inputs[5] != "\r" {
-		t.Fatalf("code should be pasted verbatim + Enter, got %q", inputs)
+	if len(inputs) != 8 || inputs[4] != "AbC123-code#xyz" || inputs[5] != "\r" || inputs[6] != "" || inputs[7] != "\r" {
+		t.Fatalf("code should be pasted verbatim + Enter, then a confirming Enter, got %q", inputs)
+	}
+	if screen.at() != 4 {
+		t.Fatalf("the login dialog should be dismissed, stage = %d", screen.at())
 	}
 	runner.mu.Lock()
 	chatStarts := len(runner.chatStarts)

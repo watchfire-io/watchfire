@@ -1,5 +1,14 @@
 # Changelog
 
+## [10.0.5] Torch
+
+Patch release: `/login` from Telegram now finishes the job — it presses the Enter that closes Claude's confirmation screen.
+
+### Fixed
+
+- **`/login` completes the sign-in instead of parking the session on "Press Enter to continue…".** The remote re-auth worked right up to its last keystroke: link relayed, code pasted, token exchanged — and then Claude printed `Logged in as <you>` / `Login successful. Press Enter to continue…` and *waited*. Nobody pressed it, so the dialog kept the session hostage: the agent still showed "Not logged in · Run /login" in its status bar and the original message was never answered, while Telegram had cheerfully said "Code pasted" and moved on. The flow now watches the screen after the paste and drives it to a real end — Enter on the confirmation, then a check that the dialog actually went away — and reports what happened: `✅ Logged in as you@example.com. The session is back — just type to keep going.` A rejected code is called out as rejected instead of timing out silently, and `/login` on a session already parked on the confirmation just presses the Enter.
+- **The relayed sign-in URL no longer has the next screen line welded to it.** The scraper rebuilt the terminal-wrapped URL by joining the *whole* screen with no separator, so `Paste code here if prompted >` — printed directly below the link — was appended to the `state` parameter. The corrupted state travelled out to the browser and came back glued to the code the user pasted in. The URL is now reassembled only from the run of consecutive unbroken lines that starts at `https://`, and stops at the first blank line, space, or box border.
+
 ## [10.0.4] Torch
 
 Patch release: a mode switch always takes effect — the GUI's chat auto-start can no longer steal the slot mid-switch.

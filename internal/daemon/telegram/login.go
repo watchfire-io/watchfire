@@ -15,9 +15,15 @@
 //     "Use the url below to sign in" screen;
 //  3. scrape the https://…/oauth/authorize?… URL and send it to the
 //     chat; ARM the chat so its next plain-text message is pasted as
-//     the code (Claude then shows "Paste code here if prompted >").
+//     the code (Claude then shows "Paste code here if prompted >");
+//  4. after the code lands Claude prints "Login successful. Press Enter
+//     to continue…" and WAITS. The dialog owns the session until that
+//     last Enter arrives — v10.0.4 stopped at step 3 and left the agent
+//     parked on a successful-but-unclosed login screen (auth worked,
+//     the session was still dead). So: press it, then report what the
+//     screen actually says rather than assuming.
 //
-// Live capture of the dialog (Claude Code v2.1.238) pinned the three
+// Live capture of the dialog (Claude Code v2.1.238/v2.1.239) pinned the
 // screen markers the state machine keys on.
 package telegram
 
@@ -33,15 +39,29 @@ import (
 // the normalized screen — the CLI positions words with cursor escapes,
 // so stripped lines can lose their spaces).
 const (
-	loginPickerMarker = "selectloginmethod"
-	loginURLMarker    = "usetheurlbelowtosignin"
-	loginPasteMarker  = "pastecodehere"
+	loginPickerMarker  = "selectloginmethod"
+	loginURLMarker     = "usetheurlbelowtosignin"
+	loginPasteMarker   = "pastecodehere"
+	loginConfirmMarker = "pressentertocontinue"
 )
 
-// oauthURLPattern finds the authorize URL on the login screen. The URL
-// may be wrapped across screen lines by the terminal, so callers feed a
-// whitespace-collapsed screen.
+// loginFailureMarkers are the phrases the dialog shows when the pasted
+// code is rejected. Matching one ends the wait early with an honest
+// "that code didn't work" instead of a 20s silence.
+var loginFailureMarkers = []string{
+	"invalidcode",
+	"loginfailed",
+	"authenticationfailed",
+	"errorloggingin",
+	"oautherror",
+}
+
+// oauthURLPattern finds the authorize URL on the login screen.
 var oauthURLPattern = regexp.MustCompile(`https://[a-z0-9.-]+/[^\s]*oauth/authorize\?[^\s"'<>]+`)
+
+// loggedInAsPattern scrapes the account line the confirmation screen
+// shows ("Logged in as someone@example.com").
+var loggedInAsPattern = regexp.MustCompile(`(?i)logged in as ([^\s]+@[^\s]+)`)
 
 // loginStepTimeout bounds each dialog transition wait.
 const loginStepTimeout = 20 * time.Second
@@ -65,6 +85,13 @@ func (b *Bridge) cmdLogin(ctx context.Context, chatID int64) {
 		return
 	}
 
+	// Already parked on "Login successful. Press Enter to continue…"
+	// (an earlier attempt, or a login driven from the GUI)? All that's
+	// left is the Enter.
+	if b.screenHas(sess, loginConfirmMarker) {
+		b.finishLogin(ctx, chatID, projectID, sess)
+		return
+	}
 	// Already on the URL screen (e.g. someone typed /login in the GUI)?
 	// Skip straight to relaying it.
 	if url := b.loginURLOnScreen(sess); url != "" {
@@ -117,9 +144,10 @@ func (b *Bridge) relayLoginURL(ctx context.Context, chatID int64, projectID, url
 }
 
 // handleLoginCode consumes the code for an armed chat: pastes it into
-// the session (injectSay — text then Enter), disarms, and reports.
-// Returns false when the chat wasn't armed (the caller treats the text
-// as ordinary conversation).
+// the session (injectSay — text then Enter), disarms, and then drives
+// the dialog to its actual end (see finishLogin). Returns false when the
+// chat wasn't armed (the caller treats the text as ordinary
+// conversation).
 func (b *Bridge) handleLoginCode(ctx context.Context, chatID int64, text string) bool {
 	b.mu.Lock()
 	projectID, armed := b.loginPending[chatID]
@@ -139,20 +167,134 @@ func (b *Bridge) handleLoginCode(ctx context.Context, chatID int64, text string)
 		b.reply(ctx, chatID, "Couldn't paste the code: "+EscapeHTML(err.Error()))
 		return true
 	}
-	b.reply(ctx, chatID, "✅ Code pasted. If Claude accepts it the session resumes on its own; /screen to check.")
+	sess, live := b.runningSession(projectID)
+	if !live || sess.Snapshot == nil {
+		b.reply(ctx, chatID, "✅ Code pasted. /screen to check the session.")
+		return true
+	}
+	b.sendTyping(ctx, chatID)
+	b.finishLogin(ctx, chatID, projectID, sess)
 	return true
 }
 
-// loginURLOnScreen scrapes the OAuth URL from the session's current
-// screen, joining wrapped lines first.
-func (b *Bridge) loginURLOnScreen(sess *WatchedSession) string {
-	if sess.Snapshot == nil {
+// finishLogin waits for the dialog's verdict on the pasted code and, on
+// success, presses the Enter that closes it. Claude's last screen is
+// "Login successful. Press Enter to continue…" — without that keystroke
+// the session stays parked on the dialog forever, which is exactly the
+// half-finished state v10.0.4 shipped.
+func (b *Bridge) finishLogin(ctx context.Context, chatID int64, projectID string, sess *WatchedSession) {
+	var rejected bool
+	confirmed := b.waitScreen(ctx, sess, func(s string) bool {
+		for _, m := range loginFailureMarkers {
+			if strings.Contains(s, m) {
+				rejected = true
+				return true
+			}
+		}
+		return strings.Contains(s, loginConfirmMarker)
+	})
+	switch {
+	case rejected:
+		b.reply(ctx, chatID, "❌ Claude rejected that code. Send /login for a fresh link — copy the whole code, including everything after the <code>#</code>.")
+		return
+	case !confirmed:
+		b.reply(ctx, chatID, "✅ Code pasted, but Claude hasn't confirmed yet — /screen to check, /login to retry.")
+		return
+	}
+	// Scrape the account line before the Enter wipes the screen.
+	who := loginAccountOnScreen(sess)
+	if err := b.injectSay(projectID, ""); err != nil {
+		b.reply(ctx, chatID, loginDoneLine(who)+" — but I couldn't press Enter to close the dialog: "+EscapeHTML(err.Error()))
+		return
+	}
+	if b.waitScreen(ctx, sess, func(s string) bool { return !strings.Contains(s, loginConfirmMarker) }) {
+		b.reply(ctx, chatID, loginDoneLine(who)+" The session is back — just type to keep going.")
+		return
+	}
+	b.reply(ctx, chatID, loginDoneLine(who)+" I pressed Enter but the dialog is still up — /screen to check.")
+}
+
+// loginDoneLine names the account when the screen offered one.
+func loginDoneLine(account string) string {
+	if account == "" {
+		return "✅ Logged in."
+	}
+	return "✅ Logged in as <b>" + EscapeHTML(account) + "</b>."
+}
+
+// loginAccountOnScreen reads "Logged in as <email>" off the current
+// screen, "" when the line isn't there.
+func loginAccountOnScreen(sess *WatchedSession) string {
+	if sess == nil || sess.Snapshot == nil {
 		return ""
 	}
-	joined := strings.Join(strings.Fields(normalizeScreen(sess.Snapshot())), "")
-	// Field-joining removed the spaces; the URL itself never contains
-	// spaces, and the marker text around it is matched separately.
-	return oauthURLPattern.FindString(joined)
+	m := loggedInAsPattern.FindStringSubmatch(normalizeScreen(sess.Snapshot()))
+	if len(m) < 2 {
+		return ""
+	}
+	return strings.Trim(m[1], ".,;")
+}
+
+// loginURLOnScreen scrapes the OAuth URL from the session's current
+// screen.
+func (b *Bridge) loginURLOnScreen(sess *WatchedSession) string {
+	if sess == nil || sess.Snapshot == nil {
+		return ""
+	}
+	return loginURLFromScreen(sess.Snapshot())
+}
+
+// loginURLFromScreen rebuilds the sign-in URL from a screen snapshot.
+// The terminal wraps the long URL across several lines, so it is
+// reassembled from the run of consecutive unbroken lines starting at
+// "https://" — deliberately NOT by joining the whole screen: the login
+// screen prints "Paste code here if prompted >" just below the link, and
+// a whole-screen join welded that text onto the state parameter
+// (observed live in v10.0.4 — the corrupted state travelled to the
+// browser and came back glued to the user's code).
+func loginURLFromScreen(lines []string) string {
+	plain := strings.Split(normalizeScreen(lines), "\n")
+	for i, l := range plain {
+		l = trimScreenEdges(l)
+		idx := strings.Index(l, "https://")
+		if idx < 0 {
+			continue
+		}
+		url := l[idx:]
+		if fields := strings.Fields(url); len(fields) > 1 {
+			// Something else shares the line: the URL ends at the space.
+			url = fields[0]
+		} else {
+			// Unbroken to the edge — absorb wrap continuations. A blank
+			// line, or any line carrying a space, ends the URL.
+			for _, next := range plain[i+1:] {
+				next = trimScreenEdges(next)
+				if next == "" || strings.ContainsAny(next, " \t") {
+					break
+				}
+				url += next
+			}
+		}
+		if found := oauthURLPattern.FindString(url); found != "" {
+			return found
+		}
+	}
+	return ""
+}
+
+// trimScreenEdges strips padding and box-drawing borders from a screen
+// line so a boxed URL reads the same as a bare one.
+func trimScreenEdges(l string) string {
+	return strings.TrimSpace(strings.Trim(strings.TrimSpace(l), "│┃|"))
+}
+
+// screenHas reports whether the session's current screen carries a
+// marker (same normalization waitScreen uses).
+func (b *Bridge) screenHas(sess *WatchedSession, marker string) bool {
+	if sess == nil || sess.Snapshot == nil {
+		return false
+	}
+	return strings.Contains(flattenScreen(sess.Snapshot()), marker)
 }
 
 // waitScreen polls the session's normalized, whitespace-collapsed,
@@ -161,14 +303,20 @@ func (b *Bridge) waitScreen(ctx context.Context, sess *WatchedSession, pred func
 	deadline := time.Now().Add(loginStepTimeout)
 	for time.Now().Before(deadline) && ctx.Err() == nil {
 		if sess.Snapshot != nil {
-			s := strings.ToLower(strings.Join(strings.Fields(normalizeScreen(sess.Snapshot())), ""))
-			if pred(s) {
+			if pred(flattenScreen(sess.Snapshot())) {
 				return true
 			}
 		}
 		b.sleepFn(ctx, b.chatStartPoll)
 	}
 	return false
+}
+
+// flattenScreen renders a snapshot as one lower-cased, space-free string
+// — the form the dialog markers are written against (the CLI positions
+// words with cursor escapes, so spacing is not dependable).
+func flattenScreen(lines []string) string {
+	return strings.ToLower(strings.Join(strings.Fields(normalizeScreen(lines)), ""))
 }
 
 // loginHint is the auto-relay text when the watched session raises an
