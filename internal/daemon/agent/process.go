@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"github.com/creack/pty"
 	"github.com/hinshun/vt10x"
@@ -66,7 +67,10 @@ type Process struct {
 
 	scrollMu   sync.RWMutex
 	scrollback []string
-	startedAt  time.Time
+	// scrollPartial holds the trailing bytes of a multi-byte UTF-8 rune
+	// that a PTY read split across chunk boundaries. See appendScrollback.
+	scrollPartial []byte
+	startedAt     time.Time
 
 	rawBufMu      sync.RWMutex
 	rawBuf        []byte // Accumulated raw PTY output for late-join catch-up
@@ -410,18 +414,91 @@ func (p *Process) broadcastScreen(update *ScreenUpdate) {
 }
 
 // appendScrollback adds raw data lines to the scrollback buffer.
+//
+// data is whatever one PTY read returned, so a multi-byte UTF-8 rune can
+// straddle the boundary between two chunks. Converting such a chunk with
+// string(data) yields INVALID UTF-8, and scrollback is served over gRPC,
+// where proto3 string fields must be valid UTF-8 — the whole response
+// then fails to marshal ("string field contains invalid UTF-8"), so a
+// single split rune could break GetScrollback and get_agent_screen for
+// the rest of the session. Claude Code's box-drawing frames and spinner
+// glyphs are multi-byte, so this is routine, not exotic.
+//
+// Incomplete trailing bytes are therefore carried over to the next call,
+// and anything still invalid afterwards (genuinely malformed output, not
+// just a split) is replaced with U+FFFD so the buffer can never hold
+// bytes the wire cannot carry.
 func (p *Process) appendScrollback(data []byte) {
 	p.scrollMu.Lock()
 	defer p.scrollMu.Unlock()
 
+	if len(p.scrollPartial) > 0 {
+		data = append(p.scrollPartial, data...)
+		p.scrollPartial = nil
+	}
+	if n := incompleteRuneSuffix(data); n > 0 {
+		p.scrollPartial = append([]byte(nil), data[len(data)-n:]...)
+		data = data[:len(data)-n]
+	}
+
 	// Split data into lines and append
-	text := string(data)
+	text := sanitizeUTF8(string(data))
 	lines := strings.Split(text, "\n")
 	for _, line := range lines {
 		if line != "" {
 			p.scrollback = append(p.scrollback, line)
 		}
 	}
+}
+
+// incompleteRuneSuffix reports how many trailing bytes of b begin a
+// multi-byte UTF-8 rune that is not yet complete — i.e. bytes to hold
+// back until the rest arrives. Returns 0 when b ends on a rune boundary
+// or the tail is simply invalid (which sanitizeUTF8 handles instead of
+// waiting forever for bytes that will never come).
+func incompleteRuneSuffix(b []byte) int {
+	// A rune is at most utf8.UTFMax bytes, so only that many trailing
+	// bytes can be part of an unfinished one.
+	for i := 1; i <= utf8.UTFMax && i <= len(b); i++ {
+		start := len(b) - i
+		if utf8.RuneStart(b[start]) {
+			if r, size := utf8.DecodeRune(b[start:]); r == utf8.RuneError && size <= 1 {
+				// A rune start byte that does not decode: either
+				// truncated (hold it) or malformed (let sanitizeUTF8
+				// deal with it once we know no more bytes are coming).
+				if expected := runeLen(b[start]); expected > i {
+					return i
+				}
+			}
+			return 0
+		}
+	}
+	return 0
+}
+
+// runeLen returns the encoded length a UTF-8 rune starting with b would
+// have, or 0 if b is not a rune start byte.
+func runeLen(b byte) int {
+	switch {
+	case b < 0x80:
+		return 1
+	case b&0xE0 == 0xC0:
+		return 2
+	case b&0xF0 == 0xE0:
+		return 3
+	case b&0xF8 == 0xF0:
+		return 4
+	}
+	return 0
+}
+
+// sanitizeUTF8 replaces invalid byte sequences with U+FFFD, leaving
+// valid input untouched (and allocation-free in that common case).
+func sanitizeUTF8(s string) string {
+	if utf8.ValidString(s) {
+		return s
+	}
+	return strings.ToValidUTF8(s, string(utf8.RuneError))
 }
 
 // GetScrollback returns a slice of the scrollback buffer.
