@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -113,16 +114,30 @@ func GenerateProfile(policy SandboxPolicy) string {
 
 	// KEYCHAIN - Agent auth token persistence
 	// Agents like Claude Code refresh OAuth tokens via macOS's Security
-	// framework on startup, which writes to the login keychain's SQLite DB.
+	// framework on startup, which writes to the keychain's SQLite DB.
 	// Without this, refresh fails and the agent falls through to API-key
 	// billing precedence, producing spurious "out of extra usage" errors
-	// on active Max/Pro subscriptions. Scoped to the login keychain (and
-	// its SQLite WAL/SHM sidecars) — other keychains stay protected.
+	// on active Max/Pro subscriptions — and, once a token is actually
+	// revoked, a /login that says "Login successful" inside the session
+	// while the very next turn still 401s, because the refreshed
+	// credential had nowhere to land. BOTH keychain generations are
+	// covered, because macOS has two and agents use both:
+	//
+	//   - the legacy file-based login keychain (login.keychain-db);
+	//   - the data-protection keychain that SecItemAdd actually writes
+	//     on 10.15+, at ~/Library/Keychains/<UUID>/keychain-2.db. The
+	//     UUID is per-machine (a Mac can carry several) and SQLite
+	//     recreates the WAL/SHM sidecars, so this one is a regex over
+	//     the generation-2 files rather than a list of literals.
+	//
+	// Everything else under ~/Library/Keychains stays unwritable, and
+	// per-item SecItem ACLs still gate individual secrets.
 	sb.WriteString("; KEYCHAIN - Agent auth token persistence\n")
 	keychainDir := filepath.Join(homeDir, "Library", "Keychains")
 	for _, suffix := range []string{"login.keychain-db", "login.keychain-db-shm", "login.keychain-db-wal"} {
 		fmt.Fprintf(&sb, "(allow file-write* (literal %q))\n", filepath.Join(keychainDir, suffix))
 	}
+	fmt.Fprintf(&sb, "(allow file-write* (regex #\"%s\"))\n", keychainV2Pattern(keychainDir))
 	sb.WriteString("\n")
 
 	// DEV TOOL CACHES
@@ -152,6 +167,15 @@ func GenerateProfile(policy SandboxPolicy) string {
 	sb.WriteString("(allow file-ioctl)\n")
 
 	return sb.String()
+}
+
+// keychainV2Pattern builds the seatbelt regex matching the
+// data-protection keychain's SQLite files under any UUID container:
+// <keychains>/<UUID>/keychain-2.db plus its -shm/-wal/-journal
+// sidecars. Anchored at both ends so it cannot widen onto neighbouring
+// files (user.kb, the TrustedPeersHelper DBs) that agents never write.
+func keychainV2Pattern(keychainDir string) string {
+	return "^" + regexp.QuoteMeta(keychainDir+"/") + "[^/]+/keychain-2\\.db(-shm|-wal|-journal)?$"
 }
 
 // platformDefaults returns macOS-specific path additions.

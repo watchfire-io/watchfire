@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/watchfire-io/watchfire/internal/daemon/agent/backend"
+	"regexp"
 )
 
 // claudeExpectedProfile is the canonical seatbelt profile we produced before
@@ -63,6 +64,7 @@ const claudeExpectedProfile = `(version 1)
 (allow file-write* (literal "/home/test/Library/Keychains/login.keychain-db"))
 (allow file-write* (literal "/home/test/Library/Keychains/login.keychain-db-shm"))
 (allow file-write* (literal "/home/test/Library/Keychains/login.keychain-db-wal"))
+(allow file-write* (regex #"^/home/test/Library/Keychains/[^/]+/keychain-2\.db(-shm|-wal|-journal)?$"))
 
 ; DEV TOOL CACHES
 (allow file-write* (subpath "/home/test/.cargo"))
@@ -120,6 +122,63 @@ func TestGenerateProfile_NoExtras(t *testing.T) {
 	}
 	if !strings.Contains(got, `(allow file-write* (subpath "/projects/foo"))`) {
 		t.Error("profile missing project dir write allow")
+	}
+}
+
+// TestGenerateProfile_DataProtectionKeychain pins the write rule for the
+// modern (10.15+) data-protection keychain. The profile long allowed
+// only the legacy login.keychain-db literals, so an agent that
+// re-authenticated inside a sandboxed session had nowhere to persist the
+// refreshed OAuth token: Claude Code printed "Login successful" and the
+// next turn still failed with 401, having fallen back to API-key
+// billing. The UUID container is per-machine, hence a regex.
+func TestGenerateProfile_DataProtectionKeychain(t *testing.T) {
+	policy := DefaultPolicy("/home/test", "/projects/foo", backend.SandboxExtras{})
+	got := GenerateProfile(policy)
+
+	want := `(allow file-write* (regex #"^/home/test/Library/Keychains/[^/]+/keychain-2\.db(-shm|-wal|-journal)?$"))`
+	if !strings.Contains(got, want) {
+		t.Fatalf("profile missing data-protection keychain write allow:\nwant line: %s", want)
+	}
+
+	// The rule must stay scoped: neighbouring keychain files an agent
+	// never needs to write must not become writable by widening it.
+	re := regexp.MustCompile(`\^/home/test/Library/Keychains/\[\^/\]\+/keychain-2\\\.db\(-shm\|-wal\|-journal\)\?\$`)
+	if !re.MatchString(got) {
+		t.Error("keychain-2 regex is not anchored at both ends")
+	}
+	for _, unwanted := range []string{
+		`(allow file-write* (subpath "/home/test/Library/Keychains"))`,
+		"user.kb",
+		"TrustedPeersHelper",
+	} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("keychain allow is too broad — profile contains %q", unwanted)
+		}
+	}
+}
+
+// TestKeychainV2Pattern_MatchesRealPaths checks the emitted pattern
+// against the paths macOS actually uses, and against the ones it must
+// not cover.
+func TestKeychainV2Pattern_MatchesRealPaths(t *testing.T) {
+	re := regexp.MustCompile(keychainV2Pattern("/home/test/Library/Keychains"))
+	base := "/home/test/Library/Keychains/B05D070B-B2D3-590A-89B0-CDF11334F2C1/"
+	for _, ok := range []string{"keychain-2.db", "keychain-2.db-shm", "keychain-2.db-wal", "keychain-2.db-journal"} {
+		if !re.MatchString(base + ok) {
+			t.Errorf("pattern should match %q", base+ok)
+		}
+	}
+	for _, bad := range []string{
+		base + "user.kb",
+		base + "com.apple.security.keychain-defaultContext.TrustedPeersHelper.db",
+		base + "sub/keychain-2.db",
+		"/home/test/Library/Keychains/keychain-2.db",
+		base + "keychain-2.db.bak",
+	} {
+		if re.MatchString(bad) {
+			t.Errorf("pattern must NOT match %q", bad)
+		}
 	}
 }
 
