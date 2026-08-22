@@ -8,7 +8,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 )
 
@@ -120,32 +119,33 @@ func GenerateProfile(policy SandboxPolicy) string {
 	fmt.Fprintf(&sb, "(allow file-write* (subpath %q))\n\n", filepath.Join(homeDir, "Library", "Application Support"))
 
 	// KEYCHAIN - Agent auth token persistence
-	// Agents like Claude Code refresh OAuth tokens via macOS's Security
-	// framework on startup, which writes to the keychain's SQLite DB.
-	// Without this, refresh fails and the agent falls through to API-key
-	// billing precedence, producing spurious "out of extra usage" errors
-	// on active Max/Pro subscriptions — and, once a token is actually
-	// revoked, a /login that says "Login successful" inside the session
-	// while the very next turn still 401s, because the refreshed
-	// credential had nowhere to land. BOTH keychain generations are
-	// covered, because macOS has two and agents use both:
+	// Agents like Claude Code persist their refreshed OAuth token in the
+	// login keychain. This must be the CONTAINING DIRECTORY, not the
+	// keychain files themselves: the keychain is replaced atomically —
+	// a temp file is created alongside it (e.g.
+	// "login.keychain-db.sb-4810af1f-Liaa4c") and renamed over the DB —
+	// and creating that temp file needs write permission on the
+	// directory. With only the db files allowed, the write failed with
+	// "SecKeychainItemCreateFromContent: UNIX[Operation not permitted]"
+	// (verified by probe under this exact profile).
 	//
-	//   - the legacy file-based login keychain (login.keychain-db);
-	//   - the data-protection keychain that SecItemAdd actually writes
-	//     on 10.15+, at ~/Library/Keychains/<UUID>/keychain-2.db. The
-	//     UUID is per-machine (a Mac can carry several) and SQLite
-	//     recreates the WAL/SHM sidecars, so this one is a regex over
-	//     the generation-2 files rather than a list of literals.
+	// The symptom was brutal precisely because nothing errored where the
+	// user could see it: /login completed the OAuth exchange and printed
+	// "Login successful", but the refreshed token had nowhere to land, so
+	// the very next request re-read the old revoked token and answered
+	// "API Error: 401 OAuth access token has been revoked" — the session
+	// stuck in a login loop, and the header fell back from "Claude Max"
+	// to "API Usage Billing". Confirmed in Claude's own transcript:
+	// local_command "/login" → "Login successful" at 09:16:20.175Z, then
+	// a 401 at 09:16:22.354Z, same session, two seconds apart.
 	//
-	// Everything else under ~/Library/Keychains stays unwritable, and
-	// per-item SecItem ACLs still gate individual secrets.
+	// This is deliberately wider than the previous file literals. Reads
+	// of this tree were already permitted (file-read* on "/"), and
+	// per-item SecItem ACLs still gate individual secrets, so the
+	// practical delta is that an agent can add/modify keychain items —
+	// which is exactly what it must do to stay signed in.
 	sb.WriteString("; KEYCHAIN - Agent auth token persistence\n")
-	keychainDir := filepath.Join(homeDir, "Library", "Keychains")
-	for _, suffix := range []string{"login.keychain-db", "login.keychain-db-shm", "login.keychain-db-wal"} {
-		fmt.Fprintf(&sb, "(allow file-write* (literal %q))\n", filepath.Join(keychainDir, suffix))
-	}
-	fmt.Fprintf(&sb, "(allow file-write* (regex #\"%s\"))\n", keychainV2Pattern(keychainDir))
-	sb.WriteString("\n")
+	fmt.Fprintf(&sb, "(allow file-write* (subpath %q))\n\n", filepath.Join(homeDir, "Library", "Keychains"))
 
 	// DEV TOOL CACHES
 	sb.WriteString("; DEV TOOL CACHES\n")
@@ -174,15 +174,6 @@ func GenerateProfile(policy SandboxPolicy) string {
 	sb.WriteString("(allow file-ioctl)\n")
 
 	return sb.String()
-}
-
-// keychainV2Pattern builds the seatbelt regex matching the
-// data-protection keychain's SQLite files under any UUID container:
-// <keychains>/<UUID>/keychain-2.db plus its -shm/-wal/-journal
-// sidecars. Anchored at both ends so it cannot widen onto neighbouring
-// files (user.kb, the TrustedPeersHelper DBs) that agents never write.
-func keychainV2Pattern(keychainDir string) string {
-	return "^" + regexp.QuoteMeta(keychainDir+"/") + "[^/]+/keychain-2\\.db(-shm|-wal|-journal)?$"
 }
 
 // platformDefaults returns macOS-specific path additions.
