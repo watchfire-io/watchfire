@@ -125,6 +125,31 @@ func TestGenerateProfile_NoExtras(t *testing.T) {
 	}
 }
 
+// TestGenerateProfile_TraceAfterVersion pins the profile's first line.
+// sandbox-exec parses against the version declaration, so ANY directive
+// above it is rejected — "(trace …)" first made the whole profile
+// invalid and every sandboxed agent died at spawn with
+// "sandbox-exec: unbound variable: trace", which clients then retried in
+// a start/exit loop. Trace is a debug escape hatch; it must not be able
+// to break the sandbox it is meant to diagnose.
+func TestGenerateProfile_TraceAfterVersion(t *testing.T) {
+	for _, trace := range []bool{false, true} {
+		policy := DefaultPolicy("/home/test", "/projects/foo", backend.SandboxExtras{})
+		policy.Trace = trace
+		lines := strings.Split(GenerateProfile(policy), "\n")
+		if lines[0] != "(version 1)" {
+			t.Fatalf("trace=%v: first line must be the version declaration, got %q", trace, lines[0])
+		}
+		hasTrace := strings.Contains(GenerateProfile(policy), "(trace ")
+		if hasTrace != trace {
+			t.Errorf("trace=%v: trace directive present=%v", trace, hasTrace)
+		}
+		if trace && !strings.HasPrefix(lines[1], "(trace ") {
+			t.Errorf("trace directive should follow the version line, got %q", lines[1])
+		}
+	}
+}
+
 // TestGenerateProfile_DataProtectionKeychain pins the write rule for the
 // modern (10.15+) data-protection keychain. The profile long allowed
 // only the legacy login.keychain-db literals, so an agent that

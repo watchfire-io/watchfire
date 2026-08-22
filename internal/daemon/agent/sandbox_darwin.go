@@ -52,11 +52,18 @@ func GenerateProfile(policy SandboxPolicy) string {
 	homeDir := policy.HomeDir
 	projectDir := policy.ProjectDir
 
+	// The version declaration must come FIRST: sandbox-exec parses the
+	// profile against it, and any directive above it — (trace …) included
+	// — dies with "unbound variable: trace". Emitting trace first made
+	// WATCHFIRE_SANDBOX_TRACE=1 kill every sandboxed agent at spawn
+	// (observed: the agent exits instantly, clients see isRunning=false
+	// and auto-start chat again, and the project log fills with
+	// start/exit pairs).
+	sb.WriteString("(version 1)\n")
 	if policy.Trace {
 		sb.WriteString("(trace \"/tmp/watchfire-sandbox-trace.sb\")\n")
 	}
-
-	sb.WriteString("(version 1)\n(deny default)\n\n")
+	sb.WriteString("(deny default)\n\n")
 	sb.WriteString("; READ ACCESS - Allow all, deny sensitive\n")
 	sb.WriteString("(allow file-read* (subpath \"/\"))\n\n")
 
