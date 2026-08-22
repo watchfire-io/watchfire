@@ -1047,16 +1047,13 @@ func TestLoginFlow(t *testing.T) {
 	if !sentContaining(fake, "nuno@example.com") {
 		t.Fatalf("the confirmation should name the account: %+v", fake.sentMessages())
 	}
-	// A chat session is recycled onto the new credentials: a process
-	// that took a 401 keeps failing after its own dialog reports
-	// success, and only a fresh one reads the refreshed token.
-	waitFor(t, "chat recycled", func() bool {
-		runner.mu.Lock()
-		defer runner.mu.Unlock()
-		return len(runner.chatRestarts) == 1 && runner.chatRestarts[0] == "p1"
-	})
-	if !sentContaining(fake, "fresh chat session on the new credentials") {
-		t.Fatalf("the reply should say the session was recycled: %+v", fake.sentMessages())
+	// The session is left exactly as it was — /login re-authenticates,
+	// it does not replace what is running.
+	runner.mu.Lock()
+	restarts := len(runner.chatRestarts)
+	runner.mu.Unlock()
+	if restarts != 0 {
+		t.Fatalf("/login must not restart the session, got %d RestartChat calls", restarts)
 	}
 	// The code + its Enter, then the Enter that dismisses "Login
 	// successful. Press Enter to continue…" — without that last one the

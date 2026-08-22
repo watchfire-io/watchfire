@@ -216,35 +216,11 @@ func (b *Bridge) finishLogin(ctx context.Context, chatID int64, projectID string
 		b.reply(ctx, chatID, loginDoneLine(who)+" — but I couldn't press Enter to close the dialog: "+EscapeHTML(err.Error()))
 		return
 	}
-	if !b.waitScreen(ctx, sess, func(s string) bool { return !strings.Contains(s, loginConfirmMarker) }) {
-		b.reply(ctx, chatID, loginDoneLine(who)+" I pressed Enter but the dialog is still up — /screen to check.")
+	if b.waitScreen(ctx, sess, func(s string) bool { return !strings.Contains(s, loginConfirmMarker) }) {
+		b.reply(ctx, chatID, loginDoneLine(who)+" The session is back — just type to keep going.")
 		return
 	}
-	b.recycleAfterLogin(ctx, chatID, projectID, sess, who)
-}
-
-// recycleAfterLogin deals with the part of re-auth that keystrokes
-// cannot fix: a Claude process that took a 401 keeps answering "Login
-// expired · Please run /login" *after* its own dialog said "Login
-// successful" and the refreshed credentials were written to disk
-// (observed on v2.1.239 — ~/.claude/.credentials.json updated at the
-// exact second the dialog closed, and the very next turn still failed
-// instantly, "Cooked for 0s"). The token is good; the running process
-// is the stale part. A fresh one reads the new credentials, so for a
-// chat session — whose context is worth nothing when the message that
-// prompted the login was never answered — the honest remedy is to
-// restart it. Non-chat sessions are the user's call: replacing a
-// mid-task or wildfire run behind their back is not ours to make.
-func (b *Bridge) recycleAfterLogin(ctx context.Context, chatID int64, projectID string, sess *WatchedSession, who string) {
-	if sess.Mode != "chat" {
-		b.reply(ctx, chatID, loginDoneLine(who)+" The running "+EscapeHTML(sessionStateLine(sess))+" may still be holding the old token — if it keeps saying \"Login expired\", /stop and start it again to pick up the new one.")
-		return
-	}
-	if _, err := b.runner.RestartChat(ctx, projectID); err != nil {
-		b.reply(ctx, chatID, loginDoneLine(who)+" The session is back — just type to keep going. (Couldn't recycle it: "+EscapeHTML(err.Error())+".)")
-		return
-	}
-	b.reply(ctx, chatID, loginDoneLine(who)+" Started a fresh chat session on the new credentials — just type to keep going.")
+	b.reply(ctx, chatID, loginDoneLine(who)+" I pressed Enter but the dialog is still up — /screen to check.")
 }
 
 // loginDoneLine names the account when the screen offered one.
