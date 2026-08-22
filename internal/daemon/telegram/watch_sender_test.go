@@ -328,3 +328,55 @@ func TestSenderTurnBreakEndsGrowth(t *testing.T) {
 		t.Fatalf("answer after a bare break must be a new message (sends=%v edits=%+v)", h.sends, h.edits)
 	}
 }
+
+// TestSenderBreakGrowthAfterBridgeReply: when the bridge posts its own
+// message into the chat, the relay must stop growing the message it was
+// editing. Growth is only correct while the grown message is still the
+// LAST thing in the conversation — after a bridge reply it is not, and
+// an edit splices the agent's answer into the scrollback ABOVE the
+// exchange that produced it.
+//
+// The live failure was /login: the answer to the question that had been
+// queued before re-auth was edited into the pre-login "Not logged in ·
+// Please run /login" bubble, which by then sat above the sign-in link,
+// the pasted code and the "Logged in as …" confirmation — so the reply
+// read as never having arrived.
+func TestSenderBreakGrowthAfterBridgeReply(t *testing.T) {
+	h := newSenderHarness()
+
+	h.cs.Add(text("Not logged in · Please run /login"))
+	h.flush()
+	if len(h.sends) != 1 {
+		t.Fatalf("initial sends = %v", h.sends)
+	}
+
+	// …the bridge now posts the sign-in link, the code ack and the
+	// confirmation. Each reply drops the anchor.
+	h.cs.breakGrowth()
+
+	h.advance(3 * time.Second)
+	h.cs.Add(text("Hello! Ready when you are — what would you like to work on?"))
+	h.flush()
+	if len(h.edits) != 0 {
+		t.Fatalf("post-reply output must not edit the earlier bubble: %+v", h.edits)
+	}
+	if len(h.sends) != 2 || h.sends[1] != "Hello! Ready when you are — what would you like to work on?" {
+		t.Fatalf("sends = %v, want the answer as a fresh message", h.sends)
+	}
+
+	// Growth resumes normally once the relay owns the last message again.
+	h.advance(3 * time.Second)
+	h.cs.Add(text("…still me."))
+	h.flush()
+	if len(h.edits) != 1 || h.edits[0].ID != 2 {
+		t.Fatalf("growth should resume on the new message: %+v", h.edits)
+	}
+}
+
+// TestBreakGrowthNilSafe: chats with no relay must not panic.
+func TestBreakGrowthNilSafe(t *testing.T) {
+	var cs *chatSender
+	cs.breakGrowth()
+	b := &Bridge{relays: map[int64]*chatRelay{}}
+	b.breakRelayGrowth(42) // no relay for this chat
+}

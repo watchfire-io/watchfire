@@ -592,6 +592,26 @@ func (cs *chatSender) activeWithin(window time.Duration) bool {
 	return cs.now().Sub(cs.lastActivity) < window
 }
 
+// breakGrowth abandons the message the relay is currently growing, so
+// the next emission starts a NEW bubble. Called whenever the bridge
+// posts its own message into the chat: growth is an editMessageText on
+// a message that is only correct to extend while it is still the LAST
+// thing in the conversation. Once the bridge has replied — a /login
+// link, a code acknowledgement, a busy explanation — the grown message
+// sits above those, and appending to it splices the agent's answer into
+// the scrollback ABOVE the exchange that produced it. Live: after
+// /login the reply to the queued question was edited into the
+// pre-login "Not logged in · Please run /login" bubble and read as
+// never having arrived.
+func (cs *chatSender) breakGrowth() {
+	if cs == nil {
+		return
+	}
+	cs.mu.Lock()
+	cs.growID, cs.growText = 0, ""
+	cs.mu.Unlock()
+}
+
 // Add queues one emission for the next flush.
 func (cs *chatSender) Add(e Emission) {
 	cs.mu.Lock()
@@ -801,6 +821,10 @@ type chatRelay struct {
 	key    string // session identity — see sessionKey
 	cancel context.CancelFunc
 	done   chan struct{}
+	// sender is the relay's chatSender, held so the bridge can drop its
+	// edit-in-place anchor when the bridge posts its own message into
+	// the same chat (see Bridge.reply / chatSender.breakGrowth).
+	sender *chatSender
 }
 
 // sessionKey identifies a session so the reconciler can tell "same
@@ -936,12 +960,26 @@ func (b *Bridge) stopAllRelays() {
 // called with watchMu held.
 func (b *Bridge) startRelay(ctx context.Context, chatID int64, sess *WatchedSession) *chatRelay {
 	rctx, cancel := context.WithCancel(ctx)
-	r := &chatRelay{key: sessionKey(sess), cancel: cancel, done: make(chan struct{})}
+	sender := b.newChatSender(chatID)
+	r := &chatRelay{key: sessionKey(sess), cancel: cancel, done: make(chan struct{}), sender: sender}
 	go func() {
 		defer close(r.done)
-		b.runRelay(rctx, chatID, sess)
+		b.runRelay(rctx, chatID, sess, sender)
 	}()
 	return r
+}
+
+// breakRelayGrowth drops the edit-in-place anchor of the chat's relay,
+// so the agent's next output starts a new message instead of extending
+// one that is no longer the last thing in the conversation. Safe when
+// the chat has no relay.
+func (b *Bridge) breakRelayGrowth(chatID int64) {
+	b.watchMu.Lock()
+	r := b.relays[chatID]
+	b.watchMu.Unlock()
+	if r != nil {
+		r.sender.breakGrowth()
+	}
 }
 
 // newChatSender builds the rate-disciplined sender for one chat.
@@ -963,8 +1001,10 @@ func (b *Bridge) newChatSender(chatID int64) *chatSender {
 
 // runRelay relays one session to one chat: start marker, source tier
 // (transcript tail, else screen deltas), outcome marker, final flush.
-func (b *Bridge) runRelay(ctx context.Context, chatID int64, sess *WatchedSession) {
-	sender := b.newChatSender(chatID)
+func (b *Bridge) runRelay(ctx context.Context, chatID int64, sess *WatchedSession, sender *chatSender) {
+	if sender == nil {
+		sender = b.newChatSender(chatID)
+	}
 	if marker := startMarker(sess); marker != "" {
 		sender.Add(Emission{Kind: EmissionMarker, Text: marker})
 	}

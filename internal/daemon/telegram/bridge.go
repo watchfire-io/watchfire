@@ -420,6 +420,12 @@ func (b *Bridge) handlePairing(ctx context.Context, msg *telegrambot.Message, ar
 // reply sends best-effort — a failed send is logged, never retried
 // (Telegram redelivers nothing here; the user can just resend).
 func (b *Bridge) reply(ctx context.Context, chatID int64, text string) {
+	// Anything the bridge posts becomes the last message in the chat, so
+	// the relay must stop growing whatever it was editing — otherwise the
+	// agent's next output is spliced ABOVE this reply (the /login case:
+	// the answer to the queued question landed inside the pre-login
+	// "Not logged in" bubble and looked like it never arrived).
+	b.breakRelayGrowth(chatID)
 	if _, err := b.client.SendMessage(ctx, b.token, chatID, text); err != nil {
 		b.logger.Printf("WARN: telegram bridge: sendMessage to %d failed: %v", chatID, err)
 	}
