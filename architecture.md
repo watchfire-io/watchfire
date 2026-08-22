@@ -1326,7 +1326,7 @@ Optional `telegram:` section in `~/.watchfire/integrations.yaml` (`models.Telegr
 Telegram bots are globally reachable — anyone can DM the bot. Pairing is the allowlist:
 
 ```
-1. User creates a bot with @BotFather, pastes the token into Watchfire
+1. User creates a bot with `@BotFather`, pastes the token into Watchfire
    (GUI Settings → Integrations / TUI integrations overlay / CLI)
    → token goes to the keyring; daemon validates via getMe and starts the poller
 2. User clicks Pair (any surface) → BeginTelegramPairing RPC returns a one-time
@@ -2527,7 +2527,7 @@ Chat — Session 1 — 2026-02-03 12:00
 #### T1: Pairing Flow
 
 ```
-1. User pastes @BotFather token into any surface (GUI / TUI / CLI)
+1. User pastes `@BotFather` token into any surface (GUI / TUI / CLI)
    └─ SaveIntegration → token to keyring → daemon validates via getMe
    └─ startTelegramBridge(): long-poll goroutine begins dialing api.telegram.org
 2. User triggers Pair (GUI button / TUI action / `watchfire telegram pair`)
