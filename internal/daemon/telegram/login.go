@@ -71,8 +71,10 @@ const loginStepTimeout = 20 * time.Second
 // paints that line and persists the refreshed credentials at roughly
 // the same moment; a human takes a second or two to read it and press,
 // and we should not be the first client to find out what happens when
-// something presses it instantly.
-const loginSettleDefault = 1500 * time.Millisecond
+// something presses it instantly. Widened from 1.5s to 3s after live
+// runs still came back to "Not logged in" — the screen marker is not
+// proof the exchange has finished settling behind it.
+const loginSettleDefault = 3 * time.Second
 
 // cmdLogin drives the live session's /login dialog and relays the URL.
 func (b *Bridge) cmdLogin(ctx context.Context, chatID int64) {
