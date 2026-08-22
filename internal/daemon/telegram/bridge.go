@@ -127,6 +127,11 @@ type Bridge struct {
 	// as the OAuth code instead of being treated as conversation.
 	loginPending map[int64]string
 
+	// loginSettle is the beat between the login dialog's "Press Enter
+	// to continue…" and the Enter that dismisses it (default set in
+	// New; tests shrink it).
+	loginSettle time.Duration
+
 	// sayEnterDelay is the beat between injectSay's text write and its
 	// Enter write (default set in New; tests shrink it).
 	sayEnterDelay time.Duration
@@ -178,6 +183,7 @@ func New(cfg Config) *Bridge {
 		outcomeRetry:    outcomeRetryInterval,
 		chatPending:     make(map[string]*chatPendingStart),
 		loginPending:    make(map[int64]string),
+		loginSettle:     loginSettleDefault,
 		chatStartPoll:   chatStartPollInterval,
 		chatStartWait:   chatStartWaitTimeout,
 		chatStartSettle: chatStartSettleDelay,

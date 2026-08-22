@@ -1019,6 +1019,7 @@ func TestLoginFlow(t *testing.T) {
 	b := runControlBridge(runner, sessions, chatOnProject("p1"))
 	b.chatStartPoll = 2 * time.Millisecond
 	b.sayEnterDelay = time.Millisecond
+	b.loginSettle = time.Millisecond
 	startBridge(t, b)
 
 	waitFor(t, "sign-in link relayed", func() bool { return sentContaining(fake, "Sign in to Claude") })
@@ -1045,6 +1046,17 @@ func TestLoginFlow(t *testing.T) {
 	waitFor(t, "login confirmed", func() bool { return sentContaining(fake, "Logged in as") })
 	if !sentContaining(fake, "nuno@example.com") {
 		t.Fatalf("the confirmation should name the account: %+v", fake.sentMessages())
+	}
+	// A chat session is recycled onto the new credentials: a process
+	// that took a 401 keeps failing after its own dialog reports
+	// success, and only a fresh one reads the refreshed token.
+	waitFor(t, "chat recycled", func() bool {
+		runner.mu.Lock()
+		defer runner.mu.Unlock()
+		return len(runner.chatRestarts) == 1 && runner.chatRestarts[0] == "p1"
+	})
+	if !sentContaining(fake, "fresh chat session on the new credentials") {
+		t.Fatalf("the reply should say the session was recycled: %+v", fake.sentMessages())
 	}
 	// The code + its Enter, then the Enter that dismisses "Login
 	// successful. Press Enter to continue…" — without that last one the
