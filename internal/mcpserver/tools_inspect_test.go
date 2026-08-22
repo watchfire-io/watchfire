@@ -508,6 +508,10 @@ func TestRegisteredToolsReadOnly(t *testing.T) {
 		"list_logs",
 		"list_projects",
 		"list_tasks",
+		// telegram_status is pure observation and carries groupInspect,
+		// so --read-only keeps serving it; the mutating telegram_* tools
+		// carry groupTelegram and are absent here.
+		"telegram_status",
 	}
 
 	got := toolNames(registeredTools(true))

@@ -1146,7 +1146,9 @@ watchfired                     ← all orchestration
 
 ### Tool Catalog
 
-Tool names are unprefixed (clients namespace by server name). Kept deliberately small: **18 tools** in four documented groups.
+Tool names are unprefixed (clients namespace by server name). Kept deliberately small: **22 tools** in five documented groups.
+
+The Telegram group (v10.1 Torch) is the exception to "every tool is a thin translation of one RPC": `telegram_status` and `telegram_configure` each compose two RPCs, because the pairing status and the integration document are separate reads and Save needs the current document to avoid resetting unspecified fields. No proto change was needed — every Telegram RPC already existed for the CLI and the settings UIs.
 
 The "Group" column below is the documented grouping. It is *not* always the registry group in code: `--read-only` filtering keys off a per-tool registry group, and the three pure reads that live in write-heavy documented groups (`get_agent_status`, `list_tasks`, `get_task`) carry the `inspect` registry group so a read-only server keeps them. Each tool declares its own `readOnly` flag in `toolSpec`, and a test asserts the flag and the registry group can never disagree.
 
@@ -1170,6 +1172,10 @@ The "Group" column below is the documented grouping. It is *not* always the regi
 | Inspect | `get_insights` | `InsightsService.GetProjectInsights` / `GetGlobalInsights` | Throughput + code-output summary; `scope` = `project` (default) \| `global` |
 | Inspect | `list_logs` | `LogService.ListLogs` | Past session transcripts (metadata) |
 | Inspect | `get_log` | `LogService.GetLog` | One transcript, tail-capped at 64 KiB |
+| Telegram | `telegram_status` | `IntegrationsService.GetTelegramPairingStatus` + `ListIntegrations` | Bridge running, enabled, token stored, bot username, pairing state, paired chats — plus a `next_step` naming the one action that unblocks setup. Read-only ⇒ served under `--read-only` |
+| Telegram | `telegram_configure` | `IntegrationsService.ListIntegrations` + `SaveIntegration` | Flip `enabled`, optionally store the `bot_token`. Reads current state first because Save replaces the whole document; an omitted token keeps the stored one. Refuses to enable with no token anywhere |
+| Telegram | `telegram_pair` | `IntegrationsService.BeginTelegramPairing` | Mints the one-time code + deep link and returns immediately — pairing is observed by polling `telegram_status`, not by blocking |
+| Telegram | `telegram_unpair` | `IntegrationsService.RevokeTelegramChat` | Removes one `chat_id` from the allowlist. The only surface that exposes revocation — the CLI has no `unpair` |
 
 **Descriptions are part of the contract.** The catalog is the only thing an outer model reads before choosing a call, so every tool carries a paragraph stating consequences (not just capability), a `title`, and MCP `annotations` (`readOnlyHint`, `destructiveHint`, `idempotentHint`, `openWorldHint: false` — the tools' world is this machine). `internal/mcpserver/catalog_test.go` asserts these properties over the real `tools/list` payload: argument naming is uniform (`project`, `task_number`, `log_id`), the schema constraints are published (enums, defaults, min/max), and the specific sentences an outer agent needs are present.
 

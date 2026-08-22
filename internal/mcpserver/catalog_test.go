@@ -309,6 +309,11 @@ func TestCatalogRequiredArguments(t *testing.T) {
 		"get_insights":     {},
 		"list_logs":        {},
 		"get_log":          {"log_id"},
+		// v10.1 Torch — Telegram bridge control.
+		"telegram_status":    {},
+		"telegram_configure": {},
+		"telegram_pair":      {},
+		"telegram_unpair":    {"chat_id"},
 	}
 
 	tools := listCatalog(t, false)

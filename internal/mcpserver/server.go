@@ -29,10 +29,11 @@ import (
 
 // Tool groups. --read-only serving filters registration by group.
 const (
-	groupProject = "project"
-	groupTask    = "task"
-	groupRun     = "run"
-	groupInspect = "inspect"
+	groupProject  = "project"
+	groupTask     = "task"
+	groupRun      = "run"
+	groupInspect  = "inspect"
+	groupTelegram = "telegram"
 )
 
 // Options configures a Serve run.
@@ -50,12 +51,13 @@ type Options struct {
 // concurrent tool calls are safe because the daemon serializes per-project
 // agent operations.
 type server struct {
-	projects pb.ProjectServiceClient
-	tasks    pb.TaskServiceClient
-	agents   pb.AgentServiceClient
-	settings pb.SettingsServiceClient
-	insights pb.InsightsServiceClient
-	logs     pb.LogServiceClient
+	projects     pb.ProjectServiceClient
+	tasks        pb.TaskServiceClient
+	agents       pb.AgentServiceClient
+	settings     pb.SettingsServiceClient
+	insights     pb.InsightsServiceClient
+	logs         pb.LogServiceClient
+	integrations pb.IntegrationsServiceClient
 
 	// defaultProjectID is the project of the directory the server was
 	// started in, or "" when started outside a registered project.
@@ -158,6 +160,7 @@ func allTools() []toolDef {
 	defs = append(defs, taskTools...)
 	defs = append(defs, runTools...)
 	defs = append(defs, inspectTools...)
+	defs = append(defs, telegramTools...)
 	return defs
 }
 
@@ -231,12 +234,13 @@ func Serve(ctx context.Context, opts Options) error {
 	defer func() { _ = conn.Close() }()
 
 	s := &server{
-		projects: pb.NewProjectServiceClient(conn),
-		tasks:    pb.NewTaskServiceClient(conn),
-		agents:   pb.NewAgentServiceClient(conn),
-		settings: pb.NewSettingsServiceClient(conn),
-		insights: pb.NewInsightsServiceClient(conn),
-		logs:     pb.NewLogServiceClient(conn),
+		projects:     pb.NewProjectServiceClient(conn),
+		tasks:        pb.NewTaskServiceClient(conn),
+		agents:       pb.NewAgentServiceClient(conn),
+		settings:     pb.NewSettingsServiceClient(conn),
+		insights:     pb.NewInsightsServiceClient(conn),
+		logs:         pb.NewLogServiceClient(conn),
+		integrations: pb.NewIntegrationsServiceClient(conn),
 		readOnly: opts.ReadOnly,
 	}
 

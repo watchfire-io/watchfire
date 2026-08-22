@@ -9,6 +9,8 @@ watchfired
 # The binary patterns above also match the source dirs; re-include them
 !cmd/watchfire/
 !cmd/watchfired/
+# …and the skill directory (v10.1 Torch)
+!.claude/skills/watchfire/
 
 # Build output
 /build/
