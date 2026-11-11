@@ -6,8 +6,10 @@
 //
 //   - Tier 1 — transcript tail. Backends that append a JSONL transcript
 //     during the session (Claude Code first-class) are tailed via a
-//     TailableTranscript; assistant text is relayed verbatim and tool
-//     uses become one-liners ("⚒ Edit internal/tui/model.go").
+//     TailableTranscript; assistant text is relayed verbatim, path-shaped
+//     tool uses become one-liners ("⚒ Edit internal/tui/model.go"), and
+//     command tool uses (Bash and friends) are relayed WHOLE as a
+//     labeled monospace block — never truncated (issue #58).
 //   - Tier 2 — screen deltas. Backends without a tailable transcript
 //     (or a tailer that errors) fall back to debounced plain-text
 //     screen snapshots, sent only when the normalized content changed.
@@ -89,6 +91,10 @@ const (
 	// past it the agent is considered idle at its prompt.
 	typingInterval       = 4 * time.Second
 	typingActivityWindow = 15 * time.Second
+	// toolOneLinerLimit caps the path-shaped tool one-liner ("⚒ Edit
+	// <file_path>") in runes. Commands are never capped — they ride a
+	// ToolBlock emission in full.
+	toolOneLinerLimit = 300
 )
 
 // floodNotice is sent once when the flood cap engages.
@@ -114,6 +120,12 @@ const (
 	// message (after the user's own), not spliced onto the previous
 	// reply.
 	EmissionTurnBreak
+	// EmissionToolBlock is a tool use whose input is a command (Bash
+	// and friends): Label is the line above ("⚒ Bash:"), Text the FULL
+	// command, newlines intact. Rendered as a <pre> block and chunked
+	// on the body like a screen snapshot, so a long command is split
+	// across messages with balanced tags rather than cut (issue #58).
+	EmissionToolBlock
 )
 
 // Emission is one unit of relayed content, produced by a source tier
@@ -121,6 +133,9 @@ const (
 type Emission struct {
 	Kind EmissionKind
 	Text string
+	// Label is the line rendered above a ToolBlock's monospace body;
+	// unused by every other kind.
+	Label string
 }
 
 // WatchedSession is the read-only view of one running agent session
@@ -252,10 +267,10 @@ type claudeWatchBlock struct {
 }
 
 // ParseLine emits assistant text blocks verbatim, tool uses as
-// one-liners, and a TurnBreak for real user turns (typed text — NOT
-// the "user" entries that merely carry tool_result blocks). Everything
-// else — thinking blocks, the custom-title line, progress records — is
-// skipped.
+// one-liners or whole-command blocks (toolEmission), and a TurnBreak
+// for real user turns (typed text — NOT the "user" entries that merely
+// carry tool_result blocks). Everything else — thinking blocks, the
+// custom-title line, progress records — is skipped.
 func (c *claudeTranscript) ParseLine(line []byte) []Emission {
 	var entry claudeWatchEntry
 	if err := json.Unmarshal(line, &entry); err != nil {
@@ -292,28 +307,46 @@ func (c *claudeTranscript) ParseLine(line []byte) []Emission {
 				out = append(out, Emission{Kind: EmissionAssistantText, Text: b.Text})
 			}
 		case "tool_use":
-			out = append(out, Emission{Kind: EmissionToolUse, Text: toolOneLiner(b.Name, b.Input)})
+			out = append(out, toolEmission(b.Name, b.Input))
 		}
 	}
 	return out
 }
 
-// toolOneLiner compresses a tool_use block into one line: commands
-// render as "⚒ Bash: make test", path-shaped inputs as
-// "⚒ Edit internal/tui/model.go", anything else as the bare name.
-func toolOneLiner(name string, input map[string]any) string {
+// toolEmission maps a tool_use block onto its relay shape. A command
+// input (Bash and friends) becomes a ToolBlock carrying the WHOLE
+// command under a "⚒ Bash:" label — the relay used to compress it to
+// its first 120 runes, which hid multi-line commands and heredocs
+// (issue #58). Path-shaped inputs keep the compact one-liner
+// ("⚒ Edit internal/tui/model.go"); anything else is the bare name.
+func toolEmission(name string, input map[string]any) Emission {
 	if name == "" {
 		name = "tool"
 	}
 	if cmd, ok := input["command"].(string); ok && strings.TrimSpace(cmd) != "" {
-		return "⚒ " + name + ": " + firstLineTrunc(cmd, 120)
+		return Emission{Kind: EmissionToolBlock, Label: "⚒ " + name + ":", Text: trimCommand(cmd)}
 	}
+	return Emission{Kind: EmissionToolUse, Text: toolOneLiner(name, input)}
+}
+
+// toolOneLiner renders a non-command tool use as one line: path-shaped
+// inputs as "⚒ Edit internal/tui/model.go" (capped at toolOneLinerLimit
+// runes), anything else as the bare name.
+func toolOneLiner(name string, input map[string]any) string {
 	for _, key := range []string{"file_path", "path", "pattern", "url", "query", "description"} {
 		if v, ok := input[key].(string); ok && strings.TrimSpace(v) != "" {
-			return "⚒ " + name + " " + firstLineTrunc(v, 120)
+			return "⚒ " + name + " " + firstLineTrunc(v, toolOneLinerLimit)
 		}
 	}
 	return "⚒ " + name
+}
+
+// trimCommand drops the blank edges of a command body — leading and
+// trailing blank lines, trailing whitespace — and nothing else: every
+// inner line, including indentation, is preserved.
+func trimCommand(cmd string) string {
+	cmd = strings.ReplaceAll(cmd, "\r\n", "\n")
+	return strings.Trim(strings.TrimRight(cmd, " \t\r\n"), "\n")
 }
 
 // userEntryIsTurn reports whether a transcript "user" entry is an
@@ -754,7 +787,15 @@ func joinAssistantText(batch []Emission) string {
 // messages, each within the 4096-char cap. Screen snapshots become
 // standalone <pre> messages (chunked on the body so tags never split);
 // everything else coalesces into shared messages, with consecutive
-// tool one-liners packed one per line.
+// tool lines (one-liners and command blocks) packed one per line.
+//
+// A tool block is multi-line HTML, which the shared message's
+// line-boundary chunking would tear apart — so a block only joins the
+// shared message when it renders as ONE message and the result still
+// fits the cap (chunkLines returns an under-cap message untouched);
+// otherwise the shared message is flushed first and the block's own
+// pre-chunked messages follow. The same fit check guards every later
+// append, so a message holding a block never grows past the cap.
 func buildMessages(batch []Emission) []string {
 	var msgs []string
 	var cur strings.Builder
@@ -772,40 +813,86 @@ func buildMessages(batch []Emission) []string {
 			prev = e.Kind
 			continue
 		}
-		if cur.Len() > 0 {
-			if e.Kind == EmissionToolUse && prev == EmissionToolUse {
-				cur.WriteByte('\n')
-			} else {
-				cur.WriteString("\n\n")
+		var rendered string
+		if e.Kind == EmissionToolBlock {
+			parts := toolBlockMessages(e)
+			if len(parts) != 1 {
+				flushCur()
+				msgs = append(msgs, parts...)
+				prev = e.Kind
+				continue
 			}
+			rendered = parts[0]
+		} else {
+			rendered = renderEmission(e)
 		}
-		cur.WriteString(renderEmission(e))
+		sep := "\n\n"
+		if isToolKind(e.Kind) && isToolKind(prev) {
+			sep = "\n"
+		}
+		if cur.Len() > 0 && cur.Len()+len(sep)+len(rendered) > maxMessageLen {
+			flushCur()
+		}
+		if cur.Len() > 0 {
+			cur.WriteString(sep)
+		}
+		cur.WriteString(rendered)
 		prev = e.Kind
 	}
 	flushCur()
 	return msgs
 }
 
+// isToolKind reports whether consecutive emissions of this kind pack
+// one per line rather than as separate paragraphs.
+func isToolKind(k EmissionKind) bool {
+	return k == EmissionToolUse || k == EmissionToolBlock
+}
+
 // renderEmission maps one emission onto Telegram HTML. Tags wrap whole
 // single-line content only (tool one-liners, markers), so line-boundary
-// chunking can never split a tag.
+// chunking can never split a tag. Tool blocks are multi-line and go
+// through toolBlockMessages instead; the case here only keeps a stray
+// caller (joinAssistantText never sees one) from dropping the command.
 func renderEmission(e Emission) string {
 	switch e.Kind {
 	case EmissionToolUse:
 		return "<i>" + EscapeHTML(e.Text) + "</i>"
 	case EmissionMarker:
 		return "<b>" + EscapeHTML(e.Text) + "</b>"
+	case EmissionToolBlock:
+		return strings.Join(toolBlockMessages(e), "\n")
 	default:
 		return EscapeHTML(strings.TrimRight(e.Text, "\n"))
 	}
+}
+
+// toolBlockMessages renders a ToolBlock as "<i>label</i>\n<pre>…</pre>",
+// chunking the escaped command body so every message stays under the
+// cap with balanced tags; the label rides the first message only. The
+// body chunks are sized so the label still fits alongside the first.
+func toolBlockMessages(e Emission) []string {
+	label := "<i>" + EscapeHTML(e.Label) + "</i>"
+	if strings.TrimSpace(e.Text) == "" {
+		return []string{label}
+	}
+	parts := preChunksLimit(e.Text, maxMessageLen-len(label)-1)
+	parts[0] = label + "\n" + parts[0]
+	return parts
 }
 
 // preChunks wraps a screen snapshot in <pre> blocks, chunking the
 // escaped body so every message stays under the cap with its tags
 // balanced.
 func preChunks(body string) []string {
+	return preChunksLimit(body, maxMessageLen)
+}
+
+// preChunksLimit is preChunks with an explicit per-message limit
+// (including the <pre></pre> overhead).
+func preChunksLimit(body string, limit int) []string {
 	const overhead = len("<pre></pre>")
-	chunks := chunkLinesLimit(EscapeHTML(body), maxMessageLen-overhead)
+	chunks := chunkLinesLimit(EscapeHTML(body), limit-overhead)
 	out := make([]string, 0, len(chunks))
 	for _, c := range chunks {
 		out = append(out, "<pre>"+c+"</pre>")

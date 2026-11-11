@@ -8,6 +8,7 @@ package telegram
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/watchfire-io/watchfire/internal/daemon/echo"
 )
@@ -93,8 +94,9 @@ func chunkLinesLimit(text string, limit int) []string {
 	for _, line := range strings.Split(text, "\n") {
 		for len(line) > limit {
 			flush()
-			chunks = append(chunks, line[:limit])
-			line = line[limit:]
+			cut := hardCut(line, limit)
+			chunks = append(chunks, line[:cut])
+			line = line[cut:]
 		}
 		need := len(line)
 		if cur.Len() > 0 {
@@ -110,4 +112,24 @@ func chunkLinesLimit(text string, limit int) []string {
 	}
 	flush()
 	return chunks
+}
+
+// hardCut picks where to split an overlong line (one that cannot be
+// chunked at a newline): the largest cut ≤ limit that lands on a rune
+// boundary and outside an HTML entity, so neither half carries a torn
+// multi-byte character or a half "&amp;" — Telegram rejects the latter
+// as unparsable, which would drop the whole message. Entities here are
+// at most 5 bytes (&amp; &lt; &gt;), so the back-off is bounded.
+func hardCut(line string, limit int) int {
+	cut := limit
+	for cut > 0 && !utf8.RuneStart(line[cut]) {
+		cut--
+	}
+	if amp := strings.LastIndexByte(line[:cut], '&'); amp >= 0 && cut-amp < 5 && !strings.Contains(line[amp:cut], ";") {
+		cut = amp
+	}
+	if cut <= 0 {
+		return limit // degenerate limit; never stall
+	}
+	return cut
 }

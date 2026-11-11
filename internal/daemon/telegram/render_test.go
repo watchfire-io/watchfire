@@ -3,6 +3,7 @@ package telegram
 import (
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/watchfire-io/watchfire/internal/daemon/echo"
 )
@@ -125,5 +126,43 @@ func TestChunkLinesShortTextSingleChunk(t *testing.T) {
 	}
 	if got := chunkLines(""); got != nil {
 		t.Fatalf("empty text rendered %v", got)
+	}
+}
+
+// TestChunkLinesHardCutKeepsEntitiesAndRunes: splitting an overlong
+// line never lands inside an HTML entity or a multi-byte rune, so
+// every chunk is valid parse_mode=HTML on its own.
+func TestChunkLinesHardCutKeepsEntitiesAndRunes(t *testing.T) {
+	cases := []struct {
+		name  string
+		line  string
+		limit int
+	}{
+		{"entities", strings.Repeat("a&amp;b&lt;c&gt;", 200), 50},
+		{"entity at the cut", "xxxxxxxx&amp;yyyyyyyy", 10},
+		{"multi-byte runes", strings.Repeat("é⚒日", 300), 50},
+		{"mixed", strings.Repeat("⚒&amp;é&lt;", 300), 37},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			chunks := chunkLinesLimit(c.line, c.limit)
+			if strings.Join(chunks, "") != c.line {
+				t.Fatal("chunks do not reassemble into the line")
+			}
+			for i, ch := range chunks {
+				if len(ch) > c.limit {
+					t.Fatalf("chunk %d over limit: %d > %d", i, len(ch), c.limit)
+				}
+				if !utf8.ValidString(ch) {
+					t.Fatalf("chunk %d tears a rune: %q", i, ch)
+				}
+				if amp := strings.LastIndexByte(ch, '&'); amp >= 0 && !strings.Contains(ch[amp:], ";") {
+					t.Fatalf("chunk %d tears an entity: %q", i, ch)
+				}
+				if semi := strings.IndexByte(ch, ';'); semi >= 0 && !strings.Contains(ch[:semi], "&") {
+					t.Fatalf("chunk %d starts inside an entity: %q", i, ch)
+				}
+			}
+		})
 	}
 }

@@ -110,9 +110,9 @@ func TestClaudeParseLine(t *testing.T) {
 			[]Emission{{Kind: EmissionToolUse, Text: "⚒ Edit internal/tui/model.go"}},
 		},
 		{
-			"tool use with command",
+			"tool use with command → whole-command block",
 			toolUseLine("Bash", map[string]any{"command": "make test"}),
-			[]Emission{{Kind: EmissionToolUse, Text: "⚒ Bash: make test"}},
+			[]Emission{{Kind: EmissionToolBlock, Label: "⚒ Bash:", Text: "make test"}},
 		},
 		{
 			"tool use with no known input",
@@ -155,17 +155,18 @@ func TestClaudeParseLine(t *testing.T) {
 	}
 }
 
-// TestToolOneLinerTruncation: multi-line and overlong inputs compress
-// to a single bounded line.
+// TestToolOneLinerTruncation: multi-line and overlong PATH-shaped inputs
+// compress to a single bounded line (commands never do — see
+// TestToolEmissionShapes).
 func TestToolOneLinerTruncation(t *testing.T) {
-	got := toolOneLiner("Bash", map[string]any{"command": "make build &&\nmake test"})
-	if got != "⚒ Bash: make build && …" {
-		t.Fatalf("multi-line command: %q", got)
+	got := toolOneLiner("Grep", map[string]any{"pattern": "foo\nbar"})
+	if got != "⚒ Grep foo …" {
+		t.Fatalf("multi-line pattern: %q", got)
 	}
-	long := strings.Repeat("x", 300)
-	got = toolOneLiner("Bash", map[string]any{"command": long})
-	if len([]rune(got)) > 140 || !strings.HasSuffix(got, "…") {
-		t.Fatalf("long command not truncated: %q", got)
+	long := strings.Repeat("x", toolOneLinerLimit+100)
+	got = toolOneLiner("Read", map[string]any{"file_path": long})
+	if len([]rune(got)) > toolOneLinerLimit+20 || !strings.HasSuffix(got, "…") {
+		t.Fatalf("long path not truncated: %q", got)
 	}
 }
 
@@ -232,7 +233,7 @@ func TestTranscriptTailerIncremental(t *testing.T) {
 	want := []string{
 		"First I'll read the spec.",
 		"⚒ Edit internal/tui/model.go",
-		"⚒ Bash: make test",
+		"make test", // the ToolBlock body; its "⚒ Bash:" label rides Emission.Label
 		"Now the tests pass.",
 		"Fresh start.",
 		"Wrapping up.",

@@ -131,8 +131,9 @@ func TestWatchRelayTranscriptEndToEnd(t *testing.T) {
 
 	appendFile(t, path, toolUseLine("Edit", map[string]any{"file_path": "internal/tui/model.go"})+"\n")
 	appendFile(t, path, toolUseLine("Bash", map[string]any{"command": "make test"})+"\n")
-	waitFor(t, "tool one-liners", func() bool {
-		return sentContaining(fake, "⚒ Edit internal/tui/model.go") && sentContaining(fake, "⚒ Bash: make test")
+	waitFor(t, "tool lines", func() bool {
+		return sentContaining(fake, "⚒ Edit internal/tui/model.go") &&
+			sentContaining(fake, "<i>⚒ Bash:</i>\n<pre>make test</pre>")
 	})
 
 	close(done)
@@ -421,5 +422,67 @@ func TestWildfireMilestoneRelay(t *testing.T) {
 		if strings.Contains(m.Text, "raw screen noise") || strings.HasPrefix(m.Text, "<pre>") {
 			t.Fatalf("wildfire planning phases must not stream the raw screen: %q", m.Text)
 		}
+	}
+}
+
+// TestToolEmissionShapes (issue #58): a command-shaped tool use carries
+// the WHOLE command — every line, nothing truncated — as a ToolBlock;
+// path-shaped tool uses keep the compact one-liner.
+func TestToolEmissionShapes(t *testing.T) {
+	threeLine := "cd /tmp/proj &&\n  make build 2>&1 | tee build.log\nmake test"
+	huge := strings.Repeat("x", 6000)
+	cases := []struct {
+		name  string
+		tool  string
+		input map[string]any
+		want  Emission
+	}{
+		{
+			"short command is still a block",
+			"Bash", map[string]any{"command": "make test"},
+			Emission{Kind: EmissionToolBlock, Label: "⚒ Bash:", Text: "make test"},
+		},
+		{
+			"three-line command arrives whole, newlines intact",
+			"Bash", map[string]any{"command": threeLine + "\n"},
+			Emission{Kind: EmissionToolBlock, Label: "⚒ Bash:", Text: threeLine},
+		},
+		{
+			"heredoc keeps inner blank lines and indentation",
+			"Bash", map[string]any{"command": "\ncat <<'EOF' > f\n  a\n\n  b\nEOF\n\n"},
+			Emission{Kind: EmissionToolBlock, Label: "⚒ Bash:", Text: "cat <<'EOF' > f\n  a\n\n  b\nEOF"},
+		},
+		{
+			"6000-char command is not capped",
+			"Bash", map[string]any{"command": huge},
+			Emission{Kind: EmissionToolBlock, Label: "⚒ Bash:", Text: huge},
+		},
+		{
+			"any tool with a command key is a block",
+			"mcp__shell__run", map[string]any{"command": "ls -la"},
+			Emission{Kind: EmissionToolBlock, Label: "⚒ mcp__shell__run:", Text: "ls -la"},
+		},
+		{
+			"edit keeps the compact one-liner",
+			"Edit", map[string]any{"file_path": "internal/tui/model.go"},
+			Emission{Kind: EmissionToolUse, Text: "⚒ Edit internal/tui/model.go"},
+		},
+		{
+			"grep pattern keeps the compact one-liner",
+			"Grep", map[string]any{"pattern": "toolOneLiner"},
+			Emission{Kind: EmissionToolUse, Text: "⚒ Grep toolOneLiner"},
+		},
+		{
+			"unknown input shape is the bare name",
+			"TodoWrite", map[string]any{"todos": []any{}},
+			Emission{Kind: EmissionToolUse, Text: "⚒ TodoWrite"},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			if got := toolEmission(c.tool, c.input); got != c.want {
+				t.Fatalf("toolEmission(%s) = %+v, want %+v", c.tool, got, c.want)
+			}
+		})
 	}
 }
