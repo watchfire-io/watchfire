@@ -20,15 +20,22 @@ const (
 	// project path sits inside a sandbox-denied root (e.g. ~/Desktop) — the
 	// agent is never spawned; see sandbox_preflight.go and issue #17.
 	AgentIssueSandboxDenied AgentIssueType = "sandbox_denied"
+	// AgentIssueInputRequired is raised while a Claude Code session is parked
+	// on an interactive approval/question dialog (tool permission, plan
+	// approval, AskUserQuestion) and cleared when the dialog leaves the
+	// screen. Message carries the prompt text; Options the ordered option
+	// labels. The daemon never answers it — see inputdialog.go.
+	AgentIssueInputRequired AgentIssueType = "input_required"
 )
 
 // AgentIssue represents a detected issue with the agent.
 type AgentIssue struct {
 	Type          AgentIssueType
 	DetectedAt    time.Time
-	Message       string     // Original error message
+	Message       string     // Original error message, or the dialog prompt (input_required)
 	ResetAt       *time.Time // Parsed reset time (rate limits)
 	CooldownUntil *time.Time // When to auto-resume
+	Options       []string   // Ordered option labels of the dialog (input_required only)
 }
 
 // Pattern detection for auth errors.

@@ -3,14 +3,20 @@ import type { FocusRequestTarget } from '../stores/app-store'
 
 // v8 Inferno — mission control. A single "needs me" entry aggregated across all
 // projects for the home window's needs-attention surface. Two sources feed it:
-//   - live agent issues (auth_required / rate_limited) from the daemon's issue
+//   - live agent issues (auth_required / rate_limited / input_required) from the daemon's issue
 //     detector, streamed via AgentService.SubscribeAgentIssues; and
 //   - TASK_FAILED state (an agent-reported failure, or a post-task auto-merge
 //     failure) derived from the task list the dashboard already loads.
 // Click-through opens/focuses the offending project's window and routes it to
 // the relevant surface (`target` / `taskNumber`).
 
-export type AttentionKind = 'auth_required' | 'rate_limited' | 'agent_issue' | 'task_failed' | 'merge_failed'
+export type AttentionKind =
+  | 'auth_required'
+  | 'rate_limited'
+  | 'input_required'
+  | 'agent_issue'
+  | 'task_failed'
+  | 'merge_failed'
 
 export interface AttentionEntry {
   // Stable key so React lists don't thrash and so identical re-renders dedupe.
@@ -54,6 +60,9 @@ function issueKindLabel(issueType: string): { kind: AttentionKind; label: string
       return { kind: 'auth_required', label: 'Auth required' }
     case 'rate_limited':
       return { kind: 'rate_limited', label: 'Rate limited' }
+    case 'input_required':
+      // Claude Code is parked on an approval/question dialog (#58).
+      return { kind: 'input_required', label: 'Waiting for your approval' }
     default:
       return { kind: 'agent_issue', label: 'Agent issue' }
   }

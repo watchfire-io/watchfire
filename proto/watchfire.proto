@@ -358,11 +358,12 @@ message RawOutputChunk {
 }
 
 message AgentIssue {
-  string issue_type = 1;                              // "auth_required" | "rate_limited" | ""
+  string issue_type = 1;                              // "auth_required" | "rate_limited" | "trust_dialog" | "sandbox_denied" | "input_required" | ""
   google.protobuf.Timestamp detected_at = 2;
-  string message = 3;
+  string message = 3;                                 // Error text, or the dialog prompt (input_required)
   optional google.protobuf.Timestamp reset_at = 4;    // When limit resets (rate limits)
   optional google.protobuf.Timestamp cooldown_until = 5; // When to auto-resume
+  repeated string options = 6;                        // Ordered option labels of the dialog (input_required only)
 }
 
 message SubscribeAgentIssuesRequest {

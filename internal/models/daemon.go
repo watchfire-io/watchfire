@@ -38,7 +38,7 @@ type RunningAgentInfo struct {
 	Mode         string `yaml:"mode"` // "chat" | "task" | "start-all" | "wildfire"
 	TaskNumber   int    `yaml:"task_number,omitempty"`
 	TaskTitle    string `yaml:"task_title,omitempty"`
-	IssueType    string `yaml:"issue_type,omitempty"`    // "auth_required" | "rate_limited" | ""
+	IssueType    string `yaml:"issue_type,omitempty"`    // "auth_required" | "rate_limited" | "trust_dialog" | "sandbox_denied" | "input_required" | ""
 	IssueMessage string `yaml:"issue_message,omitempty"` // Original error message
 }
 

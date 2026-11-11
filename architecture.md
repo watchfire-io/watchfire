@@ -653,6 +653,7 @@ Agent issues (auth errors, rate limits) appear as colored banners above the term
 |------------|-------------|-------------|-----------------|
 | `auth_required` | Yellow | `⚠ Authentication required — switch to Chat and run /login` | User switches to terminal, runs `/login` in agent |
 | `rate_limited` | Yellow | `⚠ Rate limited — resets at {time}` | Wait for reset, or press `R` to resume (`ResumeAgent` RPC) |
+| `input_required` | Yellow | `⚠ Waiting for your approval — answer the prompt in the terminal (Yes / … / No)` | Answer the Claude Code dialog in the terminal; clears when it leaves the screen |
 | (cleared) | (none) | Banner removed | Automatic on issue clear |
 
 The agent badge in the header also changes to `⚠ Issue` when an issue is active.
@@ -1649,7 +1650,7 @@ agents:
                               # generate-definition | generate-tasks | retrofit-definition
     task_number: 1            # Only when mode is task or wildfire
     task_title: "Add auth"    # Only when mode is task or wildfire
-    issue_type: "rate_limited"  # auth_required | rate_limited | "" (optional)
+    issue_type: "rate_limited"  # auth_required | rate_limited | trust_dialog | sandbox_denied | input_required | "" (optional)
     issue_message: "You've hit your limit"  # Original error message (optional)
 ```
 
@@ -1670,12 +1671,21 @@ The daemon detects issues (auth errors, rate limits) in real-time by scanning PT
 PTY Read → detectIssues() → Pattern Match → AgentIssue → Broadcast to Subscribers
 ```
 
+Claude Code's interactive dialogs are detected on a different surface (v10.2 Torch, issue #58): after each PTY read the loop also hands the vt10x **screen snapshot** to `Process.scanInputDialog()` (`internal/daemon/agent/inputdialog.go`). Matching the rendered grid rather than the line stream means a task prompt, diff or markdown file that merely *quotes* the dialog wording can never trip it — only a complete frame on the current screen does: the question/header marker, the consecutively numbered option rows (first-option wording pinned), and the dialog's footer row. Three frames are recognized, pinned from live captures of Claude Code v2.1.322: tool permission (`Do you want to proceed?` / `Do you want to make this edit to …?` + `1. Yes` … + `Esc to cancel · Tab to amend`), plan approval (`Would you like to proceed?` + `1. Yes, and use auto mode` … + `ctrl+g to edit in Vim ·`) and `AskUserQuestion` (`☐ <header>` + question + numbered options ending in `Chat about this` + `Enter to select · ↑/↓ to navigate · Esc to cancel`). The frame must be stable for 250 ms (`inputDialogSettle`) before the issue is raised or cleared, so Ink's multi-write redraws don't flap it. The resulting `input_required` issue carries the prompt text (including a multi-line command or diff under approval) in `message` and the ordered option labels in `options`; it is owned by the screen scanner — the line-based "3 clean batches" auto-clear skips it — and clears, with a nil broadcast to issue subscribers, as soon as the frame leaves the screen, whichever client answered. The daemon never answers an approval dialog itself (unlike the folder-trust dialog, which it auto-accepts).
+
+```
+PTY Read → vt10x.Write → snapshotScreen() → scanInputDialog() → settle 250 ms → input_required raised / cleared
+```
+
 ### Issue Types
 
 | Type | Constant | Patterns |
 |------|----------|----------|
 | **Auth Required** | `auth_required` | "API Error: 401", "OAuth token expired", "Please run /login" |
 | **Rate Limited** | `rate_limited` | "You've hit your limit", "rate limit", "too many requests", "API Error: 429" |
+| **Trust Dialog** | `trust_dialog` | Claude Code folder-trust frame recurring after the daemon's one-time auto-accept (`trustdialog.go`) |
+| **Sandbox Denied** | `sandbox_denied` | Preflight: project path under a sandbox-denied root; no agent is started (`sandbox_preflight.go`) |
+| **Input Required** | `input_required` | Claude Code approval/question dialog frame on the vt10x screen: tool permission, plan approval, `AskUserQuestion` (`inputdialog.go`); `message` = prompt, `options` = ordered labels; never auto-answered |
 
 ### Auth Issues
 
@@ -1721,11 +1731,12 @@ If the same task is restarted multiple times without completing (e.g., due to ra
 
 ```protobuf
 message AgentIssue {
-  string issue_type = 1;                    // "auth_required" | "rate_limited" | ""
+  string issue_type = 1;                    // "auth_required" | "rate_limited" | "trust_dialog" | "sandbox_denied" | "input_required" | ""
   google.protobuf.Timestamp detected_at = 2;
-  string message = 3;                       // Original error message from agent
+  string message = 3;                       // Original error message from agent, or the dialog prompt (input_required)
   optional google.protobuf.Timestamp reset_at = 4;      // When limit resets
   optional google.protobuf.Timestamp cooldown_until = 5; // When to auto-resume
+  repeated string options = 6;              // Ordered option labels of the dialog (input_required only)
 }
 ```
 

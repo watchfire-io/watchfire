@@ -1,4 +1,12 @@
-import { AlertTriangle, KeyRound, Timer, CheckCircle2, ChevronRight, ExternalLink } from 'lucide-react'
+import {
+  AlertTriangle,
+  KeyRound,
+  Timer,
+  MessageCircleQuestion,
+  CheckCircle2,
+  ChevronRight,
+  ExternalLink
+} from 'lucide-react'
 import { useNeedsAttention } from '../../hooks/useNeedsAttention'
 import type { AttentionEntry, AttentionKind } from '../../lib/needs-attention'
 
@@ -9,6 +17,8 @@ function kindIcon(kind: AttentionKind) {
       return KeyRound
     case 'rate_limited':
       return Timer
+    case 'input_required':
+      return MessageCircleQuestion
     default:
       return AlertTriangle
   }

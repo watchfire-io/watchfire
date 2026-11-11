@@ -26,6 +26,8 @@ function issueKindLabel(issueType) {
       return { kind: 'auth_required', label: 'Auth required' }
     case 'rate_limited':
       return { kind: 'rate_limited', label: 'Rate limited' }
+    case 'input_required':
+      return { kind: 'input_required', label: 'Waiting for your approval' }
     default:
       return { kind: 'agent_issue', label: 'Agent issue' }
   }
@@ -125,6 +127,23 @@ test('buildAttentionEntries: issues first, then tasks; right targets', () => {
   assert.equal(entries[2].kind, 'merge_failed')
   assert.equal(entries[2].label, 'Merge failed')
   assert.equal(entries[2].taskNumber, 9)
+})
+
+test('buildAttentionEntries: input_required (Claude dialog) is labelled and routed to main', () => {
+  const projects = [{ projectId: 'a', name: 'Alpha' }]
+  const issues = {
+    a: {
+      issueType: 'input_required',
+      message: 'Do you want to proceed?\n\n1. Yes\n2. No',
+      options: ['Yes', 'No']
+    }
+  }
+  const entries = buildAttentionEntries(projects, {}, issues)
+  assert.equal(entries.length, 1)
+  assert.equal(entries[0].kind, 'input_required')
+  assert.equal(entries[0].label, 'Waiting for your approval')
+  assert.equal(entries[0].target, 'main')
+  assert.match(entries[0].detail, /Do you want to proceed/)
 })
 
 test('buildAttentionEntries: empty issueType is ignored; name falls back to id', () => {
