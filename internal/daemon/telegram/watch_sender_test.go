@@ -54,6 +54,62 @@ func (h *senderHarness) flush() { h.cs.flush(context.Background(), false) }
 
 func tool(text string) Emission { return Emission{Kind: EmissionToolUse, Text: text} }
 func text(t string) Emission    { return Emission{Kind: EmissionAssistantText, Text: t} }
+func block(cmd string) Emission {
+	return Emission{Kind: EmissionToolBlock, Label: "⚒ Bash:", Text: cmd}
+}
+
+// tagsBalanced reports whether every HTML tag opened in s is closed in
+// s, in order — the property Telegram's parser demands per message.
+func tagsBalanced(s string) bool {
+	var stack []string
+	for i := 0; i < len(s); i++ {
+		if s[i] != '<' {
+			continue
+		}
+		end := strings.IndexByte(s[i:], '>')
+		if end < 0 {
+			return false
+		}
+		tag := s[i+1 : i+end]
+		i += end
+		if strings.HasPrefix(tag, "/") {
+			if len(stack) == 0 || stack[len(stack)-1] != tag[1:] {
+				return false
+			}
+			stack = stack[:len(stack)-1]
+			continue
+		}
+		stack = append(stack, tag)
+	}
+	return len(stack) == 0
+}
+
+// unescapeHTML reverses EscapeHTML for round-trip assertions.
+func unescapeHTML(s string) string {
+	return strings.NewReplacer("&lt;", "<", "&gt;", ">", "&amp;", "&").Replace(s)
+}
+
+// preBodies strips the tool-block label and <pre> wrapper from each
+// message and returns the escaped bodies, for reassembly checks.
+func preBodies(t *testing.T, msgs []string) []string {
+	t.Helper()
+	out := make([]string, 0, len(msgs))
+	for i, m := range msgs {
+		if i == 0 {
+			if !strings.HasPrefix(m, "<i>⚒ Bash:</i>\n") {
+				t.Fatalf("first message lacks the label: %q…", m[:min(len(m), 40)])
+			}
+			m = strings.TrimPrefix(m, "<i>⚒ Bash:</i>\n")
+		} else if strings.Contains(m, "⚒ Bash:") {
+			t.Fatalf("label repeated on message %d", i)
+		}
+		if !strings.HasPrefix(m, "<pre>") || !strings.HasSuffix(m, "</pre>") {
+			t.Fatalf("message %d is not a <pre> block: %q…", i, m[:min(len(m), 40)])
+		}
+		out = append(out, strings.TrimSuffix(strings.TrimPrefix(m, "<pre>"), "</pre>"))
+	}
+	return out
+}
 
 // TestSenderCoalescing: at most one send per chat per coalesce interval;
 // emissions buffered in between are delivered together.
@@ -379,4 +435,191 @@ func TestBreakGrowthNilSafe(t *testing.T) {
 	cs.breakGrowth()
 	b := &Bridge{relays: map[int64]*chatRelay{}}
 	b.breakRelayGrowth(42) // no relay for this chat
+}
+
+// TestBuildMessagesToolBlock (issue #58): a command tool use is relayed
+// whole — every line, HTML-escaped, inside a labeled <pre> block —
+// and a command longer than one Telegram message is SPLIT across
+// messages with balanced tags, never truncated. The compact one-liner
+// form of path-shaped tool uses is unchanged and still packs one per
+// line, with blocks joining the same packing when they fit.
+func TestBuildMessagesToolBlock(t *testing.T) {
+	threeLine := "cd /tmp/proj &&\n  make build 2>&1 | tee build.log\nmake test"
+
+	var lines strings.Builder
+	for i := 0; i < 100; i++ {
+		lines.WriteString(strings.Repeat("y", 59))
+		if i < 99 {
+			lines.WriteByte('\n')
+		}
+	}
+	multiLine6000 := lines.String() // 100 × 59 + 99 newlines = 5999 chars
+
+	cases := []struct {
+		name     string
+		batch    []Emission
+		wantMsgs []string // exact, when the shape is small enough to spell out
+		minMsgs  int      // for the oversized cases
+		join     string   // how chunk bodies reassemble into the original
+		original string
+	}{
+		{
+			name:  "three-line command, whole and escaped, one balanced block",
+			batch: []Emission{block(threeLine)},
+			wantMsgs: []string{
+				"<i>⚒ Bash:</i>\n<pre>cd /tmp/proj &amp;&amp;\n  make build 2&gt;&amp;1 | tee build.log\nmake test</pre>",
+			},
+		},
+		{
+			name:     "6000-char multi-line command splits at line boundaries",
+			batch:    []Emission{block(multiLine6000)},
+			minMsgs:  2,
+			join:     "\n",
+			original: multiLine6000,
+		},
+		{
+			name:     "6000-char one-line command splits without truncation",
+			batch:    []Emission{block(strings.Repeat("x", 6000))},
+			minMsgs:  2,
+			join:     "",
+			original: strings.Repeat("x", 6000),
+		},
+		{
+			name:     "6000-char one-line command full of entities splits cleanly",
+			batch:    []Emission{block(strings.Repeat("a<&>", 1500))},
+			minMsgs:  2,
+			join:     "",
+			original: strings.Repeat("a<&>", 1500),
+		},
+		{
+			name:  "compact one-liners still pack one per line",
+			batch: []Emission{tool("⚒ Edit internal/tui/model.go"), tool("⚒ Read internal/tui/view.go")},
+			wantMsgs: []string{
+				"<i>⚒ Edit internal/tui/model.go</i>\n<i>⚒ Read internal/tui/view.go</i>",
+			},
+		},
+		{
+			name:  "a fitting block packs with the one-liners around it",
+			batch: []Emission{tool("⚒ Edit internal/tui/model.go"), block("make test"), tool("⚒ Read go.mod")},
+			wantMsgs: []string{
+				"<i>⚒ Edit internal/tui/model.go</i>\n<i>⚒ Bash:</i>\n<pre>make test</pre>\n<i>⚒ Read go.mod</i>",
+			},
+		},
+		{
+			name:  "block then assistant text: text follows the closed block",
+			batch: []Emission{block("make test"), text("Tests pass.")},
+			wantMsgs: []string{
+				"<i>⚒ Bash:</i>\n<pre>make test</pre>\n\nTests pass.",
+			},
+		},
+		{
+			name:  "assistant text then block",
+			batch: []Emission{text("Running the suite."), block("make test")},
+			wantMsgs: []string{
+				"Running the suite.\n\n<i>⚒ Bash:</i>\n<pre>make test</pre>",
+			},
+		},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			msgs := buildMessages(c.batch)
+			for i, m := range msgs {
+				if len(m) > maxMessageLen {
+					t.Fatalf("message %d exceeds the cap: %d bytes", i, len(m))
+				}
+				if !tagsBalanced(m) {
+					t.Fatalf("message %d has unbalanced tags: %q…", i, m[:min(len(m), 60)])
+				}
+			}
+			if c.wantMsgs != nil {
+				if len(msgs) != len(c.wantMsgs) {
+					t.Fatalf("got %d messages, want %d: %q", len(msgs), len(c.wantMsgs), msgs)
+				}
+				for i := range msgs {
+					if msgs[i] != c.wantMsgs[i] {
+						t.Fatalf("message %d = %q, want %q", i, msgs[i], c.wantMsgs[i])
+					}
+				}
+				return
+			}
+			if len(msgs) < c.minMsgs {
+				t.Fatalf("oversized command should split into ≥%d messages, got %d", c.minMsgs, len(msgs))
+			}
+			bodies := preBodies(t, msgs)
+			if got := unescapeHTML(strings.Join(bodies, c.join)); got != c.original {
+				t.Fatalf("reassembled bodies differ from the original (len %d vs %d)", len(got), len(c.original))
+			}
+		})
+	}
+}
+
+// TestBuildMessagesBlockNeverOverflowsSharedMessage: a shared message
+// that already holds a block must not be grown past the cap by later
+// emissions (line-boundary chunking would then tear the <pre> apart),
+// and an oversized block never joins a shared message at all.
+func TestBuildMessagesBlockNeverOverflowsSharedMessage(t *testing.T) {
+	// 4050 body bytes + the label line + <pre></pre> ≈ 4078: one message
+	// on its own, but no neighbor fits beside it under the cap.
+	near := block(strings.Repeat("z", 4050))
+	msgs := buildMessages([]Emission{tool("⚒ Read go.mod"), near, tool("⚒ Edit go.mod"), text(strings.Repeat("w", 200))})
+	if len(msgs) < 3 {
+		t.Fatalf("expected the block to stand apart from its neighbors, got %d messages", len(msgs))
+	}
+	for i, m := range msgs {
+		if len(m) > maxMessageLen || !tagsBalanced(m) {
+			t.Fatalf("message %d: len=%d balanced=%v", i, len(m), tagsBalanced(m))
+		}
+	}
+	if !strings.Contains(strings.Join(msgs, ""), strings.Repeat("z", 4050)) {
+		t.Fatal("near-cap block body was altered")
+	}
+
+	big := block(strings.Repeat("q", 9000))
+	msgs = buildMessages([]Emission{text("before"), big, text("after")})
+	if msgs[0] != "before" || msgs[len(msgs)-1] != "after" {
+		t.Fatalf("oversized block must flush its neighbors into their own messages: %q", msgs)
+	}
+	for i, m := range msgs {
+		if len(m) > maxMessageLen || !tagsBalanced(m) {
+			t.Fatalf("message %d: len=%d balanced=%v", i, len(m), tagsBalanced(m))
+		}
+	}
+}
+
+// TestSenderToolBlockEndsGrowth: a tool block flushes as a new message
+// (never edited into the grown assistant bubble), and assistant text
+// after it starts a fresh message rather than being spliced into the
+// block's tags.
+func TestSenderToolBlockEndsGrowth(t *testing.T) {
+	h := newSenderHarness()
+	h.cs.Add(text("Let me run the tests."))
+	h.flush()
+	if len(h.sends) != 1 {
+		t.Fatalf("initial sends = %v", h.sends)
+	}
+
+	h.advance(3 * time.Second)
+	h.cs.Add(block("make test\nmake lint"))
+	h.flush()
+	if len(h.edits) != 0 {
+		t.Fatalf("a tool block must not be edited into the grown message: %+v", h.edits)
+	}
+	if len(h.sends) != 2 || h.sends[1] != "<i>⚒ Bash:</i>\n<pre>make test\nmake lint</pre>" {
+		t.Fatalf("sends = %q", h.sends)
+	}
+
+	h.advance(3 * time.Second)
+	h.cs.Add(text("All green."))
+	h.flush()
+	if len(h.edits) != 0 {
+		t.Fatalf("text after a block must not grow the block message: %+v", h.edits)
+	}
+	if len(h.sends) != 3 || h.sends[2] != "All green." {
+		t.Fatalf("text after a block should be a fresh message: %q", h.sends)
+	}
+	for i, m := range h.sends {
+		if !tagsBalanced(m) {
+			t.Fatalf("send %d has unbalanced tags: %q", i, m)
+		}
+	}
 }
