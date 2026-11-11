@@ -3361,11 +3361,12 @@ func (x *RawOutputChunk) GetData() []byte {
 
 type AgentIssue struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
-	IssueType     string                 `protobuf:"bytes,1,opt,name=issue_type,json=issueType,proto3" json:"issue_type,omitempty"` // "auth_required" | "rate_limited" | ""
+	IssueType     string                 `protobuf:"bytes,1,opt,name=issue_type,json=issueType,proto3" json:"issue_type,omitempty"` // "auth_required" | "rate_limited" | "trust_dialog" | "sandbox_denied" | "input_required" | ""
 	DetectedAt    *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=detected_at,json=detectedAt,proto3" json:"detected_at,omitempty"`
-	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`
+	Message       string                 `protobuf:"bytes,3,opt,name=message,proto3" json:"message,omitempty"`                                        // Error text, or the dialog prompt (input_required)
 	ResetAt       *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=reset_at,json=resetAt,proto3,oneof" json:"reset_at,omitempty"`                   // When limit resets (rate limits)
 	CooldownUntil *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=cooldown_until,json=cooldownUntil,proto3,oneof" json:"cooldown_until,omitempty"` // When to auto-resume
+	Options       []string               `protobuf:"bytes,6,rep,name=options,proto3" json:"options,omitempty"`                                        // Ordered option labels of the dialog (input_required only)
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3431,6 +3432,13 @@ func (x *AgentIssue) GetResetAt() *timestamppb.Timestamp {
 func (x *AgentIssue) GetCooldownUntil() *timestamppb.Timestamp {
 	if x != nil {
 		return x.CooldownUntil
+	}
+	return nil
+}
+
+func (x *AgentIssue) GetOptions() []string {
+	if x != nil {
+		return x.Options
 	}
 	return nil
 }
@@ -9680,7 +9688,7 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"\x0eRawOutputChunk\x12\x1d\n" +
 	"\n" +
 	"project_id\x18\x01 \x01(\tR\tprojectId\x12\x12\n" +
-	"\x04data\x18\x02 \x01(\fR\x04data\"\xa6\x02\n" +
+	"\x04data\x18\x02 \x01(\fR\x04data\"\xc0\x02\n" +
 	"\n" +
 	"AgentIssue\x12\x1d\n" +
 	"\n" +
@@ -9689,7 +9697,8 @@ const file_proto_watchfire_proto_rawDesc = "" +
 	"detectedAt\x12\x18\n" +
 	"\amessage\x18\x03 \x01(\tR\amessage\x12:\n" +
 	"\breset_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampH\x00R\aresetAt\x88\x01\x01\x12F\n" +
-	"\x0ecooldown_until\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampH\x01R\rcooldownUntil\x88\x01\x01B\v\n" +
+	"\x0ecooldown_until\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampH\x01R\rcooldownUntil\x88\x01\x01\x12\x18\n" +
+	"\aoptions\x18\x06 \x03(\tR\aoptionsB\v\n" +
 	"\t_reset_atB\x11\n" +
 	"\x0f_cooldown_until\"h\n" +
 	"\x1bSubscribeAgentIssuesRequest\x12*\n" +

@@ -90,6 +90,10 @@ type Process struct {
 	trustAckedAt     time.Time          // when the auto-ack was sent
 	trustIssueRaised bool               // recurrence issue raised; stop scanning
 	trustAckWrite    func([]byte) error // test seam; nil → SendInput
+
+	// Claude Code approval/question dialog detection (guarded by issueMu;
+	// see inputdialog.go). Fed from the screen snapshot, not the line stream.
+	inputDialog inputDialogState
 }
 
 // NewProcess creates and starts a new agent process with PTY and vt10x terminal emulation.
@@ -160,6 +164,10 @@ func (p *Process) readLoop() {
 			screen := p.snapshotScreen()
 			p.broadcastScreen(screen)
 
+			// Approval/question dialogs are recognized on the rendered
+			// screen, where quoted scrollback can't masquerade as a frame.
+			p.scanInputDialog(screen.Lines)
+
 			// Append to scrollback buffer
 			p.appendScrollback(data)
 		}
@@ -167,6 +175,10 @@ func (p *Process) readLoop() {
 			break
 		}
 	}
+
+	p.issueMu.Lock()
+	p.stopInputDialogLocked()
+	p.issueMu.Unlock()
 
 	// Wait for process to finish
 	p.exitErr = p.cmd.Wait()
@@ -599,19 +611,27 @@ func (p *Process) detectIssues(data []byte) {
 	}
 
 	// Auto-clear: if we have an active issue and see enough normal output,
-	// the agent has resumed working — clear the issue banner.
-	if hasNonEmpty && p.issue != nil {
+	// the agent has resumed working — clear the issue banner. input_required
+	// is owned by the screen scanner (inputdialog.go): a parked dialog keeps
+	// redrawing, which would otherwise count as "clean" output.
+	if hasNonEmpty && p.issue != nil && p.issue.Type != AgentIssueInputRequired {
 		p.cleanLineCount++
 		if p.cleanLineCount >= issueAutoClearThreshold {
 			p.logf("Issue auto-cleared after %d clean line batches", p.cleanLineCount)
-			p.cleanLineCount = 0
-			p.issue = nil
-			for _, ch := range p.issueSubs {
-				select {
-				case ch <- nil:
-				default:
-				}
-			}
+			p.clearIssueLocked()
+		}
+	}
+}
+
+// clearIssueLocked drops the current issue and broadcasts nil to
+// subscribers. Must be called while holding issueMu.
+func (p *Process) clearIssueLocked() {
+	p.cleanLineCount = 0
+	p.issue = nil
+	for _, ch := range p.issueSubs {
+		select {
+		case ch <- nil:
+		default:
 		}
 	}
 }
@@ -653,15 +673,10 @@ func (p *Process) ClearIssue() {
 
 	if p.issue != nil {
 		p.logf("Issue cleared: type=%s", p.issue.Type)
-		p.issue = nil
-
-		// Broadcast nil to indicate issue cleared
-		for _, ch := range p.issueSubs {
-			select {
-			case ch <- nil:
-			default:
-			}
-		}
+		p.clearIssueLocked()
+		// A manually cleared dialog issue is raised again on the next
+		// snapshot if the dialog is still on screen.
+		p.inputDialog.appliedSig = ""
 	}
 }
 

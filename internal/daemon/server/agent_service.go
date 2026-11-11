@@ -345,6 +345,9 @@ func issueToProto(issue *agent.AgentIssue) *pb.AgentIssue {
 	if issue.CooldownUntil != nil {
 		pbIssue.CooldownUntil = timestamppb.New(*issue.CooldownUntil)
 	}
+	if len(issue.Options) > 0 {
+		pbIssue.Options = append([]string(nil), issue.Options...)
+	}
 	return pbIssue
 }
 

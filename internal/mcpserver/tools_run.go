@@ -42,7 +42,7 @@ var runTools = []toolDef{
 	newTool(toolSpec{
 		Group: groupInspect, Name: "get_agent_status", Title: "Get agent status",
 		ReadOnly: true, Idempotent: true,
-		Description: "Get live agent status for a project: whether an agent is running, its mode (chat | task | start-all | wildfire), the task_number/title being worked, the wildfire phase, when the session started, and any blocking issue (auth_required / rate_limited) with its message and cooldown — how to tell a working agent from a stuck one. Check this before run_task if you are unsure whether the project is busy.",
+		Description: "Get live agent status for a project: whether an agent is running, its mode (chat | task | start-all | wildfire), the task_number/title being worked, the wildfire phase, when the session started, and any blocking issue (auth_required / rate_limited / input_required — a Claude Code approval or question dialog waiting for an answer, with the prompt in message and the option labels in options) with its message and cooldown — how to tell a working agent from a stuck one. Check this before run_task if you are unsure whether the project is busy.",
 	}, handleGetAgentStatus),
 	newTool(toolSpec{
 		Group: groupRun, Name: "wait_for_task", Title: "Wait for task",
@@ -66,11 +66,12 @@ type waitForTaskArgs struct {
 // agentIssueDetail is the full AgentIssue view (get_agent_status), including
 // the cooldown fields agentSummary omits.
 type agentIssueDetail struct {
-	Type          string `json:"type"`
-	Message       string `json:"message,omitempty"`
-	DetectedAt    string `json:"detected_at,omitempty"`
-	ResetAt       string `json:"reset_at,omitempty"`
-	CooldownUntil string `json:"cooldown_until,omitempty"`
+	Type          string   `json:"type"`
+	Message       string   `json:"message,omitempty"`
+	DetectedAt    string   `json:"detected_at,omitempty"`
+	ResetAt       string   `json:"reset_at,omitempty"`
+	CooldownUntil string   `json:"cooldown_until,omitempty"`
+	Options       []string `json:"options,omitempty"` // input_required: the dialog's option labels in order
 }
 
 type agentStatusDetail struct {
@@ -328,6 +329,7 @@ func protoAgentStatus(st *pb.AgentStatus) agentStatusDetail {
 			DetectedAt:    formatTimestamp(st.Issue.DetectedAt),
 			ResetAt:       formatTimestamp(st.Issue.ResetAt),
 			CooldownUntil: formatTimestamp(st.Issue.CooldownUntil),
+			Options:       st.Issue.Options,
 		}
 	}
 	return d

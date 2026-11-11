@@ -89,6 +89,14 @@ In order — cheapest first:
   Telegram with `/login`, or in the GUI/TUI terminal. The agent keeps running.
 - `rate_limited` — provider limit; carries a reset time and auto-resumes.
 - `trust_dialog` — Claude's folder-trust prompt; auto-acknowledged.
+- `input_required` — Claude Code is parked on an approval or question dialog
+  (a tool-permission prompt, a plan-approval prompt, or `AskUserQuestion`).
+  The issue's `message` carries the full prompt (including the command or
+  diff under approval) and `options` the numbered choices in order. The
+  daemon never answers for you: answer the prompt on the live screen
+  (`get_agent_screen` shows it), in the GUI/TUI terminal, or from Telegram
+  once prompt forwarding lands (task 0003). It clears by itself as soon as
+  the dialog leaves the screen.
 - `sandbox_denied` — the project path is inside a sandbox-denied root
   (`~/Desktop`, `~/Documents`, `~/Downloads`, `.ssh`, `.aws`, …). The agent was
   never started. **Move the project**; there is no override.

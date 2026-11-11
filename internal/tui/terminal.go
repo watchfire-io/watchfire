@@ -257,6 +257,14 @@ func (t *Terminal) renderIssueBanner() string {
 		} else {
 			text += ". Press R to resume."
 		}
+	case "input_required":
+		// Claude Code is parked on an approval/question dialog; the full
+		// prompt is on the terminal below, so the banner just names the
+		// options so the user knows what a keystroke will do.
+		text = "⚠ Waiting for your approval — answer the prompt in the terminal"
+		if len(issue.Options) > 0 {
+			text += " (" + strings.Join(issue.Options, " / ") + ")"
+		}
 	default:
 		text = "⚠ " + issue.Message
 	}

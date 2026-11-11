@@ -9,7 +9,10 @@ interface IssueBannerProps {
 export function IssueBanner({ issue, onResume }: IssueBannerProps) {
   // sandbox_denied (#17): the agent was never started — the project path is
   // inside a sandbox-denied root. Resume can't help; the message says what to do.
-  const resumable = issue.issueType !== 'sandbox_denied'
+  // input_required (#58): Claude Code is waiting on an approval/question
+  // dialog in the terminal below. Resume would only hide the banner until
+  // the next screen scan re-raises it; the user has to answer the prompt.
+  const resumable = issue.issueType !== 'sandbox_denied' && issue.issueType !== 'input_required'
   return (
     <div className="flex items-center gap-3 px-4 py-2 bg-amber-900/30 border-b border-amber-700/40 text-amber-200 text-sm">
       <AlertTriangle size={16} className="shrink-0 text-amber-400" />
@@ -18,7 +21,11 @@ export function IssueBanner({ issue, onResume }: IssueBannerProps) {
           ? 'Authentication required — agent is paused'
           : issue.issueType === 'rate_limited'
             ? `Rate limited — ${issue.message || 'waiting for reset'}`
-            : issue.message || 'Agent issue detected'}
+            : issue.issueType === 'input_required'
+              ? `Waiting for your approval — answer the prompt in the terminal${
+                  issue.options.length > 0 ? ` (${issue.options.join(' / ')})` : ''
+                }`
+              : issue.message || 'Agent issue detected'}
       </span>
       {onResume && resumable && (
         <button
