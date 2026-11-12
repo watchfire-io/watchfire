@@ -48,8 +48,9 @@ The daemon can be supervised from Telegram: a long-polling bridge
 the allowlist, live watch-mode relay, and an outbound relay adapter. See
 `ARCHITECTURE.md` → "Telegram Bridge (`internal/daemon/telegram/`) — v10.0
 Torch" for the design. Two invariants for anyone touching bridge code: it
-**never calls `Resize`**, and `injectSay` (the `/say` verb and plain-text
-chat forwarding) is the **only** PTY write — both enforced by
+**never calls `Resize`**, and `injectSay` (the `/say` verb, plain-text
+chat forwarding, `/login`, and approval-prompt answers) is the **only** PTY
+write — both enforced by
 `internal/daemon/telegram/watch_guard_test.go`.
 
 ## Cycle ground rules

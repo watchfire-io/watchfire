@@ -9,11 +9,13 @@
 // /screen is a one-shot plain-text tail of the live session, reusing
 // the tier-2 normalization from watch mode (task 0141).
 //
-// /say is the ONLY write path into an agent PTY in the entire telegram
-// package: the user's text verbatim plus exactly one carriage return,
-// injected through injectSay — the single call site the source-guard
-// test (watch_guard_test.go) allowlists. Everything else in this
-// package only ever reads.
+// injectSay is the ONLY write path into an agent PTY in the entire
+// telegram package — the single call site the source-guard test
+// (watch_guard_test.go) allowlists. It writes either a typed line (the
+// user's text verbatim plus exactly one carriage return: /say, plain
+// text, /login) or one bare keystroke with no Enter (answering an
+// approval dialog — prompt.go). Everything else in this package only
+// ever reads.
 package telegram
 
 import (
@@ -84,17 +86,43 @@ type RunController interface {
 	SendInput(projectID string, data []byte) error
 }
 
+// sayKind is what injectSay writes after the text.
+type sayKind int
+
+const (
+	// sayLine is a typed line: the text, a short beat, then one carriage
+	// return (Enter) as its own write. /say, plain-text conversation, the
+	// /login dialog and a prompt's free-text answer all use it.
+	sayLine sayKind = iota
+	// sayKeystroke is a bare keypress: the bytes alone, NO Enter. It
+	// exists for exactly one caller — answering a Claude Code approval /
+	// question dialog (prompt.go), whose keys are a single digit or Esc.
+	// Captured live (Claude Code v2.1.322, 2026-11-12): a digit selects
+	// AND submits the option the instant it arrives (the dialog is gone
+	// ~50ms later), and Esc cancels it the same way. An Enter 250ms
+	// behind it would therefore land on whatever owns the screen NEXT —
+	// a second queued permission dialog (accepting its highlighted
+	// "Yes" unseen) or the input box (submitting the CLI's ghost-text
+	// suggestion). So the answer is the key and nothing else.
+	sayKeystroke
+)
+
 // injectSay is the single sanctioned PTY write path in the telegram
-// package: the user's text verbatim, then — after a short beat — one
-// carriage return (Enter) as its own write. Sending text+\r as a
-// single chunk trips the agent CLI's paste detection, which absorbs
+// package. A sayLine is the user's text verbatim, then — after a short
+// beat — one carriage return (Enter) as its own write. Sending text+\r
+// as a single chunk trips the agent CLI's paste detection, which absorbs
 // the trailing Enter into the pasted content instead of submitting
 // (observed live: the message sat in Claude Code's input box, unsent).
-// The split write mirrors a human typing and then pressing Enter. The
+// The split write mirrors a human typing and then pressing Enter. A
+// sayKeystroke is one write with no Enter at all (see sayKind). The
 // watch_guard_test source guard allowlists precisely this call site —
 // any other SendInput reference in the package fails the build's tests.
-func (b *Bridge) injectSay(projectID, text string) error {
-	for i, chunk := range [][]byte{[]byte(text), {'\r'}} {
+func (b *Bridge) injectSay(projectID, text string, kind sayKind) error {
+	chunks := [][]byte{[]byte(text)}
+	if kind == sayLine {
+		chunks = append(chunks, []byte{'\r'})
+	}
+	for i, chunk := range chunks {
 		if i > 0 {
 			b.sleepFn(context.Background(), b.sayEnterDelay)
 		}
@@ -268,7 +296,7 @@ func (b *Bridge) cmdSay(ctx context.Context, chatID int64, text string) {
 		b.reply(ctx, chatID, "No agent is running for this project — there is no session to send input to.")
 		return
 	}
-	if err := b.injectSay(projectID, text); err != nil {
+	if err := b.injectSay(projectID, text, sayLine); err != nil {
 		b.reply(ctx, chatID, "Failed to send input: "+EscapeHTML(err.Error()))
 		return
 	}
@@ -426,6 +454,13 @@ func (b *Bridge) handlePlainText(ctx context.Context, chatID int64, text string)
 	if b.handleLoginCode(ctx, chatID, text) {
 		return
 	}
+	// A session parked on an approval / question dialog never gets
+	// plain text typed at it: text + Enter would press Enter on the
+	// dialog's highlighted option. The message is either the typed
+	// answer the dialog asked for or it is refused (prompt.go).
+	if b.handlePromptText(ctx, chatID, text) {
+		return
+	}
 	b.mu.Lock()
 	chat := b.paired[chatID]
 	b.mu.Unlock()
@@ -435,7 +470,7 @@ func (b *Bridge) handlePlainText(ctx context.Context, chatID int64, text string)
 			b.replyBusyOptions(ctx, chatID, chat, sess)
 			return
 		}
-		if err := b.injectSay(sess.ProjectID, text); err != nil {
+		if err := b.injectSay(sess.ProjectID, text, sayLine); err != nil {
 			b.reply(ctx, chatID, "Failed to send input: "+EscapeHTML(err.Error()))
 			return
 		}
@@ -576,7 +611,7 @@ func (b *Bridge) deliverWhenReady(ctx context.Context, projectID string) {
 	}
 	b.sleepFn(ctx, b.chatStartSettle)
 	for _, t := range p.texts {
-		if err := b.injectSay(projectID, t); err != nil {
+		if err := b.injectSay(projectID, t, sayLine); err != nil {
 			for cid := range p.chatIDs {
 				b.reply(ctx, cid, "Failed to send your message: "+EscapeHTML(err.Error()))
 			}

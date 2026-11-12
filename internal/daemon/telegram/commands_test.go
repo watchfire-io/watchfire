@@ -74,7 +74,7 @@ func TestBridgeSetMyCommandsOnStart(t *testing.T) {
 	for _, cmd := range []string{
 		"projects", "use", "status", "tasks", "agent",
 		"run", "new", "wildfire", "stop", "generate", "plan", "retry", "cancel",
-		"watch", "screen", "say", "mute", "pair", "help",
+		"watch", "screen", "say", "approve", "deny", "answer", "mute", "pair", "help",
 	} {
 		if !strings.Contains(got, `"`+cmd+`"`) {
 			t.Fatalf("setMyCommands payload missing %q: %s", cmd, got)
@@ -390,6 +390,7 @@ func TestBridgeHelpAndUnknown(t *testing.T) {
 		"/projects", "/use", "/status", "/tasks", "/agent",
 		"/run", "/new", "/wildfire", "/stop", "/generate", "/plan",
 		"/retry", "/cancel", "/screen", "/say", "/watch", "/mute",
+		"/approve", "/deny", "/answer",
 		"/pair", "/help",
 	} {
 		if !strings.Contains(help, want) {

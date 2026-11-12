@@ -1310,6 +1310,7 @@ internal/daemon/telegram/           # The bridge (mirrors internal/daemon/discor
     login.go                        # /login — drives the session's OAuth dialog end to end: link to phone, code pasted back via injectSay, confirming Enter
     agents.go                       # /agent — AgentSelector seam (backend list + project default_agent)
     watch.go                        # Live conversation relay ("watch mode"): tailer, screen deltas, chatSender
+    prompt.go                       # Approval-prompt relay: forwards input_required dialogs, inline answer buttons, /approve /deny /answer
 internal/daemon/relay/telegram.go   # Outbound relay.Adapter: TASK_FAILED / RUN_COMPLETE / WEEKLY_DIGEST → paired chats
 internal/daemon/server/
     command_context.go              # Production echo.CommandContext (shared by Slack/Discord/Telegram)
@@ -1363,11 +1364,14 @@ Routing: `/status`, `/tasks`, `/retry`, `/cancel` are pure dispatch through `ech
 | `/retry <n>` / `/cancel <n>` | Existing router verbs (retry re-queues done+failed; cancel stops the agent then marks failed, reason "cancelled via Telegram") |
 | `/screen` | One-shot plain-text snapshot of the live session (last 40 normalized lines, `<pre>` block) |
 | `/say <text>` | Inject `<text>` + `\r` into the running agent's PTY. The argument is re-carved **verbatim** from the raw message (internal whitespace preserved), not the whitespace-normalized dispatcher rest |
-| *(plain text)* | Any non-command message from a paired chat talks to a **chat agent** through the same `injectSay` path — Telegram is a conversation surface, so no `/say` prefix is needed. Three cases, resolved against the session watch mode streams (the chat's `/use` selection, or the auto-attached live session): a live **chat**-mode session → inject; a live **non-chat** session (task/run-all/wildfire/generate) → never typed into implicitly — the reply names what's running and offers options (`/watch on`, `/screen`, explicit `/say`, `/cancel <n>`); **nothing running** → the bridge auto-starts a chat agent on the chat's `/use` project (via `RunController.StartChat`, queued per project so concurrent messages don't double-start) and injects the queued messages once the session paints its first screen plus a settle delay. With watch off, deliveries ack with a `/watch on` hint |
+| `/approve` / `/deny` | Answer the approval prompt the chat's session is parked on (see "Approval prompts" below). `/approve` picks option 1 and only when it is a "Yes…" — on an open question it refuses and lists the options. `/deny` picks the dialog's plain "No" option, or presses **Esc** when it has none (plan approvals, questions) |
+| `/answer <n> [text]` | Pick option *n* of the waiting prompt. Trailing text is the typed answer for a free-text option ("Type something.", "Tell Claude what to change"); without text such an option arms the chat so its next plain message is the answer ("cancel" backs out). Text on a plain option is refused |
+| *(plain text)* | Any non-command message from a paired chat talks to a **chat agent** through the same `injectSay` path — Telegram is a conversation surface, so no `/say` prefix is needed. Three cases, resolved against the session watch mode streams (the chat's `/use` selection, or the auto-attached live session): a live **chat**-mode session → inject; a live **non-chat** session (task/run-all/wildfire/generate) → never typed into implicitly — the reply names what's running and offers options (`/watch on`, `/screen`, explicit `/say`, `/cancel <n>`); **nothing running** → the bridge auto-starts a chat agent on the chat's `/use` project (via `RunController.StartChat`, queued per project so concurrent messages don't double-start) and injects the queued messages once the session paints its first screen plus a settle delay. With watch off, deliveries ack with a `/watch on` hint. **A session parked on an approval / question dialog is never typed at**: text + Enter would accept the dialog's highlighted option, so with a prompt waiting the message is either the typed answer (chat armed by a free-text option, or an open question that has a "Type something." option) or it is refused with a pointer to the buttons |
 | `/watch on\|off` | Toggle live conversation relay for this chat (persisted per chat; **on by default for fresh pairings** — a newly paired chat that stays silent while an agent runs reads as broken) |
 | `/mute on\|off` | Pause/resume outbound event pushes to this chat (honored per send by the relay adapter; `/unmute` remains a hidden alias) |
 | `/pair <code>` | Redeem a pairing code |
 | `/agent [name]` | Show or switch the project's `default_agent` backend via the `AgentSelector` seam (backend registry + project YAML write). Exact/unique-prefix match on key or display name; uninstalled backends are refused. Applies to NEW sessions — `/new` restarts chat with it |
+| *(inline buttons)* | Two callback namespaces share the pipe: `use:<project>` (the `/projects` picker) and `ans:<project>:<instance>:<n>` (a forwarded prompt's option buttons) |
 | `/help` | The FULL grouped command list. `setMyCommands` (Telegram's autocomplete menu) registers the same canonical set; only the hidden aliases (`/runall`, `/unmute`) stay out of the menu |
 
 ### Watch mode (live conversation relay)
@@ -1385,12 +1389,38 @@ Three fidelity tiers, cheapest first:
   - **Typing indicator:** while a relayed session is recently active (an emission within the last 15s — seeded at session start, so boot counts), the relay re-sends the `sendChatAction` "typing…" status every 4s, so the user sees the agent working between coalesced sends. The plain-text paths also show it right after an injection and while an auto-started chat agent boots.
   - **Watch defaults ON.** Persisted as a negative-polarity `watch_off` flag on the paired chat, so the zero value (including chats paired before the field existed) means watching; `/watch off` opts out.
 
+### Approval prompts (`prompt.go`, v10.2)
+
+When a Claude Code session stops on an interactive dialog the daemon raises `input_required` (see "Agent issues"); nothing else would tell a phone user the agent is blocked. The bridge forwards the dialog and lets the chat answer it.
+
+- **Read seam.** `WatchedSession.Prompt()` returns a `SessionPrompt` — the prompt text *without* the option list (`AgentIssue.Prompt`), the ordered option labels, the per-option detail text (`AgentIssue.OptionDetails`, AskUserQuestion descriptions) and `DetectedAt` — or nil. Read-only like `Snapshot`/`IssueType`; the production adapter is `server/telegram_sessions.go`.
+- **One message per dialog instance per chat.** `reconcilePrompts` runs on the watch-loop tick (2s) and right after every answer. An *instance* is a hash of (session key, `DetectedAt`, prompt text, options), so a later dialog with identical wording is a new instance. The message is a "⏸ Waiting for your approval|answer on **project** · task #NNNN — title" header, the prompt (more than two lines → a `<pre>` block, chunked on its body with balanced tags like the relay's tool blocks, so a multi-line command, diff or plan is never cut), the numbered options with their details, and a hint line. The options + hint always ride the last message, which carries the keyboard.
+- **Not chatter.** Prompts go to every paired, un-muted chat whose session resolves to the dialog's — the chat's `/use` selection or the auto-attached live session — **whether or not watch is on**. Muted chats get nothing.
+- **Inline buttons.** One button per option (up to 9 — the CLI selects by a single digit). Callback data is `ans:<project>:<instance>:<n>`, which fits the Bot API's 64-byte cap for UUID project ids; an id too long for the cap sends the prompt without a keyboard and the text commands still work.
+- **Answering** (`answerPrompt`) re-reads the live dialog, refuses when the instance is not the one on screen ("That prompt is no longer waiting." — nothing is typed), records who answered, types the answer through `injectSay`, then **verifies the dialog left the screen** (polling up to 4s). Only then is it reported as answered; a dialog that is still up is reported as such and its message stays open.
+- **Closing out.** A forwarded message whose instance left the screen is edited — which also drops its keyboard — to "✅ **option** — answered by @user" (answered from Telegram, in every chat that was shown it) or "☑ No longer waiting — answered or dismissed somewhere else" (GUI/TUI, session ended).
+- **Edit-in-place discipline.** A prompt is a bridge-authored message: the chat's relay is force-flushed first (the tool call reads above the question it led to) and its growth anchor dropped, like every bridge reply since v10.1.
+
+Keys, pinned from live captures of Claude Code v2.1.322 (2026-11-12):
+
+| Answer | Bytes written | Why |
+|---|---|---|
+| Option *n* | the digit, **no Enter** | A digit selects *and submits* the instant it arrives — the dialog is gone ~50ms later. An Enter 250ms behind it would land on whatever is on screen next: a second queued permission dialog (accepting its highlighted "Yes" unseen) or the input box (submitting the CLI's ghost-text suggestion) |
+| Decline / dismiss | `Esc`, no Enter | Cancels any of the three dialogs ("Interrupted · What should Claude do instead?" / "User declined to answer questions") |
+| Free-text option *n* + text | the digit, a beat, then the text and Enter as an ordinary typed line | The digit only moves focus into the option's text field; Enter submits what was typed |
+
+Known limit: while a free-text option holds focus in the CLI its footer changes and the daemon's detector no longer recognizes the frame, so a user who parks the cursor there in the GUI/TUI makes the forwarded prompt read "no longer waiting" until they move off it.
+
 ### Invariants (enforced, not asserted)
 
-The bridge observes sessions only through the `telegram.SessionSource` seam (plain screen lines, the current detected issue type, task YAML outcomes, the active-project list for auto-attach, and created-task summaries for the wildfire milestone feed — no `Process`, no PTY handle) and writes only through `telegram.RunController`. Mode starters on that seam **replace** the running agent (GUI/TUI semantics, v10.0.2); only the plain-text chat auto-start is refusal-gated, and `/new` refuses to displace a working agent:
+The bridge observes sessions only through the `telegram.SessionSource` seam (plain screen lines, the current detected issue type, the pending approval prompt, task YAML outcomes, the active-project list for auto-attach, and created-task summaries for the wildfire milestone feed — no `Process`, no PTY handle) and writes only through `telegram.RunController`. Mode starters on that seam **replace** the running agent (GUI/TUI semantics, v10.0.2); only the plain-text chat auto-start is refusal-gated, and `/new` refuses to displace a working agent:
 
 1. **The bridge never calls `Resize`.** Terminal size is global per project; an external bridge resizing would fight the attached TUI/GUI.
-2. **`injectSay` is the only PTY write.** The single sanctioned `SendInput` call site is `Bridge.injectSay`, reached from exactly two intents: the `/say` verb and plain-text chat forwarding. Both deliver the user's text verbatim plus exactly one `\r` — as two separate writes with a ~250ms beat between them, because a single text+`\r` chunk trips the agent CLI's paste detection and the Enter never submits.
+2. **`injectSay` is the only PTY write.** The single sanctioned `SendInput` call site is `Bridge.injectSay`. It writes exactly two shapes (`sayKind`):
+   - **a typed line** (`sayLine`) — the user's text verbatim plus exactly one `\r`, as two separate writes with a ~250ms beat between them, because a single text+`\r` chunk trips the agent CLI's paste detection and the Enter never submits. Callers: the `/say` verb, plain-text chat forwarding, the `/login` dialog, and the typed answer of a prompt's free-text option.
+   - **a bare keystroke** (`sayKeystroke`) — the bytes alone, **no Enter**. One caller: answering an approval / question dialog with a digit or Esc (`prompt.go`). The CLI submits on the key itself, so an Enter would hit whatever is on screen next.
+
+   Answering a dialog is a new *caller* of `injectSay`, never a second write path.
 
 `watch_guard_test.go` parses the package source and fails on any `Resize` reference, any `SendInput` reference outside the one allowlisted call site (and fails if that call-site count ≠ 1), and any import of the agent-manager package. A TUI/GUI attached simultaneously sees zero difference; per-subscriber cursors mean a slow Telegram consumer can only drop its own bytes.
 
@@ -2584,8 +2614,8 @@ Chat — Session 1 — 2026-02-03 12:00
       / "■ session ended"
    └─ Relay stays registered until the session disappears (never relayed twice)
 6. Throughout: bridge reads only (transcript file + screen snapshots via the
-   SessionSource seam); the sole PTY write path is injectSay (/say and
-   plain-text chat forwarding)
+   SessionSource seam); the sole PTY write path is injectSay (/say,
+   plain-text chat forwarding, /login, and approval-prompt answers)
 ```
 
 ---

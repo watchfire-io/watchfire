@@ -108,7 +108,7 @@ func (b *Bridge) cmdLogin(ctx context.Context, chatID int64) {
 	}
 
 	b.sendTyping(ctx, chatID)
-	if err := b.injectSay(projectID, "/login"); err != nil {
+	if err := b.injectSay(projectID, "/login", sayLine); err != nil {
 		b.reply(ctx, chatID, "Couldn't type /login into the session: "+EscapeHTML(err.Error()))
 		return
 	}
@@ -121,7 +121,7 @@ func (b *Bridge) cmdLogin(ctx context.Context, chatID int64) {
 	if b.loginURLOnScreen(sess) == "" {
 		// Method picker: option 1 (Claude subscription) is preselected —
 		// a lone Enter chooses it.
-		if err := b.injectSay(projectID, ""); err != nil {
+		if err := b.injectSay(projectID, "", sayLine); err != nil {
 			b.reply(ctx, chatID, "Couldn't confirm the login method: "+EscapeHTML(err.Error()))
 			return
 		}
@@ -171,7 +171,7 @@ func (b *Bridge) handleLoginCode(ctx context.Context, chatID int64, text string)
 		b.reply(ctx, chatID, "Login cancelled — I won't paste anything.")
 		return true
 	}
-	if err := b.injectSay(projectID, code); err != nil {
+	if err := b.injectSay(projectID, code, sayLine); err != nil {
 		b.reply(ctx, chatID, "Couldn't paste the code: "+EscapeHTML(err.Error()))
 		return true
 	}
@@ -212,7 +212,7 @@ func (b *Bridge) finishLogin(ctx context.Context, chatID int64, projectID string
 	// Scrape the account line before the Enter wipes the screen.
 	who := loginAccountOnScreen(sess)
 	b.sleepFn(ctx, b.loginSettle)
-	if err := b.injectSay(projectID, ""); err != nil {
+	if err := b.injectSay(projectID, "", sayLine); err != nil {
 		b.reply(ctx, chatID, loginDoneLine(who)+" — but I couldn't press Enter to close the dialog: "+EscapeHTML(err.Error()))
 		return
 	}

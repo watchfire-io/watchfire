@@ -67,11 +67,12 @@ type Config struct {
 // command surface (/projects /use /status /tasks /help — task 0137),
 // the live conversation relay (/watch — task 0141), and the
 // run-control verbs (/run /runall /retry /cancel /screen /say /mute —
-// task 0142, runcontrol.go).
+// task 0142, runcontrol.go) and the approval-prompt relay (prompt.go:
+// forwarded dialogs, inline answer buttons, /approve /deny /answer).
 //
 // The bridge never calls AgentService.Resize, and the only PTY write
-// in the whole package is the explicit /say path (injectSay) — both
-// enforced by the watch_guard_test source guard.
+// in the whole package is injectSay — both enforced by the
+// watch_guard_test source guard.
 type Bridge struct {
 	token       string
 	pairing     *Pairing
@@ -132,6 +133,19 @@ type Bridge struct {
 	// New; tests shrink it).
 	loginSettle time.Duration
 
+	// Approval-prompt relay (prompt.go): the prompts forwarded to each
+	// chat and still open, the answers given from Telegram (so every
+	// chat's copy closes with the same verdict), and the chats armed to
+	// type a free-text answer — all guarded by promptMu. promptSyncMu
+	// serializes reconcilePrompts (watch-loop tick vs. answer path).
+	promptMu         sync.Mutex
+	promptPosts      map[int64][]*promptPost
+	promptAnswers    map[string]promptAnswer
+	promptArmed      map[int64]promptArm
+	promptSyncMu     sync.Mutex
+	promptVerifyWait time.Duration
+	promptVerifyPoll time.Duration
+
 	// sayEnterDelay is the beat between injectSay's text write and its
 	// Enter write (default set in New; tests shrink it).
 	sayEnterDelay time.Duration
@@ -162,40 +176,45 @@ func New(cfg Config) *Bridge {
 		paired[c.ChatID] = c
 	}
 	return &Bridge{
-		token:           cfg.Token,
-		pairing:         cfg.Pairing,
-		hostname:        cfg.Hostname,
-		pollTimeout:     cfg.PollTimeout,
-		client:          client,
-		logger:          logger,
-		cmdCtxFor:       cfg.CommandContextFor,
-		runner:          cfg.Runner,
-		agents:          cfg.Agents,
-		paired:          paired,
-		lastProjects:    make(map[int64][]echo.ProjectInfo),
-		sessions:        cfg.Sessions,
-		relays:          make(map[int64]*chatRelay),
-		watchPoll:       sessionPollInterval,
-		flushEvery:      senderFlushTick,
-		coalesceEvery:   coalesceInterval,
-		screenEvery:     screenDeltaInterval,
-		tailPoll:        tailPollInterval,
-		outcomeRetry:    outcomeRetryInterval,
-		chatPending:     make(map[string]*chatPendingStart),
-		loginPending:    make(map[int64]string),
-		loginSettle:     loginSettleDefault,
-		chatStartPoll:   chatStartPollInterval,
-		chatStartWait:   chatStartWaitTimeout,
-		chatStartSettle: chatStartSettleDelay,
-		typingEvery:     typingInterval,
-		typingWindow:    typingActivityWindow,
-		sayEnterDelay:   sayEnterDelayDefault,
-		sleepFn:         sleepCtx,
-		persistFn:       persistPairedChat,
-		setDefaultFn:    persistDefaultProject,
-		persistWatchFn:  persistWatch,
-		persistMutedFn:  persistMuted,
-		tailerForFn:     defaultTailerFor,
+		token:            cfg.Token,
+		pairing:          cfg.Pairing,
+		hostname:         cfg.Hostname,
+		pollTimeout:      cfg.PollTimeout,
+		client:           client,
+		logger:           logger,
+		cmdCtxFor:        cfg.CommandContextFor,
+		runner:           cfg.Runner,
+		agents:           cfg.Agents,
+		paired:           paired,
+		lastProjects:     make(map[int64][]echo.ProjectInfo),
+		sessions:         cfg.Sessions,
+		relays:           make(map[int64]*chatRelay),
+		watchPoll:        sessionPollInterval,
+		flushEvery:       senderFlushTick,
+		coalesceEvery:    coalesceInterval,
+		screenEvery:      screenDeltaInterval,
+		tailPoll:         tailPollInterval,
+		outcomeRetry:     outcomeRetryInterval,
+		chatPending:      make(map[string]*chatPendingStart),
+		loginPending:     make(map[int64]string),
+		loginSettle:      loginSettleDefault,
+		chatStartPoll:    chatStartPollInterval,
+		chatStartWait:    chatStartWaitTimeout,
+		chatStartSettle:  chatStartSettleDelay,
+		typingEvery:      typingInterval,
+		typingWindow:     typingActivityWindow,
+		sayEnterDelay:    sayEnterDelayDefault,
+		promptPosts:      make(map[int64][]*promptPost),
+		promptAnswers:    make(map[string]promptAnswer),
+		promptArmed:      make(map[int64]promptArm),
+		promptVerifyWait: promptVerifyTimeout,
+		promptVerifyPoll: promptVerifyPollInterval,
+		sleepFn:          sleepCtx,
+		persistFn:        persistPairedChat,
+		setDefaultFn:     persistDefaultProject,
+		persistWatchFn:   persistWatch,
+		persistMutedFn:   persistMuted,
+		tailerForFn:      defaultTailerFor,
 	}
 }
 

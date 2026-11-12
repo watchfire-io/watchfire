@@ -5,7 +5,8 @@
 // production implementations Slack and Discord use); /status reuses
 // echo.Route verbatim. The run-control verbs (/run /runall /retry
 // /cancel /screen /say /mute /unmute — task 0142) live in
-// runcontrol.go and are dispatched here.
+// runcontrol.go and the prompt answers (/approve /deny /answer — v10.2)
+// in prompt.go; both are dispatched here.
 package telegram
 
 import (
@@ -47,6 +48,9 @@ func botCommands() []telegrambot.BotCommand {
 		{Command: "watch", Description: "Toggle the live conversation relay (on|off)"},
 		{Command: "screen", Description: "Plain-text snapshot of the live session"},
 		{Command: "say", Description: "Type into the working session explicitly"},
+		{Command: "approve", Description: "Say yes to the approval prompt the agent is waiting on"},
+		{Command: "deny", Description: "Say no to (or dismiss) the waiting prompt"},
+		{Command: "answer", Description: "Pick option <n> of the waiting prompt"},
 		{Command: "mute", Description: "Pause/resume event pushes (on|off)"},
 		{Command: "pair", Description: "Pair this chat with a one-time code"},
 		{Command: "help", Description: "All commands"},
@@ -113,6 +117,12 @@ func (b *Bridge) dispatchCommand(ctx context.Context, msg *telegrambot.Message, 
 		// the normalized rest would collapse the whitespace the user
 		// meant to type into the session.
 		b.cmdSay(ctx, chatID, sayVerbatim(msg.Text))
+	case "/approve":
+		b.cmdApprove(ctx, chatID, userLabel(msg.From.Username, userID))
+	case "/deny":
+		b.cmdDeny(ctx, chatID, userLabel(msg.From.Username, userID))
+	case "/answer":
+		b.cmdAnswer(ctx, chatID, rest, userLabel(msg.From.Username, userID))
 	case "/mute":
 		// "/mute off" folds the old /unmute in; bare /mute mutes, and
 		// the /unmute alias still works.
@@ -161,6 +171,8 @@ func helpHTML() string {
 		"/watch on|off — relay the live agent conversation here",
 		"/screen — plain-text snapshot of the live session",
 		"/say &lt;text&gt; — type into the working session explicitly",
+		"/approve · /deny — answer the approval prompt the agent is waiting on",
+		"/answer &lt;n&gt; [text] — pick option n of the waiting prompt (text for a \"type something\" option)",
 		"/mute on|off — pause/resume event pushes to this chat",
 		"",
 		"/pair &lt;code&gt; — pair this chat · /help — this list",
@@ -252,8 +264,9 @@ func (b *Bridge) cmdUse(ctx context.Context, chatID, userID int64, arg string) {
 	b.reply(ctx, chatID, "✓ Active project set to <b>"+EscapeHTML(target.Name)+"</b>.")
 }
 
-// handleCallback services an inline-keyboard tap. Only the "use:"
-// namespace exists today. Unpaired or malformed callbacks are answered
+// handleCallback services an inline-keyboard tap: "use:" (the /projects
+// picker) or "ans:" (an approval prompt's option buttons — prompt.go).
+// Unpaired or malformed callbacks are answered
 // blank (the client stops its spinner) and otherwise ignored — same
 // no-information-leak posture as unpaired messages.
 func (b *Bridge) handleCallback(ctx context.Context, cq *telegrambot.CallbackQuery) {
@@ -267,7 +280,15 @@ func (b *Bridge) handleCallback(ctx context.Context, cq *telegrambot.CallbackQue
 		return
 	}
 	chatID := cq.Message.Chat.ID
-	if !b.IsPaired(chatID) || !strings.HasPrefix(cq.Data, callbackUsePrefix) {
+	if !b.IsPaired(chatID) {
+		answer("")
+		return
+	}
+	if strings.HasPrefix(cq.Data, callbackAnswerPrefix) {
+		b.handleAnswerCallback(ctx, cq, answer)
+		return
+	}
+	if !strings.HasPrefix(cq.Data, callbackUsePrefix) {
 		answer("")
 		return
 	}

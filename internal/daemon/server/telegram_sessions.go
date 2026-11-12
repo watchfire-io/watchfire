@@ -1,7 +1,8 @@
 // v10.0 Torch, task 0141 — the read-only session view the Telegram
 // bridge's watch mode observes agents through. This adapter is the
 // seam that keeps the telegram package away from the PTY: it exposes
-// screen snapshots and task outcomes only — no SendInput, no Resize
+// screen snapshots, the current issue / approval prompt and task
+// outcomes only — no SendInput, no Resize
 // (the telegram package has a guard test asserting exactly that).
 package server
 
@@ -61,6 +62,22 @@ func (s *agentSessionSource) ActiveSession(projectID string) (*telegram.WatchedS
 				return string(iss.Type)
 			}
 			return ""
+		},
+		Prompt: func() *telegram.SessionPrompt {
+			iss := proc.GetIssue()
+			if iss == nil || iss.Type != agent.AgentIssueInputRequired {
+				return nil
+			}
+			text := iss.Prompt
+			if text == "" {
+				text = iss.Message
+			}
+			return &telegram.SessionPrompt{
+				Text:       text,
+				Options:    append([]string(nil), iss.Options...),
+				Details:    append([]string(nil), iss.OptionDetails...),
+				DetectedAt: iss.DetectedAt,
+			}
 		},
 	}, true
 }
