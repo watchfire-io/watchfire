@@ -11,15 +11,26 @@ import (
 
 // The v10 Torch ground rule for the Telegram bridge is that it never
 // resizes the PTY (that would fight the TUI/GUI) and never writes to
-// it — with a single exception: the explicit /say verb (task 0142),
-// whose injection lives in exactly one function so it can be
-// allowlisted precisely. Watch mode observes sessions through the
-// SessionSource interface, which exposes snapshots and outcomes only.
+// it — with a single exception: Bridge.injectSay, the one function all
+// user-initiated input funnels through so it can be allowlisted
+// precisely. injectSay writes exactly two shapes (see sayKind):
+//
+//   - a typed line — text, a beat, one Enter: the /say verb (task
+//     0142), plain-text conversation, the /login dialog, and the typed
+//     answer of a prompt's free-text option;
+//   - a bare keystroke with NO Enter — a digit or Esc answering a
+//     Claude Code approval / question dialog (v10.2, prompt.go). The
+//     CLI submits on the key itself, so a trailing Enter would hit
+//     whatever is on screen next.
+//
+// Watch mode and the prompt relay observe sessions through the
+// SessionSource interface, which exposes snapshots, the pending prompt
+// and outcomes only.
 //
 // This test is the guard, in the style of the MCP server's stdio-only
 // source check: it parses the telegram package's own source and fails
 // on any reference to Resize, on any SendInput reference outside the
-// one sanctioned /say call site, and on any import of the
+// one sanctioned injectSay call site, and on any import of the
 // agent-manager package (whose Process would hand back the PTY).
 
 // forbiddenSelectors are method/field names the telegram package must
@@ -28,9 +39,10 @@ var forbiddenSelectors = map[string]string{
 	"Resize": "resizing the PTY would fight an attached TUI/GUI",
 }
 
-// The single sanctioned PTY write: Bridge.injectSay in runcontrol.go —
-// the /say path (task 0142). Exactly one SendInput reference must
-// exist in the package, and it must be there.
+// The single sanctioned PTY write: Bridge.injectSay in runcontrol.go.
+// Exactly one SendInput reference must exist in the package, and it
+// must be there — answering a dialog is a new CALLER of injectSay,
+// never a second write path.
 const (
 	sayFile = "runcontrol.go"
 	sayFunc = "injectSay"
@@ -93,7 +105,7 @@ func TestBridgeNeverWritesToThePTY(t *testing.T) {
 					if name == sayFile && funcName == sayFunc {
 						sayCallSites++
 					} else {
-						t.Errorf("%s: references SendInput — PTY writes are reserved for the single /say path (%s in %s)",
+						t.Errorf("%s: references SendInput — PTY writes are reserved for the single injectSay path (%s in %s)",
 							fset.Position(sel.Pos()), sayFunc, sayFile)
 					}
 				}
@@ -105,7 +117,7 @@ func TestBridgeNeverWritesToThePTY(t *testing.T) {
 		t.Fatal("no source files checked — the guard would pass vacuously")
 	}
 	if sayCallSites != 1 {
-		t.Errorf("expected exactly 1 sanctioned SendInput call site (%s in %s), found %d — the /say path must stay in one guarded function",
+		t.Errorf("expected exactly 1 sanctioned SendInput call site (%s in %s), found %d — every PTY write must stay in one guarded function",
 			sayFunc, sayFile, sayCallSites)
 	}
 }

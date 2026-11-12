@@ -36,6 +36,15 @@ type AgentIssue struct {
 	ResetAt       *time.Time // Parsed reset time (rate limits)
 	CooldownUntil *time.Time // When to auto-resume
 	Options       []string   // Ordered option labels of the dialog (input_required only)
+	// Prompt is the dialog's question plus its context (the command, diff or
+	// plan under approval) WITHOUT the option list — Message carries both
+	// flattened for plain-text consumers; clients that render the options
+	// themselves (Telegram's inline buttons) read Prompt + Options +
+	// OptionDetails. input_required only.
+	Prompt string
+	// OptionDetails is the secondary text under each option (AskUserQuestion
+	// descriptions), parallel to Options; empty when the dialog has none.
+	OptionDetails []string
 }
 
 // Pattern detection for auth errors.

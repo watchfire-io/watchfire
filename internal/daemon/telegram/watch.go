@@ -162,6 +162,31 @@ type WatchedSession struct {
 	// ("auth_required", "rate_limited", …) or "" — read-only, like
 	// Snapshot; drives the auto-relayed /login hint.
 	IssueType func() string
+	// Prompt returns the approval / question dialog the session is
+	// parked on (the daemon's input_required issue), or nil when it is
+	// not waiting on one — read-only, like Snapshot and IssueType. It
+	// drives the prompt relay (prompt.go); ANSWERING the dialog is a
+	// write and goes through the RunController seam via injectSay.
+	Prompt func() *SessionPrompt
+}
+
+// SessionPrompt is the dialog a Claude Code session is waiting on: a
+// tool-permission prompt, a plan approval, or an AskUserQuestion list.
+type SessionPrompt struct {
+	// Text is the question plus its context (the command, diff or plan
+	// under approval), newlines and indentation intact, without the
+	// option list.
+	Text string
+	// Options are the option labels in display order; option N is
+	// Options[N-1] and is selected in the CLI by the digit N.
+	Options []string
+	// Details is the secondary text under each option (AskUserQuestion
+	// descriptions), parallel to Options; may be shorter or nil.
+	Details []string
+	// DetectedAt is when the daemon raised this dialog. A dialog that
+	// leaves the screen and a later one with identical wording differ
+	// here, which is what makes a forwarded prompt's buttons stale.
+	DetectedAt time.Time
 }
 
 // TaskSummary is the number + title of one task, for milestone markers.
@@ -935,6 +960,9 @@ func (b *Bridge) watchLoop(ctx context.Context) {
 			return
 		}
 		b.reconcileWatch(ctx)
+		// Approval prompts are forwarded on the same tick, independently
+		// of the relays: a chat with /watch off still gets them.
+		b.reconcilePrompts(ctx)
 		b.sleepFn(ctx, b.watchPoll)
 		if ctx.Err() != nil {
 			return
@@ -1065,6 +1093,20 @@ func (b *Bridge) breakRelayGrowth(chatID int64) {
 	r := b.relays[chatID]
 	b.watchMu.Unlock()
 	if r != nil {
+		r.sender.breakGrowth()
+	}
+}
+
+// settleRelayBefore prepares the chat's relay for a bridge-authored
+// message that must read in order: whatever the relay has queued is
+// flushed first (so the tool call that led to a prompt lands ABOVE the
+// prompt), then the growth anchor is dropped like any bridge reply.
+func (b *Bridge) settleRelayBefore(ctx context.Context, chatID int64) {
+	b.watchMu.Lock()
+	r := b.relays[chatID]
+	b.watchMu.Unlock()
+	if r != nil {
+		r.sender.flush(ctx, true)
 		r.sender.breakGrowth()
 	}
 }

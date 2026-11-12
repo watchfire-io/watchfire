@@ -149,9 +149,15 @@ var (
 // inputDialogChoiceFooters close a choice frame (exact normalized row).
 var inputDialogChoiceFooters = []string{
 	"esctocancel·tabtoamend", // tool permission
-	"ctrl+gtoeditinvim·",     // plan approval
 	"esctocancel",            // older permission dialogs
 }
+
+// inputDialogPlanFooterPrefix opens the plan-approval footer. It is a
+// PREFIX, not an exact row: the CLI appends the plan file path
+// ("ctrl+g to edit in Vim · ~/.claude/plans/<name>.md") and whether that
+// path shares the row depends on the terminal width — at 80 columns it
+// wraps away, at 100 it does not (captured live, v2.1.322).
+const inputDialogPlanFooterPrefix = "ctrl+gtoeditinvim·"
 
 // inputDialogQuestionFooter closes an AskUserQuestion frame.
 const inputDialogQuestionFooter = "entertoselect·↑/↓tonavigate·esctocancel"
@@ -330,7 +336,7 @@ func isChoiceFooter(norm string) bool {
 			return true
 		}
 	}
-	return false
+	return strings.HasPrefix(norm, inputDialogPlanFooterPrefix)
 }
 
 // detectInputDialog recognizes a dialog frame on the current screen.
@@ -566,7 +572,10 @@ func (p *Process) applyInputDialogLocked() {
 		Type:       AgentIssueInputRequired,
 		DetectedAt: time.Now(),
 		Message:    st.frame.message(),
+		Prompt:     st.frame.Prompt,
 		Options:    append([]string(nil), st.frame.Options...),
+		// Parallel to Options; nil for the choice frames.
+		OptionDetails: append([]string(nil), st.frame.details...),
 	})
 }
 

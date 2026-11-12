@@ -94,9 +94,10 @@ In order — cheapest first:
   The issue's `message` carries the full prompt (including the command or
   diff under approval) and `options` the numbered choices in order. The
   daemon never answers for you: answer the prompt on the live screen
-  (`get_agent_screen` shows it), in the GUI/TUI terminal, or from Telegram
-  once prompt forwarding lands (task 0003). It clears by itself as soon as
-  the dialog leaves the screen.
+  (`get_agent_screen` shows it), in the GUI/TUI terminal, or from Telegram —
+  the bridge forwards the prompt to the paired chat with one button per
+  option (also `/approve`, `/deny`, `/answer <n>`). It clears by itself as
+  soon as the dialog leaves the screen.
 - `sandbox_denied` — the project path is inside a sandbox-denied root
   (`~/Desktop`, `~/Documents`, `~/Downloads`, `.ssh`, `.aws`, …). The agent was
   never started. **Move the project**; there is no override.
@@ -150,11 +151,26 @@ project's chat agent**, auto-starting one if nothing is running. Watch mode
 | `/agent` | Switch the project's coding-agent backend. |
 | `/login` | **Re-authenticate Claude from the phone** — the bridge drives the CLI's own OAuth dialog, sends you the link, and pastes the code you send back. |
 | `/watch`, `/screen`, `/say` | Stream control, screen snapshot, explicit PTY write. |
+| `/approve`, `/deny`, `/answer <n> [text]` | Answer the approval / question prompt the agent is waiting on (same as tapping its buttons). |
 | `/retry <n>`, `/cancel <n>`, `/mute` | Task retry / cancel, pause outbound events. |
+
+**Approval prompts are forwarded.** When Claude Code stops on a dialog — a
+tool-permission prompt, a plan approval, an `AskUserQuestion` list — the chat
+gets one message with the full prompt (a multi-line command stays intact) and
+an inline button per option. Tapping answers the dialog in the live session
+and the message is edited to show who chose what; a button on a prompt that
+is already gone answers "no longer waiting" and does nothing. This reaches a
+chat even with `/watch off` (a blocked agent is not chatter); only `/mute`
+silences it. `/approve` picks "Yes", `/deny` picks "No" (or presses Esc when
+there is none), `/answer <n>` picks any option, and `/answer <n> <text>`
+fills a "type something" option. If a user reports a stuck agent and no
+prompt in Telegram: check `get_agent_status` for `input_required`, that the
+chat is not muted, and that its `/use` project is the one that is blocked.
 
 Two invariants the bridge code enforces by test, worth knowing before you touch
 it: it **never resizes** the PTY, and `injectSay` is the **only** thing that
-writes to a PTY.
+writes to a PTY (a typed line, or — for answering a dialog — one bare key
+with no Enter).
 
 ## Configuring the rest
 

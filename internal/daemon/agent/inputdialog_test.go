@@ -541,3 +541,70 @@ func TestProcessInputDialog_SettleDebouncesRedraw(t *testing.T) {
 		t.Fatal("detector raised after stop")
 	}
 }
+
+// planApprovalWideScreen: the plan-approval frame on a 100-column PTY
+// (captured live, Claude Code v2.1.322, 2026-11-12). Unlike the 80-column
+// capture above, the question fits one row and the footer keeps the plan
+// file path on the SAME row as "ctrl+g to edit in Vim ·" — an exact-row
+// footer match missed this frame entirely.
+var planApprovalWideScreen = []string{
+	"  ⎿  /plan to preview",
+	"▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔",
+	"  ────────────────────────────────────────────────────────────────────────────────────────────────",
+	"   Ready to code?",
+	"",
+	"   Here is Claude's plan:",
+	"  ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌",
+	"   1. Append the word goodbye as a new line at the end of README.md in the working directory",
+	"      (creating the file if it does not exist).",
+	"   2. Verify by reading README.md and confirming the last line is goodbye.",
+	"  ╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌╌",
+	"  ────────────────────────────────────────────────────────────────────────────────────────────────",
+	"   Claude has written up a plan and is ready to execute. Would you like to proceed?",
+	"",
+	"   ❯ 1. Yes, and use auto mode",
+	"     2. Yes, manually approve edits",
+	"     3. Tell Claude what to change",
+	"        shift+tab to approve with this feedback",
+	"",
+	"   ctrl+g to edit in Vim · ~/.claude/plans/wise-giggling-thacker.md",
+}
+
+func TestDetectInputDialog_PlanApprovalWideFooter(t *testing.T) {
+	d := detectInputDialog(planApprovalWideScreen)
+	if d == nil {
+		t.Fatal("plan approval prompt not detected when the footer carries the plan path on the same row")
+	}
+	if len(d.Options) != 3 || d.Options[0] != "Yes, and use auto mode" {
+		t.Fatalf("options = %q", d.Options)
+	}
+	if !strings.Contains(d.Prompt, "Would you like to proceed?") || !strings.Contains(d.Prompt, "word goodbye") {
+		t.Fatalf("prompt = %q", d.Prompt)
+	}
+}
+
+// TestProcessInputDialog_IssueCarriesPromptAndDetails: the issue exposes the
+// prompt WITHOUT the flattened option list, plus the per-option detail
+// text, so a client that renders its own option buttons (the Telegram
+// bridge) does not have to parse Message apart.
+func TestProcessInputDialog_IssueCarriesPromptAndDetails(t *testing.T) {
+	p := newInputDialogTestProcess()
+	p.scanInputDialog(askUserQuestionScreen)
+	issue := p.GetIssue()
+	if issue == nil || issue.Type != AgentIssueInputRequired {
+		t.Fatalf("issue = %+v, want input_required", issue)
+	}
+	if !strings.Contains(issue.Prompt, "Which accent color") || strings.Contains(issue.Prompt, "Crimson") {
+		t.Fatalf("Prompt should be the question without the options, got %q", issue.Prompt)
+	}
+	if len(issue.OptionDetails) != len(issue.Options) || issue.OptionDetails[0] == "" {
+		t.Fatalf("OptionDetails = %q for options %q", issue.OptionDetails, issue.Options)
+	}
+
+	p.scanInputDialog(answeredScreen)
+	p.scanInputDialog(permissionBashScreen)
+	issue = p.GetIssue()
+	if issue == nil || !strings.Contains(issue.Prompt, "Do you want to proceed?") || strings.Contains(issue.Prompt, "1.") {
+		t.Fatalf("permission issue prompt = %+v", issue)
+	}
+}
