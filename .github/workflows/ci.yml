@@ -35,7 +35,7 @@ jobs:
 
   go-build-arm64:
     name: Go Build (arm64)
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-go@v6

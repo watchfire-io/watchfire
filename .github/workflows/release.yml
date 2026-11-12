@@ -55,7 +55,7 @@ jobs:
     strategy:
       matrix:
         include:
-          - runner: macos-14
+          - runner: macos-15
             arch: arm64
           - runner: macos-latest
             arch: amd64
@@ -186,7 +186,7 @@ jobs:
     name: Build GUI
     needs: [version, build-go]
     if: needs.version.outputs.should_build == 'true'
-    runs-on: macos-14
+    runs-on: macos-15
     permissions:
       contents: write
     env:
