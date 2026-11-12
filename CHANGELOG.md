@@ -1,5 +1,24 @@
 # Changelog
 
+## [10.2.0] Torch
+
+Minor release: an agent waiting for your approval is no longer invisible — the daemon detects Claude Code's approval dialogs, every surface shows them, and Telegram lets you answer them. The watch relay also stops cutting tool commands short. Closes issue #58.
+
+### Added
+
+- **`input_required` — a fifth blocking issue type, raised while Claude Code is parked on an approval dialog.** When a session stopped on a tool-permission prompt, a plan-approval prompt or an `AskUserQuestion` list, the daemon had no idea: nothing surfaced on `get_agent_status`, the GUI/TUI banners or Telegram, and the agent sat blocked until someone looked at the screen. The daemon now detects the dialog on the vt10x screen snapshot after each PTY read — not the raw line stream — and requires the full frame (question/header marker, consecutively numbered options with the pinned first-option wording, and the dialog footer), so the same wording quoted in scrollback (a task prompt, a diff, a markdown doc) can never trip it. Markers were pinned from live captures of Claude Code v2.1.322. The frame must be stable for 250 ms before the issue is raised or cleared, so Ink's multi-write redraws do not flap it; it clears as soon as the dialog leaves the screen, whichever client answered, and the daemon never answers a dialog itself. The issue carries the full prompt (including a multi-line command or diff under approval) and the ordered option labels — a new append-only `repeated string options` on the proto `AgentIssue` — and shows up on the gRPC status, MCP `get_agent_status`, the TUI banner ("Waiting for your approval"), the GUI issue banner and the needs-attention panel.
+- **Approval prompts are forwarded to Telegram, and you can answer them there.** Each dialog becomes one message per paired, un-muted chat — whether or not `/watch` is on: a "⏸ Waiting for your approval" header naming the project and task, the full prompt (anything over two lines rides a `<pre>` block chunked across messages, so a multi-line command, diff or plan is never cut), the numbered options, and an inline button per option. Answer with a tap, or with `/approve`, `/deny`, or `/answer <n> [text]`. The answer re-reads the live dialog first and refuses a stale one ("That prompt is no longer waiting." — nothing is typed), then verifies the dialog actually left the screen before reporting success. The forwarded message is edited to "✅ <option> — answered by `@user`" in every chat that was shown it, or to "no longer waiting" when it was dealt with in the GUI/TUI. A later dialog with identical wording makes old buttons stale rather than answering the wrong prompt.
+
+### Changed
+
+- **Plain text is no longer typed at a session parked on a dialog.** Text plus Enter would have accepted whichever option was highlighted. Plain text is now the typed answer when the open question has a free-text option, and is refused otherwise.
+- **`injectSay` gains a keystroke shape — and stays the bridge's only PTY write.** In Claude Code v2.1.322 a digit selects *and* submits a dialog option instantly, so a trailing Enter would land on whatever is on screen next (a second queued permission dialog, or the input box with a ghost-text suggestion). `injectSay` now takes a kind: `sayLine` (text, beat, Enter — every existing caller) and `sayKeystroke` (the bytes alone, for dialog answers only). It is still the package's single `SendInput` call site, enforced by `watch_guard_test.go`.
+
+### Fixed
+
+- **The watch relay sends tool-use commands whole instead of cutting them off.** Every `tool_use` block was compressed to its first line and capped at 120 runes, so a multi-line Bash command, a long one-liner or a heredoc lost everything past the first line in Telegram. Command-shaped tool uses now get the "⚒ Bash:" label on its own line over the full command in a `<pre>` block; a command longer than one Telegram message is split across messages, each closing its own tag, and nothing is truncated. Path-shaped tool uses (Edit/Read/Grep …) keep the compact one-liner, now capped at 300 runes.
+- **A forced split of an overlong relay line can no longer break an HTML entity.** The split now backs off to a rune boundary outside any entity, so a 6000-character one-liner cannot hand Telegram half an `&amp;` (which it rejects as unparsable).
+
 ## [10.1.0] Torch
 
 Minor release: remote re-auth actually works end to end, the Telegram bridge is drivable from MCP, and there is a skill that teaches an agent how to run Watchfire.
