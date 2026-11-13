@@ -1790,7 +1790,9 @@ On every client startup:
 | **Scope** | Updates entire stack (daemon, CLI/TUI, GUI) together |
 | **If update available** | Prompt user to download and install |
 | **If daemon running** | After update, prompt user to restart daemon |
-| **Settings** | Check frequency, auto-download toggle |
+| **Settings** | Check on startup, check frequency, auto-download toggle |
+
+The GUI's electron-updater (`gui/src/main/auto-updater.ts`) re-reads `updates` from `~/.watchfire/settings.yaml` before every check (policy in `update-policy.ts`): no launch-time check when `check_on_startup` is off or the frequency window has not elapsed (tracked by the GUI's own stamp in `userData/update-check.json`, not the daemon's `last_checked`), and nothing is downloaded without a click on the banner's Download button unless `auto_download` is on.
 
 ### Daemon Lifecycle
 

@@ -364,11 +364,25 @@ jobs:
     needs: [version, build-go-linux]
     if: needs.version.outputs.should_build == 'true'
     runs-on: ubuntu-latest
+    # Built inside Debian 12 (glibc 2.36), not on the runner itself. node-pty
+    # is compiled from source on Linux, and a native module only loads on
+    # systems whose glibc is at least as new as the one it was linked
+    # against. When `ubuntu-latest` rolled to Ubuntu 26.04 the 10.2.0 build
+    # came out requiring GLIBC_2.42, so the AppImage/deb crashed at launch on
+    # every distro older than that (issue #60). Pinning the userland here
+    # keeps the glibc floor fixed no matter where the runner image goes; the
+    # "Verify node-pty" step below fails the build if it ever drifts.
+    container: node:20-bookworm
     permissions:
       contents: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     steps:
+      - name: Install build tools
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends jq make g++ python3 binutils git
+
       - uses: actions/checkout@v5
 
       - uses: actions/setup-node@v5
@@ -402,6 +416,38 @@ jobs:
         run: |
           npx electron-vite build
           npx electron-builder --config electron-builder.yml --publish never --linux AppImage deb --x64
+
+      - name: Verify node-pty native module
+        working-directory: gui
+        run: |
+          mod=dist/linux-unpacked/resources/app.asar.unpacked/node_modules/node-pty
+          bin="$mod/build/Release/pty.node"
+          test -f "$bin" || { echo "::error::pty.node is missing from the packaged app"; exit 1; }
+
+          # The newest glibc symbol version the binary needs is the oldest
+          # glibc it can load on.
+          need=$(objdump -T "$bin" | grep -oE 'GLIBC_[0-9]+(\.[0-9]+)+' | sort -uV | tail -n 1)
+          echo "pty.node requires ${need:-no versioned glibc symbols}"
+          echo "libstdc++: $(objdump -T "$bin" | grep -oE 'GLIBCXX_[0-9]+(\.[0-9]+)+' | sort -uV | tail -n 1)"
+          ceiling=GLIBC_2.36
+          if [ -n "$need" ] && [ "$(printf '%s\n' "$ceiling" "$need" | sort -V | tail -n 1)" != "$ceiling" ]; then
+            echo "::error::pty.node requires $need, newer than the $ceiling ceiling — it will not load on older distros (issue #60)"
+            exit 1
+          fi
+
+          # Load the packaged module and run a command through a real PTY.
+          # node-pty is an N-API addon, so plain Node can load the same binary
+          # Electron will.
+          node -e '
+            const pty = require(process.argv[1]);
+            const t = pty.spawn("/bin/sh", ["-c", "echo pty-ok"], {});
+            let out = "";
+            t.onData((d) => { out += d; });
+            t.onExit(() => {
+              if (!out.includes("pty-ok")) { console.error("unexpected PTY output:", JSON.stringify(out)); process.exit(1); }
+              console.log("packaged node-pty loaded and spawned a PTY");
+            });
+          ' "$PWD/$mod"
 
       - name: Upload AppImage
         uses: actions/upload-artifact@v6

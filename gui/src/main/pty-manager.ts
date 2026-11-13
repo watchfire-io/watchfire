@@ -10,7 +10,27 @@ import { resolveShellCommand } from './shell-command'
 
 // Use createRequire to load native module at runtime — bypasses Rollup bundling
 const _require = createRequire(import.meta.url || __filename)
-const pty = _require('node-pty') as typeof import('node-pty')
+
+// Loaded on first use, not at import time. node-pty is a native module, and
+// when its binary cannot load (issue #60: the 10.2.0 Linux build needed a
+// newer glibc than the user's distro had) a top-level require threw while the
+// main process was still starting — the whole app died behind a "JavaScript
+// error occurred in the main process" dialog. Loading lazily confines that
+// failure to the in-app terminal: opening one rejects with the reason and
+// everything else keeps working.
+let ptyModule: typeof import('node-pty') | null = null
+function loadPty(): typeof import('node-pty') {
+  if (!ptyModule) {
+    try {
+      ptyModule = _require('node-pty') as typeof import('node-pty')
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err)
+      console.error('node-pty failed to load:', reason)
+      throw new Error(`The integrated terminal is unavailable: ${reason}`)
+    }
+  }
+  return ptyModule
+}
 
 interface PtySession {
   pty: import('node-pty').IPty
@@ -56,6 +76,7 @@ function readConfiguredShell(): string | null {
 }
 
 export async function createPty(cwd: string, windowId: number): Promise<string> {
+  const pty = loadPty()
   const id = randomUUID()
   const env = await loginShellEnv()
   // Spawn as a login shell (`-l` on macOS/Linux) so ~/.zprofile / ~/.profile

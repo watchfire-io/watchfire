@@ -1,5 +1,20 @@
 # Changelog
 
+## [10.3.0] Torch
+
+Minor release: two Linux desktop bugs. The 10.2.0 AppImage/deb crashed at launch on most distros, and the GUI downloaded updates no matter what the update settings said — which is how the broken build reached people who had switched updates off. Closes issues #60 and #61.
+
+**If you are stuck on 10.2.0 on Linux:** it cannot launch, so it cannot update itself — download the 10.3.0 AppImage or deb from the release page and install it by hand.
+
+### Fixed
+
+- **The Linux AppImage and deb launch again (issue #60).** 10.2.0 died at startup with "A JavaScript error occurred in the main process … Failed to load native module: pty.node". The file was not missing — the error names the last path node-pty tried, not the first failure. The real cause was the build machine: `ubuntu-latest` had rolled to Ubuntu 26.04, node-pty is compiled from source on Linux, and the resulting `pty.node` required `GLIBC_2.42` (10.1.0's needed 2.34), so it could not load on any distro with an older glibc. The Linux GUI is now built inside a pinned Debian 12 container, which fixes the glibc floor regardless of where the runner image goes, and the release workflow gained a "Verify node-pty native module" step that fails the build if the packaged binary requires anything newer than glibc 2.36, then loads the packaged module and runs a command through a real PTY.
+- **Updates are no longer downloaded when the update settings say not to (issue #61).** Settings has always offered "Check on startup", "Auto-download" and a check frequency, but the GUI's updater never read them: it checked on every launch with `autoDownload` hardcoded on. It now reads the `updates` section of `~/.watchfire/settings.yaml` before every check. With "Auto-download" off, a check only shows the "vX is available" banner and nothing is fetched until you click Download. With "Check on startup" off, there is no launch-time check at all. The daily/weekly frequency is honoured too, against the GUI's own last-check stamp. "Check Now" still checks on demand, and still only downloads by itself when auto-download is on. Changing a toggle applies to the next check without a restart.
+
+### Changed
+
+- **A native-module failure can no longer take the whole app down.** node-pty was loaded while the main process was starting, so a binary that could not load killed the app before a window opened. It is now loaded the first time a terminal is opened: if it fails, only the in-app terminal is unavailable (with the reason) and the rest of the GUI — including the updater that would deliver the fix — keeps working.
+
 ## [10.2.0] Torch
 
 Minor release: an agent waiting for your approval is no longer invisible — the daemon detects Claude Code's approval dialogs, every surface shows them, and Telegram lets you answer them. The watch relay also stops cutting tool commands short. Closes issue #58.
